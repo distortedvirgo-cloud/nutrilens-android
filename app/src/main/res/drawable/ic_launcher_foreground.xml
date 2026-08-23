@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Лист -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M57,49 C57,35 67,28 76,28 C76,41 68,49 57,49 Z" />
+    <!-- Стебель -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M53,53 C54,51 56,49 58,47 L60,49 C58,51 57,52 56,54 Z" />
+    <!-- Кромка миски -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M32,54 h44 a2,2 0 0 1 2,2 v1 a2,2 0 0 1 -2,2 h-44 a2,2 0 0 1 -2,-2 v-1 a2,2 0 0 1 2,-2 z" />
+    <!-- Чаша миски -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M35,61 a19,19 0 0 0 38,0 z" />
+</vector>

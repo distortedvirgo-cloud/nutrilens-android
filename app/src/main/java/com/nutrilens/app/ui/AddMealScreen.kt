@@ -1,0 +1,764 @@
+package com.nutrilens.app.ui
+
+import android.app.Application
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.clickable
+import androidx.core.content.FileProvider
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.compose.AsyncImage
+import com.nutrilens.app.ai.GeminiApi
+import com.nutrilens.app.ai.ImagePrep
+import com.nutrilens.app.ai.MealAnalysisResult
+import com.nutrilens.app.ai.buildRecentMealsContext
+import com.nutrilens.app.bg.AnalysisScheduler
+import com.nutrilens.app.data.MealEntity
+import com.nutrilens.app.data.MealImageEntity
+import com.nutrilens.app.data.MealItemEntity
+import com.nutrilens.app.data.MealRepository
+import com.nutrilens.app.data.NutriLensDatabase
+import com.nutrilens.app.data.SettingsRepository
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import java.io.File
+import java.io.FileOutputStream
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import java.util.UUID
+import kotlin.math.roundToInt
+
+// ---------- Состояние экрана "Добавить еду" ----------
+
+sealed interface AddMealPhase {
+    data object Idle : AddMealPhase
+    data object Analyzing : AddMealPhase
+    data class Result(val result: MealAnalysisResult) : AddMealPhase
+    data object Saving : AddMealPhase
+}
+
+class AddMealViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val database = NutriLensDatabase.getInstance(application)
+    private val mealRepository = MealRepository(
+        database.mealDao(),
+        database.waterDao(),
+        database.weightDao(),
+        database.workoutDao()
+    )
+    private val settingsRepository = SettingsRepository(database.settingsDao())
+
+    private val _note = MutableStateFlow("")
+    val note: StateFlow<String> = _note.asStateFlow()
+
+    private val _photos = MutableStateFlow<List<Uri>>(emptyList())
+    val photos: StateFlow<List<Uri>> = _photos.asStateFlow()
+
+    private val _phase = MutableStateFlow<AddMealPhase>(AddMealPhase.Idle)
+    val phase: StateFlow<AddMealPhase> = _phase.asStateFlow()
+
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error.asStateFlow()
+
+    private val _messages = MutableSharedFlow<String>()
+    val messages: SharedFlow<String> = _messages.asSharedFlow()
+
+    // Редактируемые поля результата анализа перед сохранением.
+    private val _resultName = MutableStateFlow("")
+    val resultName: StateFlow<String> = _resultName.asStateFlow()
+    private val _resultCalories = MutableStateFlow("")
+    val resultCalories: StateFlow<String> = _resultCalories.asStateFlow()
+    private val _resultProtein = MutableStateFlow("")
+    val resultProtein: StateFlow<String> = _resultProtein.asStateFlow()
+    private val _resultFat = MutableStateFlow("")
+    val resultFat: StateFlow<String> = _resultFat.asStateFlow()
+    private val _resultCarbs = MutableStateFlow("")
+    val resultCarbs: StateFlow<String> = _resultCarbs.asStateFlow()
+
+    private var preparedFiles: List<ImagePrep.ProcessedImages> = emptyList()
+
+    fun setNote(value: String) {
+        _note.value = value
+    }
+
+    fun addPhoto(context: Context, uri: Uri) {
+        if (_photos.value.size >= 10) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val local = try {
+                if (uri.scheme == "file") uri else copyToLocal(context, uri)
+            } catch (e: Exception) {
+                _error.value = "Не удалось открыть файл: $uri"
+                return@launch
+            }
+            if (local !in _photos.value && _photos.value.size < 10) {
+                _photos.value = _photos.value + local
+            }
+        }
+    }
+
+    /**
+     * Копирует выбранное фото в кэш сразу при выборе: разрешения picker-URI
+     * могут истечь к моменту анализа, локальный файл читается всегда.
+     */
+    private fun copyToLocal(context: Context, uri: Uri): Uri {
+        val dest = File(context.cacheDir, "picked_${System.currentTimeMillis()}.jpg")
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            FileOutputStream(dest).use { input.copyTo(it) }
+        } ?: throw IllegalArgumentException("нет доступа к $uri")
+        return Uri.fromFile(dest)
+    }
+
+    fun removePhoto(uri: Uri) {
+        _photos.value = _photos.value - uri
+    }
+
+    fun clearError() {
+        _error.value = null
+    }
+
+    /** Анализ в переднем плане: подготовка фото + запрос к Gemini. */
+    fun analyze(context: Context) {
+        if (_photos.value.isEmpty()) return
+        viewModelScope.launch {
+            _error.value = null
+            _phase.value = AddMealPhase.Analyzing
+            try {
+                val settings = settingsRepository.get()
+                if (settings.apiKey.isBlank()) {
+                    _phase.value = AddMealPhase.Idle
+                    _error.value = "Укажите ключ Gemini в настройках"
+                    return@launch
+                }
+                val processed = _photos.value.map { uri ->
+                    ImagePrep.process(
+                        context,
+                        uri,
+                        File(context.filesDir, "photos/manual_${System.currentTimeMillis()}")
+                    )
+                }
+                val fullBytes = processed.map { ImagePrep.readBytes(it.full) }
+                val recent = buildRecentMealsContext(
+                    mealRepository.mealsOn(LocalDate.now().toString())
+                )
+                val result = GeminiApi(settings.apiKey).analyzeMeal(
+                    imagesJpeg = fullBytes,
+                    userContext = settings.userContext,
+                    userNote = _note.value,
+                    recentMealsContext = recent
+                )
+                preparedFiles = processed
+                prefillResult(result)
+                _phase.value = AddMealPhase.Result(result)
+            } catch (e: Exception) {
+                _phase.value = AddMealPhase.Idle
+                _error.value = e.message ?: "Не удалось проанализировать фото"
+            }
+        }
+    }
+
+    /** Фоновый анализ через AnalysisScheduler. */
+    fun enqueueBackground(context: Context, onDone: () -> Unit) {
+        if (_photos.value.isEmpty()) return
+        viewModelScope.launch {
+            _error.value = null
+            try {
+                AnalysisScheduler.enqueueBackground(context, _note.value, _photos.value)
+                _messages.emit("✅ Анализ запущен в фоне — придёт уведомление")
+                onDone()
+            } catch (e: Exception) {
+                _phase.value = AddMealPhase.Idle
+                _error.value = e.message ?: "Не удалось запустить фоновый анализ"
+            }
+        }
+    }
+
+    fun setResultName(value: String) { _resultName.value = value }
+    fun setResultCalories(value: String) { _resultCalories.value = value }
+    fun setResultProtein(value: String) { _resultProtein.value = value }
+    fun setResultFat(value: String) { _resultFat.value = value }
+    fun setResultCarbs(value: String) { _resultCarbs.value = value }
+
+    /** Отмена просмотра результата: возврат к редактированию (фото остаются). */
+    fun cancelResult() {
+        _phase.value = AddMealPhase.Idle
+        _error.value = null
+    }
+
+    /** Сохраняет приём пищи: MealEntity + MealImageEntity (FULL/THUMB) + MealItemEntity. */
+    fun saveMeal(onDone: () -> Unit) {
+        val res = (_phase.value as? AddMealPhase.Result)?.result ?: return
+        val calories = _resultCalories.value.trim().replace(",", ".").toDoubleOrNull() ?: return
+        val protein = _resultProtein.value.trim().replace(",", ".").toDoubleOrNull() ?: return
+        val fat = _resultFat.value.trim().replace(",", ".").toDoubleOrNull() ?: return
+        val carbs = _resultCarbs.value.trim().replace(",", ".").toDoubleOrNull() ?: return
+
+        viewModelScope.launch {
+            _error.value = null
+            _phase.value = AddMealPhase.Saving
+            try {
+                val now = LocalDateTime.now()
+                val settings = settingsRepository.get()
+                val mealId = UUID.randomUUID().toString()
+
+                val meal = MealEntity(
+                    id = mealId,
+                    date = now.toLocalDate().toString(),
+                    time = now.toLocalTime().format(HH_MM),
+                    name = _resultName.value.trim().ifBlank { res.name },
+                    calories = calories,
+                    protein = protein,
+                    fat = fat,
+                    carbs = carbs,
+                    aiThoughts = res.aiThoughts,
+                    reasoning = res.reasoning,
+                    confidenceScore = res.confidenceScore,
+                    dailyGoalSnapshot = settings.dailyGoal,
+                    createdAt = System.currentTimeMillis()
+                )
+
+                val images = preparedFiles.flatMapIndexed { index, prep ->
+                    listOf(
+                        MealImageEntity(
+                            id = UUID.randomUUID().toString(),
+                            mealId = mealId,
+                            path = prep.full.absolutePath,
+                            kind = "FULL",
+                            sortIndex = index * 2
+                        ),
+                        MealImageEntity(
+                            id = UUID.randomUUID().toString(),
+                            mealId = mealId,
+                            path = prep.thumb.absolutePath,
+                            kind = "THUMB",
+                            sortIndex = index * 2 + 1
+                        )
+                    )
+                }
+
+                val items = res.items.map { item ->
+                    MealItemEntity(
+                        id = UUID.randomUUID().toString(),
+                        mealId = mealId,
+                        name = item.name,
+                        weightG = item.weightG,
+                        portionBasis = item.portionBasis,
+                        calorieDensity = item.calorieDensity,
+                        calories = item.calories,
+                        protein = item.protein,
+                        fat = item.fat,
+                        carbs = item.carbs,
+                        breakdown = item.breakdown
+                    )
+                }
+
+                mealRepository.addMeal(meal, images, items)
+                _phase.value = AddMealPhase.Idle
+                _messages.emit("Сохранено")
+                onDone()
+            } catch (e: Exception) {
+                _phase.value = AddMealPhase.Result(res)
+                _error.value = e.message ?: "Не удалось сохранить"
+            }
+        }
+    }
+
+    private fun prefillResult(result: MealAnalysisResult) {
+        _resultName.value = result.name
+        _resultCalories.value = formatNumber(result.calories)
+        _resultProtein.value = formatNumber(result.protein)
+        _resultFat.value = formatNumber(result.fat)
+        _resultCarbs.value = formatNumber(result.carbs)
+    }
+
+    private fun formatNumber(value: Double): String =
+        if (value % 1.0 == 0.0) value.toLong().toString() else value.toString()
+
+    companion object {
+        private val HH_MM: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
+    }
+}
+
+/**
+ * Контракт TakePicture, который также выдаёт camera-приложению права на запись
+ * в FileProvider-Uri (грант флагами). Базовая реализация androidx.activity
+ * флагов не добавляет (проверено по байткоду activity 1.9.3).
+ */
+private class GrantingTakePicture : ActivityResultContracts.TakePicture() {
+    override fun createIntent(context: Context, input: Uri): Intent =
+        super.createIntent(context, input).addFlags(
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        )
+}
+
+@Composable
+fun AddMealScreen(
+    onDone: () -> Unit,
+    onGoSettings: () -> Unit,
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
+    viewModel: AddMealViewModel = viewModel()
+) {
+    val context = LocalContext.current
+    val phase by viewModel.phase.collectAsStateWithLifecycle()
+    val photos by viewModel.photos.collectAsStateWithLifecycle()
+    val note by viewModel.note.collectAsStateWithLifecycle()
+    val error by viewModel.error.collectAsStateWithLifecycle()
+
+    LaunchedEffect(Unit) {
+        viewModel.messages.collect { message -> snackbarHostState.showSnackbar(message) }
+    }
+
+    // Камера.
+    var pendingCaptureUri by rememberSaveable { mutableStateOf<Uri?>(null) }
+    val cameraLauncher = rememberLauncherForActivityResult(GrantingTakePicture()) { success ->
+        val uri = pendingCaptureUri
+        pendingCaptureUri = null
+        if (success) uri?.let { viewModel.addPhoto(context, it) }
+    }
+    fun launchCamera() {
+        val file = File(context.cacheDir, "camera/${System.currentTimeMillis()}.jpg")
+        file.parentFile?.mkdirs()
+        file.createNewFile()
+        val uri = FileProvider.getUriForFile(context, FILE_PROVIDER_AUTHORITY, file)
+        pendingCaptureUri = uri
+        cameraLauncher.launch(uri)
+    }
+
+    // Галерея (максимум 10 фото суммарно, обрезка — в колбэке).
+    val galleryLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(maxItems = 10)
+    ) { uris ->
+        val remaining = (10 - viewModel.photos.value.size).coerceAtLeast(0)
+        uris.take(remaining).forEach { viewModel.addPhoto(context, it) }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Column {
+            Text(
+                text = "Добавить еду 🍽️",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "Сфотографируйте блюдо — ИИ посчитает калории и КБЖУ",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        when (val p = phase) {
+            is AddMealPhase.Analyzing -> AnalyzingBlock()
+            is AddMealPhase.Saving -> SavingBlock()
+            is AddMealPhase.Result -> {
+                error?.let { ErrorBlock(message = it, onGoSettings = onGoSettings) }
+                ResultEditorBlock(
+                    result = p.result,
+                    viewModel = viewModel,
+                    onSave = { viewModel.saveMeal(onDone) },
+                    onCancel = viewModel::cancelResult
+                )
+            }
+            AddMealPhase.Idle -> {
+                error?.let { ErrorBlock(message = it, onGoSettings = onGoSettings) }
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    PhotoSourceTile(
+                        emoji = "📷",
+                        label = "Камера",
+                        modifier = Modifier.weight(1f),
+                        onClick = ::launchCamera
+                    )
+                    PhotoSourceTile(
+                        emoji = "🖼️",
+                        label = "Галерея",
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            galleryLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        }
+                    )
+                }
+                if (photos.isNotEmpty()) {
+                    PhotoPreviewRow(photos = photos, onRemove = viewModel::removePhoto)
+                }
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = viewModel::setNote,
+                    label = { Text("Что ели? Например: борщ со сметаной") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(
+                        onClick = { viewModel.analyze(context) },
+                        enabled = photos.isNotEmpty(),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("✨ Анализировать")
+                    }
+                    OutlinedButton(
+                        onClick = { viewModel.enqueueBackground(context, onDone) },
+                        enabled = photos.isNotEmpty(),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("🌙 В фоне")
+                    }
+                }
+                if (photos.isNotEmpty()) {
+                    Text(
+                        text = "Фоновый режим: приложение можно закрыть — результат придёт уведомлением",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ---------- Блоки фаз ----------
+
+@Composable
+private fun AnalyzingBlock() {
+    PhaseCard(emoji = "🔍", title = "ИИ считает калории…", subtitle = "Обычно это занимает несколько секунд")
+}
+
+@Composable
+private fun SavingBlock() {
+    PhaseCard(emoji = "💾", title = "Сохраняем…", subtitle = null)
+}
+
+@Composable
+private fun PhaseCard(emoji: String, title: String, subtitle: String?) {
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surface
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 40.dp, horizontal = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(emoji, style = MaterialTheme.typography.displaySmall)
+            Spacer(Modifier.height(12.dp))
+            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(16.dp))
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            if (subtitle != null) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ErrorBlock(message: String, onGoSettings: () -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.error
+        )
+        if (message == "Укажите ключ Gemini в настройках") {
+            TextButton(onClick = onGoSettings) { Text("Перейти в настройки") }
+        }
+    }
+}
+
+@Composable
+private fun PhotoSourceTile(
+    emoji: String,
+    label: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant
+        ),
+        modifier = modifier
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(emoji, style = MaterialTheme.typography.headlineMedium)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun PhotoPreviewRow(photos: List<Uri>, onRemove: (Uri) -> Unit) {
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        items(photos, key = { it.toString() }) { uri ->
+            Box {
+                AsyncImage(
+                    model = uri,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(96.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                )
+                IconButton(
+                    onClick = { onRemove(uri) },
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.55f))
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = "Убрать фото",
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ---------- Фаза результата: редактирование ----------
+
+@Composable
+private fun ResultEditorBlock(
+    result: MealAnalysisResult,
+    viewModel: AddMealViewModel,
+    onSave: () -> Unit,
+    onCancel: () -> Unit
+) {
+    val name by viewModel.resultName.collectAsStateWithLifecycle()
+    val calories by viewModel.resultCalories.collectAsStateWithLifecycle()
+    val protein by viewModel.resultProtein.collectAsStateWithLifecycle()
+    val fat by viewModel.resultFat.collectAsStateWithLifecycle()
+    val carbs by viewModel.resultCarbs.collectAsStateWithLifecycle()
+
+    val caloriesValue = calories.trim().replace(",", ".").toDoubleOrNull()
+    val proteinValue = protein.trim().replace(",", ".").toDoubleOrNull()
+    val fatValue = fat.trim().replace(",", ".").toDoubleOrNull()
+    val carbsValue = carbs.trim().replace(",", ".").toDoubleOrNull()
+    val canSave = caloriesValue != null && proteinValue != null &&
+        fatValue != null && carbsValue != null
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        OutlinedTextField(
+            value = name,
+            onValueChange = viewModel::setResultName,
+            label = { Text("Название") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
+        )
+        OutlinedTextField(
+            value = calories,
+            onValueChange = viewModel::setResultCalories,
+            label = { Text("Калории, ккал") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedTextField(
+                value = protein,
+                onValueChange = viewModel::setResultProtein,
+                label = { Text("Белки, г") },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+            )
+            OutlinedTextField(
+                value = fat,
+                onValueChange = viewModel::setResultFat,
+                label = { Text("Жиры, г") },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+            )
+            OutlinedTextField(
+                value = carbs,
+                onValueChange = viewModel::setResultCarbs,
+                label = { Text("Углеводы, г") },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+            )
+        }
+        if (result.confidenceScore < 7.0) {
+            Text(
+                text = "⚠️ Низкая уверенность — проверьте значения",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color(0xFFEF6C00)
+            )
+        }
+        ProductsBlock(items = result.items)
+        if (result.aiThoughts.isNotBlank()) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp)) {
+                    Text("Мысли ИИ", style = MaterialTheme.typography.titleSmall)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = result.aiThoughts,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+        HorizontalDivider()
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) {
+                Text("Отмена")
+            }
+            Button(onClick = onSave, enabled = canSave, modifier = Modifier.weight(1f)) {
+                Text("Сохранить")
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProductsBlock(items: List<com.nutrilens.app.ai.AnalyzedItemResult>) {
+    if (items.isEmpty()) return
+    var expanded by remember { mutableStateOf(true) }
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded }
+                .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Продукты (${items.size})",
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.weight(1f)
+            )
+            Icon(
+                imageVector = if (expanded) {
+                    Icons.Filled.KeyboardArrowUp
+                } else {
+                    Icons.Filled.KeyboardArrowDown
+                },
+                contentDescription = if (expanded) "Свернуть" else "Развернуть"
+            )
+        }
+        if (expanded) {
+            items.forEach { item ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = item.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = "${item.weightG.roundToInt()} г · ${item.calories.roundToInt()} ккал",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+private const val FILE_PROVIDER_AUTHORITY = "com.nutrilens.app.fileprovider"
