@@ -19,6 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -44,6 +45,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import com.nutrilens.app.ai.GeminiTools
 import com.nutrilens.app.data.NutriLensDatabase
 import com.nutrilens.app.data.SettingsRepository
 import com.nutrilens.app.data.WeightEntity
@@ -54,6 +56,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
@@ -64,11 +67,16 @@ import kotlin.math.roundToInt
 data class DayStat(
     val date: LocalDate,
     val kcal: Double,
-    val protein: Double
+    val protein: Double,
+    val fat: Double = 0.0,
+    val carbs: Double = 0.0,
+    val names: String = ""
 )
 
 data class ReportState(
+    val period: Int = 7,
     val days: List<DayStat> = emptyList(),
+    val monthly: List<DayStat> = emptyList(),
     val weights: List<WeightEntity> = emptyList(),
     val waterAvgMl: Int = 0,
     val waterNormMl: Int = 0,
@@ -77,6 +85,9 @@ data class ReportState(
     val overDays: Int = 0,
     val avgKcal: Double = 0.0,
     val avgProtein: Double = 0.0,
+    val adherencePct: Int = 0,
+    val recentAvg: Double = 0.0,
+    val recentData: String = "",
     val loaded: Boolean = false
 )
 
@@ -88,6 +99,15 @@ class ReportViewModel(application: Application) : AndroidViewModel(application) 
     private val _state = MutableStateFlow(ReportState())
     val state: StateFlow<ReportState> = _state.asStateFlow()
 
+    private val _aiLoading = MutableStateFlow(false)
+    val aiLoading: StateFlow<Boolean> = _aiLoading.asStateFlow()
+
+    private val _aiText = MutableStateFlow<String?>(null)
+    val aiText: StateFlow<String?> = _aiText.asStateFlow()
+
+    private val _aiError = MutableStateFlow<String?>(null)
+    val aiError: StateFlow<String?> = _aiError.asStateFlow()
+
     init {
         viewModelScope.launch {
             combine(periodDays, settingsRepo.observe()) { p, s -> p to s }
@@ -98,6 +118,35 @@ class ReportViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setPeriod(days: Int) {
         periodDays.value = days
+    }
+
+    /** «Оценка от ИИ»: statsInsight по последним активным дням. */
+    fun loadAiAssessment() {
+        if (_aiLoading.value) return
+        viewModelScope.launch {
+            val settings = settingsRepo.get()
+            if (settings.apiKey.isBlank()) {
+                _aiError.value = "Сначала добавьте ключ Gemini в настройках"
+                return@launch
+            }
+            val current = _state.value
+            if (current.recentData.isBlank()) {
+                _aiError.value = "Пока недостаточно данных для оценки"
+                return@launch
+            }
+            _aiLoading.value = true
+            _aiError.value = null
+            try {
+                _aiText.value = GeminiTools.statsInsight(
+                    settings.apiKey,
+                    settings.dailyGoal,
+                    current.recentData
+                )
+            } catch (e: Exception) {
+                _aiError.value = e.message ?: "Не удалось получить оценку"
+            }
+            _aiLoading.value = false
+        }
     }
 
     private suspend fun load(period: Int, goal: Double, proteinGoal: Double?): ReportState {
@@ -114,12 +163,44 @@ class ReportViewModel(application: Application) : AndroidViewModel(application) 
             DayStat(
                 date = date,
                 kcal = list.sumOf { it.calories },
-                protein = list.sumOf { it.protein }
+                protein = list.sumOf { it.protein },
+                fat = list.sumOf { it.fat },
+                carbs = list.sumOf { it.carbs },
+                names = list.joinToString(", ") { it.name }
             )
         }
 
         val withMeals = days.filter { it.kcal > 0 }
         val overDays = withMeals.count { it.kcal > goal }
+
+        // Год: 12 месячных корзин — средняя калорийность активного дня в месяце.
+        val monthly = if (period >= 365) {
+            val byMonth = withMeals.groupBy { YearMonth.from(it.date) }
+            (11 downTo 0).map { back ->
+                val ym = YearMonth.from(today).minusMonths(back.toLong())
+                val list = byMonth[ym].orEmpty()
+                DayStat(
+                    date = ym.atDay(1),
+                    kcal = if (list.isEmpty()) 0.0 else list.sumOf { it.kcal } / list.size,
+                    protein = if (list.isEmpty()) 0.0 else list.sumOf { it.protein } / list.size,
+                    fat = if (list.isEmpty()) 0.0 else list.sumOf { it.fat } / list.size,
+                    carbs = if (list.isEmpty()) 0.0 else list.sumOf { it.carbs } / list.size
+                )
+            }
+        } else {
+            emptyList()
+        }
+
+        val adherence = if (withMeals.isEmpty()) 0
+        else ((withMeals.size - overDays) * 100) / withMeals.size
+        val recentThree = withMeals.takeLast(3)
+        val recentAvg = if (recentThree.isEmpty()) 0.0
+        else recentThree.sumOf { it.kcal } / recentThree.size
+        val recentData = withMeals.takeLast(14).joinToString("\n") { d ->
+            "${d.date}: ${d.kcal.roundToInt()} ккал " +
+                "(Б:${d.protein.roundToInt()} Ж:${d.fat.roundToInt()} У:${d.carbs.roundToInt()}). " +
+                "Ел: ${d.names.ifBlank { "—" }}"
+        }
 
         // Стрик: подряд идущие дни с записями, от сегодня (или вчера, если сегодня ещё нет).
         val allDates = db.mealDao()
@@ -140,7 +221,9 @@ class ReportViewModel(application: Application) : AndroidViewModel(application) 
         val waterNorm = ((lastWeight ?: 75.0) * 35).roundToInt()
 
         return ReportState(
+            period = period,
             days = days,
+            monthly = monthly,
             weights = weights,
             waterAvgMl = waterAvg,
             waterNormMl = waterNorm,
@@ -150,6 +233,9 @@ class ReportViewModel(application: Application) : AndroidViewModel(application) 
             avgKcal = if (withMeals.isEmpty()) 0.0 else withMeals.sumOf { it.kcal } / withMeals.size,
             avgProtein = if (withMeals.isEmpty()) 0.0
             else withMeals.sumOf { it.protein } / withMeals.size,
+            adherencePct = adherence,
+            recentAvg = recentAvg,
+            recentData = recentData,
             loaded = true
         )
     }
@@ -160,6 +246,9 @@ class ReportViewModel(application: Application) : AndroidViewModel(application) 
 @Composable
 fun ReportScreen(viewModel: ReportViewModel = androidx.lifecycle.viewmodel.compose.viewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val aiLoading by viewModel.aiLoading.collectAsStateWithLifecycle()
+    val aiText by viewModel.aiText.collectAsStateWithLifecycle()
+    val aiError by viewModel.aiError.collectAsStateWithLifecycle()
 
     Column(
         modifier = Modifier
@@ -200,12 +289,97 @@ fun ReportScreen(viewModel: ReportViewModel = androidx.lifecycle.viewmodel.compo
             else -> {
                 SummaryGrid(state)
                 Spacer(Modifier.height(16.dp))
-                CalorieCard(state)
+                if (state.period >= 365) {
+                    CalorieCard(
+                        state,
+                        days = state.monthly,
+                        title = "Средние калории по месяцам",
+                        labelMode = 2
+                    )
+                } else {
+                    CalorieCard(state, days = state.days, labelMode = if (state.days.size <= 7) 0 else 1)
+                }
+                Spacer(Modifier.height(16.dp))
+                NarrativeCard(state)
                 Spacer(Modifier.height(16.dp))
                 WeightCard(state.weights)
                 Spacer(Modifier.height(16.dp))
                 WaterCard(state.waterAvgMl, state.waterNormMl)
+                Spacer(Modifier.height(16.dp))
+                PillButton(
+                    text = if (aiLoading) "ИИ изучает статистику…" else "✨ Оценка от ИИ",
+                    onClick = viewModel::loadAiAssessment,
+                    enabled = !aiLoading,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                aiError?.let { err ->
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        err,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                if (aiLoading) {
+                    Spacer(Modifier.height(16.dp))
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+                aiText?.let { text ->
+                    Spacer(Modifier.height(12.dp))
+                    FreshCard(Modifier.fillMaxWidth()) {
+                        MarkdownText(text, Modifier.padding(16.dp))
+                    }
+                }
                 Spacer(Modifier.height(24.dp))
+            }
+        }
+    }
+}
+
+/** Детерминированный вывод по периоду (как нарратив в веб-версии). */
+@Composable
+private fun NarrativeCard(state: ReportState) {
+    FreshCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text(
+                "Итоги периода",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Дней в цели: ${state.adherencePct}% (${state.days.count { it.kcal > 0 }} активных дней)",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (state.overDays > 0) {
+                Text(
+                    "Дней выше цели: ${state.overDays}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (state.recentAvg > 0) {
+                val delta = state.recentAvg - state.goal
+                val line = when {
+                    kotlin.math.abs(delta) <= 60 ->
+                        "Последние 3 дня: ${state.recentAvg.roundToInt()} ккал — держитесь цели 🎯"
+                    delta > 0 ->
+                        "Последние 3 дня: ${state.recentAvg.roundToInt()} ккал — на ${delta.roundToInt()} ккал выше цели"
+                    else ->
+                        "Последние 3 дня: ${state.recentAvg.roundToInt()} ккал — на ${-delta.roundToInt()} ккал ниже цели"
+                }
+                Text(
+                    line,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
@@ -220,7 +394,7 @@ private fun PeriodSwitcher(onPeriod: (Int) -> Unit, modifier: Modifier = Modifie
         modifier = modifier
     ) {
         Row(modifier = Modifier.padding(4.dp)) {
-            listOf(7 to "Неделя", 30 to "Месяц").forEach { (days, label) ->
+            listOf(7 to "Неделя", 30 to "Месяц", 365 to "Год").forEach { (days, label) ->
                 val active = selected == days
                 Box(
                     modifier = Modifier
@@ -318,16 +492,25 @@ private fun SummaryCard(
     }
 }
 
+/**
+ * labelMode: 0 — дни недели, 1 — даты, 2 — месяцы.
+ * Статусы баров как в веб-версии: в цели — зелёный, до +200 ккал — янтарный, выше — терракотовый.
+ */
 @Composable
-private fun CalorieCard(state: ReportState) {
-    val isWeek = state.days.size <= 7
+private fun CalorieCard(
+    state: ReportState,
+    days: List<DayStat>,
+    title: String = "Калории по дням",
+    labelMode: Int = 0
+) {
+    val warningColor = Color(0xFFD08700)
     Surface(
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surface
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                "Калории по дням",
+                title,
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -345,10 +528,10 @@ private fun CalorieCard(state: ReportState) {
             val track = MaterialTheme.colorScheme.surfaceVariant
 
             Canvas(modifier = Modifier.fillMaxWidth().height(160.dp)) {
-                val n = state.days.size
+                val n = days.size
                 if (n == 0) return@Canvas
                 val slot = size.width / n
-                val maxVal = (maxOf(state.goal, state.days.maxOf { it.kcal }) * 1.15).coerceAtLeast(1.0)
+                val maxVal = (maxOf(state.goal, days.maxOf { it.kcal }) * 1.15).coerceAtLeast(1.0)
                 val hFor = { v: Double -> (v / maxVal * size.height).toFloat() }
 
                 // Линия цели.
@@ -361,7 +544,7 @@ private fun CalorieCard(state: ReportState) {
                     pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f), 0f)
                 )
 
-                state.days.forEachIndexed { i, day ->
+                days.forEachIndexed { i, day ->
                     val barW = slot * 0.56f
                     val x = i * slot + (slot - barW) / 2
                     val h = hFor(day.kcal).coerceAtLeast(if (day.kcal > 0) 6f else 0f)
@@ -373,8 +556,13 @@ private fun CalorieCard(state: ReportState) {
                         cornerRadius = CornerRadius(6f, 6f)
                     )
                     if (h > 0f) {
+                        val barColor = when {
+                            day.kcal > state.goal + 200 -> over
+                            day.kcal > state.goal -> warningColor
+                            else -> primary
+                        }
                         drawRoundRect(
-                            color = if (day.kcal > state.goal) over else primary,
+                            color = barColor,
                             topLeft = Offset(x, size.height - h),
                             size = Size(barW, h),
                             cornerRadius = CornerRadius(6f, 6f)
@@ -384,12 +572,14 @@ private fun CalorieCard(state: ReportState) {
             }
             Spacer(Modifier.height(6.dp))
             Row {
-                state.days.forEachIndexed { i, day ->
-                    val label = if (isWeek) {
-                        day.date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale("ru"))
-                    } else if (i % 5 == 0 || i == state.days.size - 1) {
-                        "${day.date.dayOfMonth}.${day.date.monthValue}"
-                    } else ""
+                days.forEachIndexed { i, day ->
+                    val label = when (labelMode) {
+                        0 -> day.date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale("ru"))
+                        2 -> day.date.month.getDisplayName(TextStyle.SHORT, Locale("ru"))
+                        else -> if (i % 5 == 0 || i == days.size - 1) {
+                            "${day.date.dayOfMonth}.${day.date.monthValue}"
+                        } else ""
+                    }
                     Text(
                         text = label,
                         style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),

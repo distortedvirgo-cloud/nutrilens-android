@@ -1,6 +1,8 @@
 package com.nutrilens.app.ui
 
 import android.app.Application
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,6 +21,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -30,10 +33,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusEvent
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -45,6 +50,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nutrilens.app.BuildConfig
 import com.nutrilens.app.bg.ReminderSync
+import com.nutrilens.app.data.Backup
 import com.nutrilens.app.data.NutriLensDatabase
 import com.nutrilens.app.data.SettingsEntity
 import com.nutrilens.app.data.SettingsRepository
@@ -57,6 +63,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 
 sealed class UpdateUiState {
     object Idle : UpdateUiState()
@@ -77,6 +84,28 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     private val _updateState = MutableStateFlow<UpdateUiState>(UpdateUiState.Idle)
     val updateState: StateFlow<UpdateUiState> = _updateState.asStateFlow()
+
+    private val _dataMessage = MutableStateFlow<String?>(null)
+    val dataMessage: StateFlow<String?> = _dataMessage.asStateFlow()
+
+    // ---- Резервные копии ----
+    suspend fun buildExport(): String = Backup.exportJson(appContext, database)
+
+    fun reportExportResult(ok: Boolean) {
+        _dataMessage.value = if (ok) "Резервная копия сохранена ✅"
+        else "Не удалось сохранить файл"
+    }
+
+    fun importFrom(json: String) {
+        viewModelScope.launch {
+            try {
+                Backup.importJson(appContext, database, json)
+                _dataMessage.value = "Данные импортированы ✅"
+            } catch (e: Exception) {
+                _dataMessage.value = "Ошибка импорта: ${e.message?.take(120)}"
+            }
+        }
+    }
 
     // ---- ИИ ----
     fun setApiKey(value: String) = update { it.copy(apiKey = value) }
@@ -179,8 +208,45 @@ enum class ReminderKind { BREAKFAST, LUNCH, DINNER }
 fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val updateState by viewModel.updateState.collectAsStateWithLifecycle()
+    val dataMessage by viewModel.dataMessage.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     var timePickerFor by remember { mutableStateOf<ReminderKind?>(null) }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val ok = runCatching {
+                    val json = viewModel.buildExport()
+                    context.contentResolver.openOutputStream(uri)?.use { stream ->
+                        stream.write(json.toByteArray(Charsets.UTF_8))
+                    } ?: error("нет доступа к файлу")
+                }.isSuccess
+                viewModel.reportExportResult(ok)
+            }
+        }
+    }
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val json = runCatching {
+                    context.contentResolver.openInputStream(uri)?.use { stream ->
+                        stream.readBytes().decodeToString()
+                    }
+                }.getOrNull()
+                if (json == null) {
+                    viewModel.reportExportResult(false)
+                } else {
+                    viewModel.importFrom(json)
+                }
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -429,6 +495,42 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        }
+
+        // ---- Данные ----
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("Данные", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Резервная копия в JSON: дневник, вес, вода, настройки, избранное",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = {
+                            exportLauncher.launch("nutrilens_backup_${LocalDate.now()}.json")
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) { Text("Экспорт") }
+                    OutlinedButton(
+                        onClick = { importLauncher.launch(arrayOf("application/json")) },
+                        modifier = Modifier.weight(1f)
+                    ) { Text("Импорт") }
+                }
+                dataMessage?.let { message ->
+                    Text(
+                        message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
         }
 

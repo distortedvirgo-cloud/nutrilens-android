@@ -28,11 +28,14 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Restaurant
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -41,6 +44,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,6 +68,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import com.nutrilens.app.data.FavoriteEntity
+import com.nutrilens.app.data.FavoriteRepository
+import com.nutrilens.app.data.MealEntity
 import com.nutrilens.app.data.MealItemEntity
 import com.nutrilens.app.data.MealRepository
 import com.nutrilens.app.data.MealWithImages
@@ -107,6 +114,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private val settingsRepository = SettingsRepository(database.settingsDao())
     private val waterRepository = WaterRepository(database.waterDao())
     private val weightRepository = WeightRepository(database.weightDao())
+    private val favoriteRepository = FavoriteRepository(database.favoriteDao())
+
+    val favorites: StateFlow<List<FavoriteEntity>> = favoriteRepository.observe()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _selectedDate = MutableStateFlow(LocalDate.now())
     val selectedDate: StateFlow<LocalDate> = _selectedDate.asStateFlow()
@@ -195,6 +206,25 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    /** Восстановление после удаления (кнопка «Вернуть» в снекбаре). */
+    fun restoreMeal(meal: MealWithImages, items: List<MealItemEntity>) {
+        viewModelScope.launch {
+            mealRepository.addMeal(meal.meal, meal.images, items)
+        }
+    }
+
+    fun addFavorite(meal: MealEntity) {
+        viewModelScope.launch {
+            favoriteRepository.add(meal.name, meal.calories, meal.protein, meal.fat, meal.carbs)
+        }
+    }
+
+    fun updateMeal(updated: MealEntity) {
+        viewModelScope.launch {
+            mealRepository.updateMeal(updated)
+        }
+    }
+
     suspend fun itemsForMeal(mealId: String): List<MealItemEntity> =
         mealRepository.itemsForMeal(mealId)
 
@@ -207,9 +237,12 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 @Composable
 fun DashboardScreen(
     initialDate: String? = null,
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     viewModel: DashboardViewModel = viewModel()
 ) {
+    val scope = rememberCoroutineScope()
     val meals by viewModel.meals.collectAsStateWithLifecycle()
+    val favorites by viewModel.favorites.collectAsStateWithLifecycle()
     val selectedDate by viewModel.selectedDate.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val waterMl by viewModel.waterMl.collectAsStateWithLifecycle()
@@ -229,7 +262,11 @@ fun DashboardScreen(
     var detailsMeal by remember { mutableStateOf<MealWithImages?>(null) }
     var detailItems by remember { mutableStateOf<List<MealItemEntity>>(emptyList()) }
     var deleteTarget by remember { mutableStateOf<MealWithImages?>(null) }
+    var editTarget by remember { mutableStateOf<MealWithImages?>(null) }
     var showWeightDialog by remember { mutableStateOf(false) }
+
+    fun isFavorite(meal: MealEntity): Boolean =
+        favorites.any { it.name == meal.name && kotlin.math.abs(it.calories - meal.calories) < 0.5 }
 
     LaunchedEffect(detailsMeal?.meal?.id) {
         detailsMeal?.let { detailItems = viewModel.itemsForMeal(it.meal.id) }
@@ -295,6 +332,8 @@ fun DashboardScreen(
             items(meals, key = { it.meal.id }) { meal ->
                 MealCard(
                     meal = meal,
+                    showFavorite = !isFavorite(meal.meal),
+                    onFavorite = { viewModel.addFavorite(meal.meal) },
                     onClick = {
                         detailsMeal = meal
                         detailItems = emptyList()
@@ -306,7 +345,26 @@ fun DashboardScreen(
     }
 
     detailsMeal?.let { meal ->
-        MealDetailsDialog(meal = meal, items = detailItems, onClose = { detailsMeal = null })
+        MealDetailsDialog(
+            meal = meal,
+            items = detailItems,
+            onClose = { detailsMeal = null },
+            onEdit = {
+                editTarget = meal
+                detailsMeal = null
+            }
+        )
+    }
+
+    editTarget?.let { meal ->
+        MealEditDialog(
+            meal = meal.meal,
+            onSave = { updated ->
+                viewModel.updateMeal(updated)
+                editTarget = null
+            },
+            onDismiss = { editTarget = null }
+        )
     }
 
     deleteTarget?.let { meal ->
@@ -317,8 +375,18 @@ fun DashboardScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.deleteMeal(meal)
                         deleteTarget = null
+                        scope.launch {
+                            val items = viewModel.itemsForMeal(meal.meal.id)
+                            viewModel.deleteMeal(meal)
+                            val result = snackbarHostState.showSnackbar(
+                                message = "Запись удалена",
+                                actionLabel = "Вернуть"
+                            )
+                            if (result == SnackbarResult.ActionPerformed) {
+                                viewModel.restoreMeal(meal, items)
+                            }
+                        }
                     }
                 ) {
                     Text("Удалить", color = MaterialTheme.colorScheme.error)
@@ -435,8 +503,11 @@ private fun CaloriesHero(meals: List<MealWithImages>, settings: SettingsEntity) 
     val arcColor = if (isOver) MaterialTheme.colorScheme.tertiary
     else MaterialTheme.colorScheme.primary
     val trackColor = MaterialTheme.colorScheme.surfaceVariant
+    // Тап по карточке переключает центр кольца: съедено ↔ остаток/перебор.
+    var showRemaining by remember { mutableStateOf(false) }
 
     Surface(
+        onClick = { showRemaining = !showRemaining },
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surface
     ) {
@@ -477,17 +548,33 @@ private fun CaloriesHero(meals: List<MealWithImages>, settings: SettingsEntity) 
                     }
                 }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "${eaten.roundToInt()}",
-                        style = MaterialTheme.typography.displaySmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "из ${goal.roundToInt()} ккал",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    if (showRemaining) {
+                        val delta = (goal - eaten).roundToInt()
+                        Text(
+                            text = "${kotlin.math.abs(delta)}",
+                            style = MaterialTheme.typography.displaySmall,
+                            fontWeight = FontWeight.Bold,
+                            color = if (delta < 0) MaterialTheme.colorScheme.tertiary
+                            else MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = if (delta < 0) "перебор ккал" else "осталось ккал",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Text(
+                            text = "${eaten.roundToInt()}",
+                            style = MaterialTheme.typography.displaySmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "из ${goal.roundToInt()} ккал",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
             Spacer(Modifier.height(12.dp))
@@ -872,6 +959,8 @@ private fun MealsHeader(count: Int) {
 @Composable
 private fun MealCard(
     meal: MealWithImages,
+    showFavorite: Boolean,
+    onFavorite: () -> Unit,
     onClick: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -924,12 +1013,23 @@ private fun MealCard(
                 ConfidenceBadge(score = meal.meal.confidenceScore)
             }
             Spacer(Modifier.width(4.dp))
-            IconButton(onClick = onDelete) {
-                Icon(
-                    imageVector = Icons.Filled.Delete,
-                    contentDescription = "Удалить",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                )
+            Column {
+                if (showFavorite) {
+                    IconButton(onClick = onFavorite) {
+                        Icon(
+                            imageVector = Icons.Filled.StarBorder,
+                            contentDescription = "В избранное",
+                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f)
+                        )
+                    }
+                }
+                IconButton(onClick = onDelete) {
+                    Icon(
+                        imageVector = Icons.Filled.Delete,
+                        contentDescription = "Удалить",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    )
+                }
             }
         }
     }
@@ -997,7 +1097,8 @@ private fun ConfidenceBadge(score: Double) {
 private fun MealDetailsDialog(
     meal: MealWithImages,
     items: List<MealItemEntity>,
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    onEdit: () -> Unit
 ) {
     val m = meal.meal
     AlertDialog(
@@ -1047,6 +1148,110 @@ private fun MealDetailsDialog(
         },
         confirmButton = {
             TextButton(onClick = onClose) { Text("Закрыть") }
+        },
+        dismissButton = {
+            TextButton(onClick = onEdit) { Text("Изменить") }
+        }
+    )
+}
+
+// ---------- Диалог правки приёма пищи ----------
+
+@Composable
+private fun MealEditDialog(
+    meal: MealEntity,
+    onSave: (MealEntity) -> Unit,
+    onDismiss: () -> Unit
+) {
+    fun fmt(value: Double): String =
+        if (value % 1.0 == 0.0) value.toLong().toString() else value.toString()
+
+    var name by remember(meal.id) { mutableStateOf(meal.name) }
+    var calories by remember(meal.id) { mutableStateOf(fmt(meal.calories)) }
+    var protein by remember(meal.id) { mutableStateOf(fmt(meal.protein)) }
+    var fat by remember(meal.id) { mutableStateOf(fmt(meal.fat)) }
+    var carbs by remember(meal.id) { mutableStateOf(fmt(meal.carbs)) }
+
+    val caloriesValue = calories.trim().replace(",", ".").toDoubleOrNull()
+    val proteinValue = protein.trim().replace(",", ".").toDoubleOrNull()
+    val fatValue = fat.trim().replace(",", ".").toDoubleOrNull()
+    val carbsValue = carbs.trim().replace(",", ".").toDoubleOrNull()
+    val canSave = name.isNotBlank() && caloriesValue != null &&
+        proteinValue != null && fatValue != null && carbsValue != null
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Изменить запись") },
+        text = {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Название") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = calories,
+                    onValueChange = { calories = it },
+                    label = { Text("Калории, ккал") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = protein,
+                        onValueChange = { protein = it },
+                        label = { Text("Б") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = fat,
+                        onValueChange = { fat = it },
+                        label = { Text("Ж") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = carbs,
+                        onValueChange = { carbs = it },
+                        label = { Text("У") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = canSave,
+                onClick = {
+                    if (caloriesValue != null && proteinValue != null &&
+                        fatValue != null && carbsValue != null
+                    ) {
+                        onSave(
+                            meal.copy(
+                                name = name.trim(),
+                                calories = caloriesValue,
+                                protein = proteinValue,
+                                fat = fatValue,
+                                carbs = carbsValue
+                            )
+                        )
+                    }
+                }
+            ) { Text("Сохранить") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Отмена") }
         }
     )
 }

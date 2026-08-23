@@ -48,6 +48,18 @@ abstract class MealDao {
     @Query("DELETE FROM meal_items WHERE mealId = :mealId")
     abstract suspend fun deleteItemsByMeal(mealId: String)
 
+    @Query("SELECT * FROM meals")
+    abstract suspend fun allMeals(): List<MealEntity>
+
+    @Query("DELETE FROM meals")
+    abstract suspend fun deleteAll()
+
+    @Query("DELETE FROM meal_images")
+    abstract suspend fun deleteAllImages()
+
+    @Query("DELETE FROM meal_items")
+    abstract suspend fun deleteAllItems()
+
     @Transaction
     open suspend fun deleteMealWithRelated(mealId: String) {
         deleteItemsByMeal(mealId)
@@ -66,6 +78,12 @@ interface WeightDao {
 
     @Query("SELECT * FROM weights WHERE date >= :since ORDER BY date")
     suspend fun since(since: String): List<WeightEntity>
+
+    @Query("SELECT * FROM weights ORDER BY date")
+    suspend fun all(): List<WeightEntity>
+
+    @Query("DELETE FROM weights")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -78,6 +96,12 @@ interface WaterDao {
 
     @Query("SELECT * FROM water WHERE date BETWEEN :start AND :end")
     suspend fun between(start: String, end: String): List<WaterEntity>
+
+    @Query("SELECT * FROM water")
+    suspend fun all(): List<WaterEntity>
+
+    @Query("DELETE FROM water")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -87,6 +111,12 @@ interface WorkoutDao {
 
     @Query("SELECT * FROM workouts WHERE date = :date")
     suspend fun byDate(date: String): WorkoutEntity?
+
+    @Query("SELECT * FROM workouts")
+    suspend fun all(): List<WorkoutEntity>
+
+    @Query("DELETE FROM workouts")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -99,6 +129,12 @@ interface HabitLogDao {
 
     @Query("SELECT * FROM habits_log WHERE date = :date")
     fun byDate(date: String): Flow<List<HabitLogEntity>>
+
+    @Query("SELECT * FROM habits_log")
+    suspend fun all(): List<HabitLogEntity>
+
+    @Query("DELETE FROM habits_log")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -111,6 +147,12 @@ interface FavoriteDao {
 
     @Query("DELETE FROM favorites WHERE id = :id")
     suspend fun deleteById(id: String)
+
+    @Query("SELECT * FROM favorites ORDER BY rowid DESC")
+    suspend fun allList(): List<FavoriteEntity>
+
+    @Query("DELETE FROM favorites")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -123,6 +165,9 @@ interface SettingsDao {
 
     @Query("SELECT * FROM settings WHERE id = 1")
     fun observe(): Flow<SettingsEntity?>
+
+    @Query("DELETE FROM settings")
+    suspend fun deleteAll()
 }
 
 @Dao

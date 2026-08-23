@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -71,6 +72,8 @@ import com.nutrilens.app.ai.ImagePrep
 import com.nutrilens.app.ai.MealAnalysisResult
 import com.nutrilens.app.ai.buildRecentMealsContext
 import com.nutrilens.app.bg.AnalysisScheduler
+import com.nutrilens.app.data.FavoriteEntity
+import com.nutrilens.app.data.FavoriteRepository
 import com.nutrilens.app.data.MealEntity
 import com.nutrilens.app.data.MealImageEntity
 import com.nutrilens.app.data.MealItemEntity
@@ -80,9 +83,11 @@ import com.nutrilens.app.data.SettingsRepository
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.io.File
@@ -112,6 +117,10 @@ class AddMealViewModel(application: Application) : AndroidViewModel(application)
         database.workoutDao()
     )
     private val settingsRepository = SettingsRepository(database.settingsDao())
+    private val favoriteRepository = FavoriteRepository(database.favoriteDao())
+
+    val favorites: StateFlow<List<FavoriteEntity>> = favoriteRepository.observe()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _note = MutableStateFlow("")
     val note: StateFlow<String> = _note.asStateFlow()
@@ -327,6 +336,37 @@ class AddMealViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /** Быстрое добавление блюда из избранного — без фото и анализа. */
+    fun addFromFavorite(favorite: FavoriteEntity, onDone: () -> Unit) {
+        viewModelScope.launch {
+            _error.value = null
+            try {
+                val now = LocalDateTime.now()
+                val settings = settingsRepository.get()
+                val meal = MealEntity(
+                    id = UUID.randomUUID().toString(),
+                    date = now.toLocalDate().toString(),
+                    time = now.toLocalTime().format(HH_MM),
+                    name = favorite.name,
+                    calories = favorite.calories,
+                    protein = favorite.protein,
+                    fat = favorite.fat,
+                    carbs = favorite.carbs,
+                    aiThoughts = "Добавлено из избранного",
+                    reasoning = "",
+                    confidenceScore = 10.0,
+                    dailyGoalSnapshot = settings.dailyGoal,
+                    createdAt = System.currentTimeMillis()
+                )
+                mealRepository.addMeal(meal, emptyList(), emptyList())
+                _messages.emit("Сохранено")
+                onDone()
+            } catch (e: Exception) {
+                _error.value = e.message ?: "Не удалось сохранить"
+            }
+        }
+    }
+
     private fun prefillResult(result: MealAnalysisResult) {
         _resultName.value = result.name
         _resultCalories.value = formatNumber(result.calories)
@@ -359,6 +399,7 @@ private class GrantingTakePicture : ActivityResultContracts.TakePicture() {
 fun AddMealScreen(
     onDone: () -> Unit,
     onGoSettings: () -> Unit,
+    onBack: () -> Unit,
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     viewModel: AddMealViewModel = viewModel()
 ) {
@@ -367,6 +408,7 @@ fun AddMealScreen(
     val photos by viewModel.photos.collectAsStateWithLifecycle()
     val note by viewModel.note.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
+    val favorites by viewModel.favorites.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) {
         viewModel.messages.collect { message -> snackbarHostState.showSnackbar(message) }
@@ -403,18 +445,28 @@ fun AddMealScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Column {
-            Text(
-                text = "Добавить еду 🍽️",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = "Сфотографируйте блюдо — ИИ посчитает калории и КБЖУ",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Назад",
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            Spacer(Modifier.width(4.dp))
+            Column {
+                Text(
+                    text = "Добавить еду 🍽️",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = "Сфотографируйте блюдо — ИИ посчитает калории и КБЖУ",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
 
         when (val p = phase) {
@@ -431,6 +483,11 @@ fun AddMealScreen(
             }
             AddMealPhase.Idle -> {
                 error?.let { ErrorBlock(message = it, onGoSettings = onGoSettings) }
+                if (photos.isEmpty() && favorites.isNotEmpty()) {
+                    FavoritesRow(favorites = favorites) { favorite ->
+                        viewModel.addFromFavorite(favorite, onDone)
+                    }
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     PhotoSourceTile(
                         emoji = "📷",
@@ -488,6 +545,46 @@ fun AddMealScreen(
 }
 
 // ---------- Блоки фаз ----------
+
+/** Избранное: тап по чипу сразу записывает блюдо в дневник. */
+@Composable
+private fun FavoritesRow(favorites: List<FavoriteEntity>, onPick: (FavoriteEntity) -> Unit) {
+    Column {
+        Text(
+            text = "⭐ Избранное",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(Modifier.height(8.dp))
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(favorites, key = { it.id }) { favorite ->
+                Surface(
+                    onClick = { onPick(favorite) },
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.outlineVariant
+                    )
+                ) {
+                    Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                        Text(
+                            text = favorite.name,
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "${favorite.calories.roundToInt()} ккал",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun AnalyzingBlock() {

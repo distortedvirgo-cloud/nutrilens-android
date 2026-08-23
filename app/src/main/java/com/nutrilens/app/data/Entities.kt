@@ -3,7 +3,9 @@ package com.nutrilens.app.data
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import kotlinx.serialization.Serializable
 
+@Serializable
 @Entity(tableName = "meals")
 data class MealEntity(
     @PrimaryKey val id: String,
@@ -45,6 +47,7 @@ data class MealItemEntity(
     val breakdown: String = ""
 )
 
+@Serializable
 @Entity(tableName = "favorites")
 data class FavoriteEntity(
     @PrimaryKey val id: String,
@@ -55,24 +58,28 @@ data class FavoriteEntity(
     val carbs: Double
 )
 
+@Serializable
 @Entity(tableName = "weights")
 data class WeightEntity(
     @PrimaryKey val date: String,
     val weight: Double
 )
 
+@Serializable
 @Entity(tableName = "water")
 data class WaterEntity(
     @PrimaryKey val date: String,
     val ml: Int = 0
 )
 
+@Serializable
 @Entity(tableName = "workouts")
 data class WorkoutEntity(
     @PrimaryKey val date: String,
     val done: Boolean = false
 )
 
+@Serializable
 @Entity(tableName = "habits_log", indices = [Index(value = ["date", "habitId"], unique = true)])
 data class HabitLogEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -80,6 +87,7 @@ data class HabitLogEntity(
     val habitId: String
 )
 
+@Serializable
 @Entity(tableName = "settings")
 data class SettingsEntity(
     @PrimaryKey val id: Int = 1,
