@@ -88,8 +88,8 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
                 drawRingBitmap(
                     context,
                     calFraction = (eaten / goal).toFloat().coerceIn(0f, 1f),
-                    fatFraction = if (macroGoals.fat > 0) {
-                        (fat / macroGoals.fat).toFloat().coerceIn(0f, 1f)
+                    carbsFraction = if (macroGoals.carbs > 0) {
+                        (carbs / macroGoals.carbs).toFloat().coerceIn(0f, 1f)
                     } else 0f,
                     proteinFraction = if (macroGoals.protein > 0) {
                         (protein / macroGoals.protein).toFloat().coerceIn(0f, 1f)
@@ -135,10 +135,10 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
             }
         }
 
-        private const val COLOR_GREEN = 0xFF7ED957.toInt()
-        private const val COLOR_CYAN = 0xFF37C8F2.toInt()
-        private const val COLOR_PURPLE = 0xFFB45BF0.toInt()
-        private const val COLOR_PINK = 0xFFF472B6.toInt()
+        private const val COLOR_GREEN = 0xFF059669.toInt()
+        private const val COLOR_BLUE = 0xFF2F6FD0.toInt()
+        private const val COLOR_PURPLE = 0xFF7D5FD6.toInt()
+        private const val COLOR_ORANGE = 0xFFEA580C.toInt()
 
         /**
          * Кольцо в стиле «активность»: три вложенных кольца с тёмными треками
@@ -150,7 +150,7 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
         private fun drawRingBitmap(
             context: Context,
             calFraction: Float,
-            fatFraction: Float,
+            carbsFraction: Float,
             proteinFraction: Float,
             isOver: Boolean
         ): Bitmap {
@@ -188,11 +188,11 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
                 }
             }
 
-            ring(r1, s1, if (isOver) 0xFFEA580C.toInt() else COLOR_GREEN, calFraction, 0.28f)
-            ring(r2, s2, COLOR_CYAN, fatFraction, 0.30f)
-            ring(r3, s3, COLOR_PURPLE, proteinFraction, 0.30f)
+            ring(r1, s1, if (isOver) COLOR_ORANGE else COLOR_GREEN, calFraction, 0.16f)
+            ring(r2, s2, COLOR_PURPLE, carbsFraction, 0.18f)
+            ring(r3, s3, COLOR_BLUE, proteinFraction, 0.18f)
 
-            // Бусины сверху: зелёная, голубая и розовая — как в референсе.
+            // Бусины сверху — изумрудная, голубая, фиолетовая (палитра макро).
             fun bead(angleDeg: Float, radius: Float, color: Int) {
                 val a = Math.toRadians(angleDeg.toDouble())
                 val x = cx + (radius * sin(a)).toFloat()
@@ -203,8 +203,8 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
                 canvas.drawCircle(x, y, br, paint)
             }
             bead(-18f, r1, COLOR_GREEN)
-            bead(6f, r1, COLOR_CYAN)
-            bead(28f, r1, COLOR_PINK)
+            bead(6f, r1, COLOR_BLUE)
+            bead(28f, r1, COLOR_PURPLE)
             return bmp
         }
     }

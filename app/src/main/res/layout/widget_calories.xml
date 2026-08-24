@@ -30,14 +30,14 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:autoSizeTextType="uniform"
-                android:autoSizeMinTextSize="7sp"
-                android:autoSizeMaxTextSize="9sp"
-                android:fontFamily="sans-serif-medium"
+                android:autoSizeMinTextSize="8sp"
+                android:autoSizeMaxTextSize="10sp"
+                android:fontFamily="sans-serif-black"
                 android:gravity="center"
                 android:maxLines="1"
                 android:text="1690"
-                android:textColor="#FFFFFF"
-                android:textSize="9sp" />
+                android:textColor="#0F172A"
+                android:textSize="10sp" />
 
             <TextView
                 android:id="@+id/widget_remain_unit"
@@ -47,7 +47,7 @@
                 android:gravity="center"
                 android:maxLines="1"
                 android:text="ккал"
-                android:textColor="#80FFFFFF"
+                android:textColor="#64748B"
                 android:textSize="7sp" />
         </LinearLayout>
     </FrameLayout>
@@ -57,7 +57,7 @@
         android:layout_height="wrap_content"
         android:layout_gravity="start|center_vertical"
         android:layout_marginStart="72dp"
-        android:layout_marginEnd="10dp"
+        android:layout_marginEnd="12dp"
         android:orientation="vertical">
 
         <LinearLayout
@@ -67,8 +67,8 @@
             android:orientation="horizontal">
 
             <ImageView
-                android:layout_width="18dp"
-                android:layout_height="18dp"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
                 android:contentDescription="@null"
                 android:src="@drawable/widget_icon_protein" />
 
@@ -76,12 +76,12 @@
                 android:id="@+id/widget_p"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="7dp"
-                android:fontFamily="sans-serif-medium"
+                android:layout_marginStart="8dp"
+                android:fontFamily="sans-serif-black"
                 android:maxLines="1"
                 android:text="0"
-                android:textColor="#FFFFFF"
-                android:textSize="13sp" />
+                android:textColor="#0F172A"
+                android:textSize="14sp" />
         </LinearLayout>
 
         <LinearLayout
@@ -92,8 +92,8 @@
             android:orientation="horizontal">
 
             <ImageView
-                android:layout_width="18dp"
-                android:layout_height="18dp"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
                 android:contentDescription="@null"
                 android:src="@drawable/widget_icon_fat" />
 
@@ -101,12 +101,12 @@
                 android:id="@+id/widget_f"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="7dp"
-                android:fontFamily="sans-serif-medium"
+                android:layout_marginStart="8dp"
+                android:fontFamily="sans-serif-black"
                 android:maxLines="1"
                 android:text="0"
-                android:textColor="#FFFFFF"
-                android:textSize="13sp" />
+                android:textColor="#0F172A"
+                android:textSize="14sp" />
         </LinearLayout>
 
         <LinearLayout
@@ -117,8 +117,8 @@
             android:orientation="horizontal">
 
             <ImageView
-                android:layout_width="18dp"
-                android:layout_height="18dp"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
                 android:contentDescription="@null"
                 android:src="@drawable/widget_icon_carbs" />
 
@@ -126,12 +126,12 @@
                 android:id="@+id/widget_c"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="7dp"
-                android:fontFamily="sans-serif-medium"
+                android:layout_marginStart="8dp"
+                android:fontFamily="sans-serif-black"
                 android:maxLines="1"
                 android:text="0"
-                android:textColor="#FFFFFF"
-                android:textSize="13sp" />
+                android:textColor="#0F172A"
+                android:textSize="14sp" />
         </LinearLayout>
     </LinearLayout>
 

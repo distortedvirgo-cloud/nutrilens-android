@@ -2,7 +2,7 @@
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item>
         <shape android:shape="oval">
-            <solid android:color="#37C8F2" />
+            <solid android:color="#26EA580C" />
         </shape>
     </item>
     <item
@@ -14,9 +14,9 @@
             android:height="24dp"
             android:viewportWidth="24"
             android:viewportHeight="24"
-            android:tint="#1E2A38">
+            android:tint="#EA580C">
             <path
-                android:fillColor="#1E2A38"
+                android:fillColor="#EA580C"
                 android:pathData="M12 2c-5.33 4.55-8 8.48-8 11.8 0 4.98 3.8 8.2 8 8.2s8-3.22 8-8.2C20 12 17.33 4.55 12 2z" />
         </vector>
     </item>
