@@ -23,8 +23,6 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import kotlin.math.abs
 import kotlin.math.roundToInt
-import kotlin.math.sin
-import kotlin.math.cos
 
 /**
  * Виджет 2×1 «Калории»: белая капсула с кольцом прогресса (калории +
@@ -96,11 +94,14 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
                 drawRingBitmap(
                     context,
                     calFraction = (eaten / goal).toFloat().coerceIn(0f, 1f),
-                    carbsFraction = if (macroGoals.carbs > 0) {
-                        (carbs / macroGoals.carbs).toFloat().coerceIn(0f, 1f)
-                    } else 0f,
                     proteinFraction = if (macroGoals.protein > 0) {
                         (protein / macroGoals.protein).toFloat().coerceIn(0f, 1f)
+                    } else 0f,
+                    fatFraction = if (macroGoals.fat > 0) {
+                        (fat / macroGoals.fat).toFloat().coerceIn(0f, 1f)
+                    } else 0f,
+                    carbsFraction = if (macroGoals.carbs > 0) {
+                        (carbs / macroGoals.carbs).toFloat().coerceIn(0f, 1f)
                     } else 0f,
                     isOver = isOver,
                     dark = dark
@@ -173,22 +174,28 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
 
         /**
          * Кольцо прогресса: внешнее — калории (зелёное, при переборе
-         * оранжевое), вложенная дуга — белки (голубое) и углеводы
-         * (фиолетовое), плюс три бусины. Рисуем в bitmap: кастомные View
-         * внутри RemoteViews грузятся не всеми лаунчерами (класс может
-         * уехать в небазовый dex), а ImageView с bitmap поддерживают все.
+         * оранжевое); внутреннее — трёхцветный сегмент макро в цветах
+         * дотов Б/Ж/У (голубое, оранжевое, фиолетовое). Рисуем в bitmap:
+         * кастомные View внутри RemoteViews грузятся не всеми лаунчерами
+         * (класс может уехать в небазовый dex), а ImageView с bitmap
+         * поддерживают все.
+         *
+         * ВАЖНО: bitmap рисуется с суперсэмплингом k, поэтому ВСЕ размеры
+         * (толщины, радиусы, зазоры) обязаны быть в координатах bitmap —
+         * умножаем каждый на k, иначе дуги окажутся втрое тоньше.
          */
         private fun drawRingBitmap(
             context: Context,
             calFraction: Float,
-            carbsFraction: Float,
             proteinFraction: Float,
+            fatFraction: Float,
+            carbsFraction: Float,
             isOver: Boolean,
             dark: Boolean
         ): Bitmap {
             val density = context.resources.displayMetrics.density
-            // Суперсэмплинг ×3, чтобы на плотных экранах кольцо было гладким.
-            val size = (52f * density * 3f).toInt().coerceAtLeast(200)
+            val k = 3f * density
+            val size = (56f * k).toInt().coerceAtLeast(64)
             val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(bmp)
             val cx = size / 2f
@@ -201,16 +208,15 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
                 else -> COLOR_GREEN
             }
             val proteinColor = if (dark) COLOR_BLUE_DARK else COLOR_BLUE
+            val fatColor = if (dark) COLOR_ORANGE_DARK else COLOR_ORANGE
             val carbsColor = if (dark) COLOR_PURPLE_DARK else COLOR_PURPLE
-            val beadColors = if (dark) intArrayOf(COLOR_GREEN_DARK, COLOR_BLUE_DARK, COLOR_PURPLE_DARK)
-            else intArrayOf(COLOR_GREEN, COLOR_BLUE, COLOR_PURPLE)
-            val trackAlpha = if (dark) 0.22f else 0.14f
+            val trackAlpha = if (dark) 0.28f else 0.15f
 
-            // Толщины и радиусы колец: жирные, чтобы читались на маленьком размере.
-            val s1 = 7.0f * density
-            val s2 = 4.2f * density
+            // Толщины и радиусы: жирные дуги, чтобы кольца читались с шага.
+            val s1 = 8.0f * k
+            val s2 = 5.0f * k
             val r1 = size / 2f - s1 / 2f
-            val r2 = r1 - s1 / 2f - 1.6f * density - s2 / 2f
+            val r2 = r1 - s1 / 2f - 1.6f * k - s2 / 2f
 
             fun ring(radius: Float, stroke: Float, color: Int, fraction: Float, trackAlpha: Float) {
                 val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -233,46 +239,30 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
 
             ring(r1, s1, calColor, calFraction, trackAlpha)
 
-            // Внутреннее кольцо: сначала дуга белков (голубая), затем углеводов.
-            val innerTrack = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                style = Paint.Style.STROKE
-                strokeWidth = s2
-                strokeCap = Paint.Cap.ROUND
-                color = carbsColor
-                alpha = (trackAlpha * 255).toInt()
+            // Внутреннее кольцо: по 120° на макро в цветах дотов (Б/Ж/У).
+            val circle = RectF(cx - r2, cy - r2, cx + r2, cy + r2)
+            val fractions = arrayOf(proteinFraction, fatFraction, carbsFraction)
+            val segColors = arrayOf(proteinColor, fatColor, carbsColor)
+            var startAngle = -90f
+            for (i in 0..2) {
+                val frac = fractions[i].coerceIn(0f, 1f)
+                val sweep = 120f * frac
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    style = Paint.Style.STROKE
+                    strokeWidth = s2
+                    strokeCap = Paint.Cap.BUTT
+                    color = segColors[i]
+                }
+                // Трек сегмента — его же тональность.
+                paint.alpha = (trackAlpha * 255).toInt()
+                canvas.drawArc(circle, startAngle, 120f, false, paint)
+                if (sweep > 1f) {
+                    val gap = 1.2f
+                    paint.alpha = 255
+                    canvas.drawArc(circle, startAngle + gap, sweep - 2f * gap, false, paint)
+                }
+                startAngle += 120f
             }
-            canvas.drawCircle(cx, cy, r2, innerTrack)
-            if (proteinFraction > 0.01f) {
-                innerTrack.alpha = 255
-                innerTrack.color = proteinColor
-                canvas.drawArc(
-                    RectF(cx - r2, cy - r2, cx + r2, cy + r2),
-                    -90f, 360f * proteinFraction.coerceIn(0f, 1f), false, innerTrack
-                )
-            }
-            if (carbsFraction > 0.01f) {
-                innerTrack.alpha = 255
-                innerTrack.color = carbsColor
-                canvas.drawArc(
-                    RectF(cx - r2, cy - r2, cx + r2, cy + r2),
-                    -90f + 360f * proteinFraction.coerceIn(0f, 1f),
-                    360f * carbsFraction.coerceIn(0f, 1f), false, innerTrack
-                )
-            }
-
-            // Бусины сверху — изумрудная, голубая, фиолетовая (палитра макро).
-            fun bead(angleDeg: Float, radius: Float, color: Int) {
-                val a = Math.toRadians(angleDeg.toDouble())
-                val x = cx + (radius * sin(a)).toFloat()
-                val y = cy - (radius * cos(a)).toFloat()
-                val br = 2.8f * density
-                val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-                paint.color = color
-                canvas.drawCircle(x, y, br, paint)
-            }
-            bead(-22f, r1, beadColors[0])
-            bead(4f, r1, beadColors[1])
-            bead(28f, r1, beadColors[2])
             return bmp
         }
     }
