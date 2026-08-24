@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">NutriLensAndroid</string>
+    <string name="widget_calories_description">Осталось калорий и БЖУ на сегодня</string>
 </resources>

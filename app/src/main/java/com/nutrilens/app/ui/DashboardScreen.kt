@@ -220,6 +220,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     fun deleteMeal(meal: MealWithImages) {
         viewModelScope.launch {
             mealRepository.deleteMeal(meal.meal, meal.images)
+            com.nutrilens.app.widget.WidgetUpdater.refresh(getApplication())
         }
     }
 
@@ -227,6 +228,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     fun restoreMeal(meal: MealWithImages, items: List<MealItemEntity>) {
         viewModelScope.launch {
             mealRepository.addMeal(meal.meal, meal.images, items)
+            com.nutrilens.app.widget.WidgetUpdater.refresh(getApplication())
         }
     }
 
@@ -239,6 +241,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     fun updateMeal(updated: MealEntity) {
         viewModelScope.launch {
             mealRepository.updateMeal(updated)
+            com.nutrilens.app.widget.WidgetUpdater.refresh(getApplication())
         }
     }
 

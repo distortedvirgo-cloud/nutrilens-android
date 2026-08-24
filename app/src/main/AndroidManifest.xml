@@ -45,5 +45,17 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
+            <receiver
+            android:name=".widget.CaloriesWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_calories_description">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/calories_widget_info" />
+        </receiver>
+
     </application>
 </manifest>
