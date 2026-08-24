@@ -16,9 +16,14 @@ import kotlin.math.roundToInt
 
 /**
  * Будильник приёма пищи: шлёт уведомление и перепланирует себя
- * на следующее срабатывание.
+ * на следующее срабатывание. Если пользователь уже записал еду
+ * в последние полтора часа — напоминание пропускается, чтобы
+ * не дублировать недавний приём пищи.
  */
 class MealReminderReceiver : BroadcastReceiver() {
+
+    /** Свежая запись еды в этом окне до срабатывания: напоминание не нужно. */
+    private val recentMealWindowMs = 90L * 60_000L
 
     override fun onReceive(context: Context, intent: Intent) {
         val meal = intent.getStringExtra(EXTRA_MEAL) ?: return
@@ -30,6 +35,15 @@ class MealReminderReceiver : BroadcastReceiver() {
                 val date = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
                 val db = NutriLensDatabase.getInstance(context)
                 val settings = SettingsRepository(db.settingsDao()).get()
+
+                // Недавно поел (еда записана за последние 90 минут) —
+                // без дублирующего напоминания, сразу перепланируемся.
+                val ateRecently = db.mealDao().countSince(System.currentTimeMillis() - recentMealWindowMs) > 0
+                if (ateRecently) {
+                    ReminderSync.rescheduleMeal(context, meal)
+                    return@launch
+                }
+
                 val mealsToday = db.mealDao().mealsByDate(date).first()
                 val sumCalories = mealsToday.sumOf { it.calories }
 

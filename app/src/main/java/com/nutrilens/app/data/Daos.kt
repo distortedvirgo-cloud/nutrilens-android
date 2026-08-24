@@ -51,6 +51,10 @@ abstract class MealDao {
     @Query("SELECT * FROM meals")
     abstract suspend fun allMeals(): List<MealEntity>
 
+    /** Сколько приёмов пищи записано после момента [since] (epoch millis). */
+    @Query("SELECT COUNT(*) FROM meals WHERE createdAt >= :since")
+    abstract suspend fun countSince(since: Long): Int
+
     @Query("DELETE FROM meals")
     abstract suspend fun deleteAll()
 
