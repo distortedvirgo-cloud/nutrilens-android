@@ -26,8 +26,8 @@ import kotlin.math.sin
 import kotlin.math.cos
 
 /**
- * Виджет 2×1 «Калории»: тёмная капсула с вложенными кольцами прогресса
- * (калории/жиры/белки — зелёное/голубое/фиолетовое) и Б/Ж/У текущего дня.
+ * Виджет 2×1 «Калории»: белая капсула с кольцом прогресса (калории +
+ * белки/углеводы вложенной дугой) и списком Б/Ж/У текущего дня.
  * Обновляется при изменении дневника (см. WidgetUpdater) и по расписанию.
  */
 class CaloriesWidgetProvider : AppWidgetProvider() {
@@ -101,6 +101,11 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
                 R.id.widget_remain,
                 abs(remaining).toString()
             )
+            // Перебор — оранжевым, фирменный акцент тревоги.
+            views.setTextColor(
+                R.id.widget_remain,
+                if (isOver) COLOR_ORANGE else COLOR_INK
+            )
             views.setTextViewText(
                 R.id.widget_remain_unit,
                 if (isOver) "перебор" else "ккал"
@@ -139,13 +144,14 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
         private const val COLOR_BLUE = 0xFF2F6FD0.toInt()
         private const val COLOR_PURPLE = 0xFF7D5FD6.toInt()
         private const val COLOR_ORANGE = 0xFFEA580C.toInt()
+        private const val COLOR_INK = 0xFF0F172A.toInt()
 
         /**
-         * Кольцо в стиле «активность»: три вложенных кольца с тёмными треками
-         * и яркими дугами (зелёное — калории, голубое — жиры, фиолетовое —
-         * белки) плюс три бусины сверху. Рисуем в bitmap: кастомные View внутри
-         * RemoteViews грузятся не всеми лаунчерами (класс может уехать в
-         * небазовый dex), а ImageView с bitmap поддерживают все.
+         * Кольцо прогресса: внешнее — калории (зелёное, при переборе
+         * оранжевое), вложенная дуга — белки (голубое) и углеводы
+         * (фиолетовое), плюс три бусины. Рисуем в bitmap: кастомные View
+         * внутри RemoteViews грузятся не всеми лаунчерами (класс может
+         * уехать в небазовый dex), а ImageView с bitmap поддерживают все.
          */
         private fun drawRingBitmap(
             context: Context,
@@ -155,19 +161,18 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
             isOver: Boolean
         ): Bitmap {
             val density = context.resources.displayMetrics.density
-            val size = (46f * density).toInt().coerceAtLeast(64)
+            // Суперсэмплинг ×3, чтобы на плотных экранах кольцо было гладким.
+            val size = (40f * density * 3f).toInt().coerceAtLeast(120)
             val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(bmp)
             val cx = size / 2f
             val cy = size / 2f
 
-            // Толщины и радиусы колец (плотность умножаем на dp).
+            // Толщины и радиусы колец.
             val s1 = 4.2f * density
-            val s2 = 3.4f * density
-            val s3 = 3.0f * density
+            val s2 = 2.6f * density
             val r1 = size / 2f - s1 / 2f
-            val r2 = r1 - s1 / 2f - s2 / 2f - 1.4f * density
-            val r3 = r2 - s2 / 2f - s3 / 2f - 1.2f * density
+            val r2 = r1 - s1 / 2f - 1.6f * density - s2 / 2f
 
             fun ring(radius: Float, stroke: Float, color: Int, fraction: Float, trackAlpha: Float) {
                 val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -175,7 +180,7 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
                     strokeWidth = stroke
                     strokeCap = Paint.Cap.ROUND
                 }
-                // Трек: тёмный полупрозрачный тон цвета дуги (читается на капсуле).
+                // Трек: бледный тон цвета дуги (читается на белой капсуле).
                 paint.color = color
                 paint.alpha = (trackAlpha * 255).toInt()
                 canvas.drawCircle(cx, cy, radius, paint)
@@ -188,22 +193,46 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
                 }
             }
 
-            ring(r1, s1, if (isOver) COLOR_ORANGE else COLOR_GREEN, calFraction, 0.16f)
-            ring(r2, s2, COLOR_PURPLE, carbsFraction, 0.18f)
-            ring(r3, s3, COLOR_BLUE, proteinFraction, 0.18f)
+            ring(r1, s1, if (isOver) COLOR_ORANGE else COLOR_GREEN, calFraction, 0.12f)
+
+            // Внутреннее кольцо: сначала дуга белков, затем углеводов.
+            val innerTrack = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.STROKE
+                strokeWidth = s2
+                strokeCap = Paint.Cap.ROUND
+                color = COLOR_PURPLE
+                alpha = (0.12f * 255).toInt()
+            }
+            canvas.drawCircle(cx, cy, r2, innerTrack)
+            if (proteinFraction > 0.01f) {
+                innerTrack.alpha = 255
+                canvas.drawArc(
+                    RectF(cx - r2, cy - r2, cx + r2, cy + r2),
+                    -90f, 360f * proteinFraction.coerceIn(0f, 1f), false, innerTrack
+                )
+            }
+            if (carbsFraction > 0.01f) {
+                innerTrack.alpha = 255
+                innerTrack.color = COLOR_PURPLE
+                canvas.drawArc(
+                    RectF(cx - r2, cy - r2, cx + r2, cy + r2),
+                    -90f + 360f * proteinFraction.coerceIn(0f, 1f),
+                    360f * carbsFraction.coerceIn(0f, 1f), false, innerTrack
+                )
+            }
 
             // Бусины сверху — изумрудная, голубая, фиолетовая (палитра макро).
             fun bead(angleDeg: Float, radius: Float, color: Int) {
                 val a = Math.toRadians(angleDeg.toDouble())
                 val x = cx + (radius * sin(a)).toFloat()
                 val y = cy - (radius * cos(a)).toFloat()
-                val br = 2.4f * density
+                val br = 2.0f * density
                 val paint = Paint(Paint.ANTI_ALIAS_FLAG)
                 paint.color = color
                 canvas.drawCircle(x, y, br, paint)
             }
-            bead(-18f, r1, COLOR_GREEN)
-            bead(6f, r1, COLOR_BLUE)
+            bead(-22f, r1, COLOR_GREEN)
+            bead(4f, r1, COLOR_BLUE)
             bead(28f, r1, COLOR_PURPLE)
             return bmp
         }

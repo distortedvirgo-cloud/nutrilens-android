@@ -1,65 +1,75 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Корень прозрачный: лаунчер может отдать виджету больше места, чем 1 ряд
+     (старый инстанс после обновления приложения сохраняет прежний размер),
+     поэтому «капсула» всегда центрируется и выглядит одинаково аккуратно. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="@drawable/widget_bg">
+    android:layout_height="match_parent">
 
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
+        android:background="@drawable/widget_bg"
         android:gravity="center_vertical"
-        android:orientation="horizontal">
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingEnd="14dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp">
 
-        <FrameLayout
-            android:layout_width="48dp"
-            android:layout_height="48dp">
-
-            <ImageView
-                android:id="@+id/widget_ring"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:layout_gravity="center"
-                android:contentDescription="@null" />
-
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:orientation="vertical">
-
-                <TextView
-                    android:id="@+id/widget_remain"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:autoSizeTextType="uniform"
-                    android:autoSizeMinTextSize="8sp"
-                    android:autoSizeMaxTextSize="10sp"
-                    android:fontFamily="sans-serif-black"
-                    android:gravity="center"
-                    android:maxLines="1"
-                    android:text="1690"
-                    android:textColor="#0F172A"
-                    android:textSize="10sp" />
-
-                <TextView
-                    android:id="@+id/widget_remain_unit"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:fontFamily="sans-serif"
-                    android:gravity="center"
-                    android:maxLines="1"
-                    android:text="ккал"
-                    android:textColor="#64748B"
-                    android:textSize="7sp" />
-            </LinearLayout>
-        </FrameLayout>
+        <ImageView
+            android:id="@+id/widget_ring"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginEnd="8dp"
+            android:contentDescription="@null"
+            android:scaleType="fitCenter" />
 
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/widget_remain"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:autoSizeTextType="uniform"
+                android:autoSizeMinTextSize="10sp"
+                android:autoSizeMaxTextSize="13sp"
+                android:fontFamily="sans-serif-black"
+                android:gravity="center"
+                android:maxLines="1"
+                android:text="2100"
+                android:textColor="#0F172A"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/widget_remain_unit"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="1dp"
+                android:fontFamily="sans-serif"
+                android:gravity="center"
+                android:maxLines="1"
+                android:text="ккал"
+                android:textColor="#64748B"
+                android:textSize="7sp" />
+        </LinearLayout>
+
+        <!-- Разделитель: RemoteViews не умеет голый <View>, поэтому FrameLayout. -->
+        <FrameLayout
+            android:layout_width="1dp"
+            android:layout_height="26dp"
             android:layout_marginStart="10dp"
+            android:layout_marginEnd="10dp"
+            android:background="#E1F2ED" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:orientation="vertical">
 
             <LinearLayout
@@ -69,21 +79,31 @@
                 android:orientation="horizontal">
 
                 <ImageView
-                    android:layout_width="18dp"
-                    android:layout_height="18dp"
+                    android:layout_width="6dp"
+                    android:layout_height="6dp"
                     android:contentDescription="@null"
-                    android:src="@drawable/widget_icon_protein" />
+                    android:src="@drawable/widget_dot_protein" />
 
                 <TextView
                     android:id="@+id/widget_p"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
+                    android:layout_marginStart="5dp"
                     android:fontFamily="sans-serif-black"
                     android:maxLines="1"
                     android:text="0"
                     android:textColor="#0F172A"
-                    android:textSize="13sp" />
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="3dp"
+                    android:fontFamily="sans-serif"
+                    android:maxLines="1"
+                    android:text="Б"
+                    android:textColor="#64748B"
+                    android:textSize="8sp" />
             </LinearLayout>
 
             <LinearLayout
@@ -94,21 +114,31 @@
                 android:orientation="horizontal">
 
                 <ImageView
-                    android:layout_width="18dp"
-                    android:layout_height="18dp"
+                    android:layout_width="6dp"
+                    android:layout_height="6dp"
                     android:contentDescription="@null"
-                    android:src="@drawable/widget_icon_fat" />
+                    android:src="@drawable/widget_dot_fat" />
 
                 <TextView
                     android:id="@+id/widget_f"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
+                    android:layout_marginStart="5dp"
                     android:fontFamily="sans-serif-black"
                     android:maxLines="1"
                     android:text="0"
                     android:textColor="#0F172A"
-                    android:textSize="13sp" />
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="3dp"
+                    android:fontFamily="sans-serif"
+                    android:maxLines="1"
+                    android:text="Ж"
+                    android:textColor="#64748B"
+                    android:textSize="8sp" />
             </LinearLayout>
 
             <LinearLayout
@@ -119,21 +149,31 @@
                 android:orientation="horizontal">
 
                 <ImageView
-                    android:layout_width="18dp"
-                    android:layout_height="18dp"
+                    android:layout_width="6dp"
+                    android:layout_height="6dp"
                     android:contentDescription="@null"
-                    android:src="@drawable/widget_icon_carbs" />
+                    android:src="@drawable/widget_dot_carbs" />
 
                 <TextView
                     android:id="@+id/widget_c"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
+                    android:layout_marginStart="5dp"
                     android:fontFamily="sans-serif-black"
                     android:maxLines="1"
                     android:text="0"
                     android:textColor="#0F172A"
-                    android:textSize="13sp" />
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="3dp"
+                    android:fontFamily="sans-serif"
+                    android:maxLines="1"
+                    android:text="У"
+                    android:textColor="#64748B"
+                    android:textSize="8sp" />
             </LinearLayout>
         </LinearLayout>
 

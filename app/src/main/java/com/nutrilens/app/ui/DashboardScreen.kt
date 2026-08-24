@@ -139,6 +139,11 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private val favoriteRepository = FavoriteRepository(database.favoriteDao())
     private val analysisJobRepository = AnalysisJobRepository(database.analysisJobDao())
 
+    init {
+        // Виджет в лаунчере обновляется только по явному запросу — освежаем при открытии.
+        com.nutrilens.app.widget.WidgetUpdater.refresh(application)
+    }
+
     val favorites: StateFlow<List<FavoriteEntity>> = favoriteRepository.observe()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
