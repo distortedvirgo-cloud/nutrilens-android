@@ -109,6 +109,7 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
 
 class DashboardViewModel(application: Application) : AndroidViewModel(application) {
@@ -287,6 +288,48 @@ fun DashboardScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
+            // Шапка как во fresh-оболочке веба: градиентная плитка-логотип,
+            // вордмарк NutriLens и дата.
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                val logoShape = RoundedCornerShape(12.dp)
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(logoShape)
+                        .background(
+                            Brush.linearGradient(
+                                listOf(
+                                    MaterialTheme.colorScheme.primary,
+                                    MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            )
+                        )
+                        .shadow(
+                            10.dp, logoShape,
+                            ambientColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
+                            spotColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("🌿", fontSize = 18.sp)
+                }
+                Spacer(Modifier.width(10.dp))
+                Column {
+                    Text(
+                        text = "NutriLens",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    Text(
+                        text = dateLabelRu(selectedDate).replaceFirstChar { it.uppercase() },
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
+            }
+        }
+        item {
             DaySelectorRow(
                 selected = selectedDate,
                 streak = streak,
@@ -439,50 +482,80 @@ private fun DaySelectorRow(
                 fontWeight = FontWeight.ExtraBold,
                 color = MaterialTheme.colorScheme.onBackground
             )
-            Text(
-                text = dateLabelRu(selected).replaceFirstChar { it.uppercase() },
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.outline
-            )
-        }
-        if (streak > 0) {
-            Surface(
-                shape = RoundedCornerShape(999.dp),
-                color = MaterialTheme.colorScheme.surface,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-                modifier = Modifier
-                    .shadow(5.dp, RoundedCornerShape(999.dp), ambientColor = Color(0x1216241C), spotColor = Color(0x1216241C))
-            ) {
-                Text(
-                    text = "🔥 $streak",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
-                )
+            Spacer(Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (streak > 0) {
+                    Surface(
+                        shape = RoundedCornerShape(999.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                        modifier = Modifier.shadow(
+                            5.dp, RoundedCornerShape(999.dp),
+                            ambientColor = Color(0x1216241C), spotColor = Color(0x1216241C)
+                        )
+                    ) {
+                        Text(
+                            text = "🔥 $streak",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onBackground,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                }
+                if (selected != LocalDate.now()) {
+                    Surface(
+                        onClick = onToday,
+                        shape = RoundedCornerShape(999.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Text(
+                            text = "Сегодня",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
+                        )
+                    }
+                }
             }
-            Spacer(Modifier.width(8.dp))
         }
-        if (selected != LocalDate.now()) {
-            Surface(
-                onClick = onToday,
-                shape = RoundedCornerShape(999.dp),
-                color = MaterialTheme.colorScheme.primaryContainer
-            ) {
-                Text(
-                    text = "Сегодня",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
-                )
-            }
-            Spacer(Modifier.width(8.dp))
-        }
-        DayArrow(onClick = { onShift(-1) }, contentDescription = "Предыдущий день")
-        Spacer(Modifier.width(6.dp))
-        DayArrow(onClick = { onShift(1) }, contentDescription = "Следующий день")
+        Spacer(Modifier.width(8.dp))
+        DayPill(selected = selected, onShift = onShift)
     }
 }
+
+/** Переключатель дня как в вебе: круглая пилюля ← дата →. */
+@Composable
+private fun DayPill(selected: LocalDate, onShift: (Long) -> Unit) {
+    val pillShape = RoundedCornerShape(999.dp)
+    Surface(
+        shape = pillShape,
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+        modifier = Modifier.shadow(
+            6.dp, pillShape,
+            ambientColor = Color(0x1216241C), spotColor = Color(0x1216241C)
+        )
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(4.dp)) {
+            DayArrow(onClick = { onShift(-1) }, contentDescription = "Предыдущий день")
+            Text(
+                text = dayShort(selected),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.padding(horizontal = 4.dp),
+                textAlign = TextAlign.Center
+            )
+            DayArrow(onClick = { onShift(1) }, contentDescription = "Следующий день")
+        }
+    }
+}
+
+/** Короткая дата дня: «24 авг». */
+private fun dayShort(date: LocalDate): String =
+    date.format(DateTimeFormatter.ofPattern("d MMM", java.util.Locale("ru", "RU")))
 
 /** Круглая кнопка дня как в вебе: bg-surface, border line/40, soft-тень. */
 @Composable

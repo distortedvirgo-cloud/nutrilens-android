@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -276,6 +277,19 @@ class AddMealViewModel(application: Application) : AndroidViewModel(application)
                 _error.value = e.message ?: "Не удалось запустить фоновый анализ"
             }
         }
+    }
+
+    /**
+     * Возврат к чистой форме после отправки: навигация сохраняет нашу ViewModel
+     * (saveState/restoreState), поэтому сбрасываем и фазу, и фото, и заметку —
+     * следующий вход на экран всегда начинается с чистого листа.
+     */
+    fun resetAfterSent() {
+        if (_phase.value is AddMealPhase.Sent) {
+            _phase.value = AddMealPhase.Idle
+        }
+        _photos.value = emptyList()
+        _note.value = ""
     }
 
     fun setResultName(value: String) { _resultName.value = value }
@@ -572,7 +586,10 @@ fun AddMealScreen(
     // Полноэкранный оверлей «Анализ запущен»: плавно растворяется и уводит
     // на главный экран (NavHost добавляет подъём+fade нового экрана).
     if (phase is AddMealPhase.Sent) {
-        SentOverlay(onDone = onDone)
+        SentOverlay(onDone = {
+            viewModel.resetAfterSent()
+            onDone()
+        })
     }
 }
 }
@@ -730,15 +747,37 @@ private fun Modifier.dashedBorder(width: Dp, color: Color, radius: Dp): Modifier
         )
     }
 
-/** Полноэкранный оверлей «Анализ запущен». */
+/** Полноэкранный оверлей «Анализ запущен». Всегда схлопывается: по таймеру,
+ * по тапу в любом месте или системной кнопке «назад», затем уходит на главную. */
 @Composable
 private fun SentOverlay(onDone: () -> Unit) {
     var visible by remember { mutableStateOf(true) }
+    var dismissRequested by remember { mutableStateOf(false) }
     val checkScale by animateFloatAsState(
         targetValue = 1f,
         animationSpec = spring(dampingRatio = 0.6f, stiffness = 260f),
         label = "check"
     )
+    val overlayInteraction = remember { MutableInteractionSource() }
+
+    // Автозакрытие через 1.25 с; тап/«назад» закрывают мгновенно.
+    LaunchedEffect(dismissRequested) {
+        if (dismissRequested) {
+            visible = false
+        } else {
+            kotlinx.coroutines.delay(1250)
+            dismissRequested = true
+        }
+    }
+    // После завершения exit-анимации — мягкий переход на главный экран.
+    LaunchedEffect(visible) {
+        if (!visible) {
+            kotlinx.coroutines.delay(420)
+            runCatching { onDone() }
+        }
+    }
+    BackHandler(enabled = true) { dismissRequested = true }
+
     AnimatedVisibility(
         visible = visible,
         exit = fadeOut(tween(360)) + scaleOut(targetScale = 0.97f, animationSpec = tween(360))
@@ -746,6 +785,11 @@ private fun SentOverlay(onDone: () -> Unit) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .clickable(
+                    interactionSource = overlayInteraction,
+                    indication = null,
+                    onClick = { dismissRequested = true }
+                )
                 .background(
                     Brush.verticalGradient(
                         listOf(
@@ -805,12 +849,6 @@ private fun SentOverlay(onDone: () -> Unit) {
                 )
             }
         }
-    }
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(1250)
-        visible = false
-        kotlinx.coroutines.delay(380)
-        onDone()
     }
 }
 
