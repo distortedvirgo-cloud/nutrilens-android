@@ -7,7 +7,9 @@ import android.graphics.Matrix
 import android.net.Uri
 import androidx.exifinterface.media.ExifInterface
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.InputStream
 
 /**
  * Подготовка фото еды к анализу. Порт prepareImage из веб-версии
@@ -62,15 +64,30 @@ object ImagePrep {
 
     fun readBytes(file: File): ByteArray = file.readBytes()
 
+    /**
+     * Поток для картинки. Для file:// (наши файлы в filesDir/кэше) читаем
+     * напрямую FileInputStream — ContentResolver на некоторых прошивках
+     * отдаёт null для file://-URI. Для content:// (фотопикер) — резолвер.
+     */
+    private fun openInputStream(context: Context, uri: Uri): InputStream {
+        if (uri.scheme == "file") {
+            val path = uri.path
+                ?: throw IllegalArgumentException("Не удалось открыть файл: $uri")
+            return FileInputStream(File(path))
+        }
+        return context.contentResolver.openInputStream(uri)
+            ?: throw IllegalArgumentException("Не удалось открыть файл: $uri")
+    }
+
     /** Читает EXIF-ориентацию из потока (конструктор ExifInterface от InputStream). */
     private fun readExifOrientation(context: Context, uri: Uri): Int {
-        context.contentResolver.openInputStream(uri)?.use { stream ->
+        openInputStream(context, uri).use { stream ->
             val exif = ExifInterface(stream)
             return exif.getAttributeInt(
                 ExifInterface.TAG_ORIENTATION,
                 ExifInterface.ORIENTATION_NORMAL
             )
-        } ?: throw IllegalArgumentException("Не удалось открыть файл: $uri")
+        }
     }
 
     /**
@@ -81,9 +98,9 @@ object ImagePrep {
     private fun decodeBitmap(context: Context, uri: Uri): Bitmap? {
         // 1-й проход: только размеры.
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        context.contentResolver.openInputStream(uri)?.use { stream ->
+        openInputStream(context, uri).use { stream ->
             BitmapFactory.decodeStream(stream, null, bounds)
-        } ?: throw IllegalArgumentException("Не удалось открыть файл: $uri")
+        }
 
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
             throw IllegalArgumentException("Не удалось прочитать изображение (файл не является картинкой): $uri")
@@ -93,9 +110,9 @@ object ImagePrep {
         val options = BitmapFactory.Options().apply {
             inSampleSize = calculateInSampleSize(bounds.outWidth, bounds.outHeight, MAX_DIMENSION)
         }
-        return context.contentResolver.openInputStream(uri)?.use { stream ->
+        return openInputStream(context, uri).use { stream ->
             BitmapFactory.decodeStream(stream, null, options)
-        } ?: throw IllegalArgumentException("Не удалось открыть файл: $uri")
+        }
     }
 
     /** Степень двойки, при которой декодированный размер держится около maxDimension. */

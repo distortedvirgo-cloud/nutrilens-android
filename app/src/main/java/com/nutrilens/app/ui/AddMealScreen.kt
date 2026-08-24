@@ -171,13 +171,18 @@ class AddMealViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
-     * Копирует выбранное фото в кэш сразу при выборе: разрешения picker-URI
-     * могут истечь к моменту анализа, локальный файл читается всегда.
+     * Копирует выбранное фото в filesDir сразу при выборе: разрешения picker-URI
+     * могут истечь к моменту анализа, а локальный файл читается всегда. Кэш не
+     * используем — система может его вычистить до запуска фонового анализа.
      */
     private fun copyToLocal(context: Context, uri: Uri): Uri {
-        val dest = File(context.cacheDir, "picked_${System.currentTimeMillis()}.jpg")
+        val dir = File(context.filesDir, "photos_picked").apply { mkdirs() }
+        val dest = File(dir, "picked_${System.currentTimeMillis()}.jpg")
         context.contentResolver.openInputStream(uri)?.use { input ->
-            FileOutputStream(dest).use { input.copyTo(it) }
+            FileOutputStream(dest).use { output ->
+                input.copyTo(output)
+                check(dest.length() > 0) { "пустой файл: $uri" }
+            }
         } ?: throw IllegalArgumentException("нет доступа к $uri")
         return Uri.fromFile(dest)
     }
