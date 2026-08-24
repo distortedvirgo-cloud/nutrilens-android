@@ -284,8 +284,8 @@ fun DashboardScreen(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 112.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 112.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
         item {
             // Шапка как во fresh-оболочке веба: градиентная плитка-логотип,
@@ -587,9 +587,9 @@ private fun DayArrow(onClick: () -> Unit, contentDescription: String) {
 /** Кривая героя (decelerate), как в вебе. */
 private val HeroEasing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
 
-/** Градиентные пары hero: в норме — изумруд, перебор — тёплый янтарь→терракота. */
-private val HeroOk = listOf(Color(0xFF1BC289), Color(0xFF0A7A55))
-private val HeroWarn = listOf(Color(0xFFF09A4A), Color(0xFFDE5C5C))
+/** Градиентные пары hero (дизайн-система): изумруд; перебор — тёплый. */
+private val HeroOk = listOf(Color(0xFF059669), Color(0xFF047857))
+private val HeroWarn = listOf(Color(0xFFFB923C), Color(0xFFEA580C))
 
 @Composable
 private fun CaloriesHero(meals: List<MealWithImages>, settings: SettingsEntity) {
@@ -605,7 +605,7 @@ private fun CaloriesHero(meals: List<MealWithImages>, settings: SettingsEntity) 
     var showRemaining by remember { mutableStateOf(false) }
     val gradient = if (isOver) HeroWarn else HeroOk
     val shape = MaterialTheme.shapes.extraLarge
-    val glow = if (isOver) Color(0x59F09A4A) else Color(0x59FF0C9D6B)
+    val glow = if (isOver) Color(0x40059669) else Color(0x40059669)
 
     Surface(
         onClick = { showRemaining = !showRemaining },

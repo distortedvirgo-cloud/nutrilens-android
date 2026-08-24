@@ -72,6 +72,12 @@ object Backup {
             throw RuntimeException(ERROR_MESSAGE)
         }
 
+        // Бэкап из веб-версии — поля хранятся JSON-строками: конвертируем.
+        if (WebBackupImport.isWebFormat(root)) {
+            WebBackupImport.import(context, db, root)
+            return
+        }
+
         db.withTransaction {
             db.settingsDao().deleteAll()
             db.mealDao().deleteAll()

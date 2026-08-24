@@ -42,13 +42,17 @@ private val ShadowSoft = Color(0x1216241C)   // 0.07 @ 4px
 private val ShadowLift = Color(0x2916241C)   // 0.16 @ 18px
 private val GlowColor = Color(0x73FF0C9D6B)  // accent 45%: 0x73
 
-/** Карточка из веба: rounded-[26px], border line/40, мягкая двухслойная тень. */
+// Палитра кнопок (дизайн-система): здоровый изумруд → глубокий.
+private val AccentFrom = Color(0xFF059669)
+private val AccentTo = Color(0xFF047857)
+
+/** Карточка в духе минимализма: белая, почти плоская, едва заметная граница. */
 @Composable
 fun FreshCard(
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.surface,
     radius: Int = 26,
-    borderAlpha: Float = 0.4f,
+    borderAlpha: Float = 0.3f,
     content: @Composable () -> Unit
 ) {
     val shape = RoundedCornerShape(radius.dp)
@@ -60,17 +64,14 @@ fun FreshCard(
             MaterialTheme.colorScheme.outlineVariant.copy(alpha = borderAlpha)
         ),
         shadowElevation = 0.dp,
-        modifier = modifier
-            .shadow(1.dp, shape, ambientColor = ShadowCard, spotColor = ShadowCard)
-            .shadow(10.dp, shape, ambientColor = ShadowCard, spotColor = ShadowCard)
+        modifier = modifier.shadow(4.dp, shape, ambientColor = Color(0x080F172A), spotColor = Color(0x080F172A))
     ) {
         content()
     }
 }
 
 /**
- * Главная кнопка как в вебе: градиент accent→strong, rounded-2xl, glow-тень,
- * лёгкое сжатие при нажатии (active:scale-[0.98]), полупрозрачность при disabled.
+ * Главная кнопка: градиент изумруда, лёгкая тень, сжатие при нажатии.
  */
 @Composable
 fun GlowButton(
@@ -84,10 +85,7 @@ fun GlowButton(
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.97f else 1f, label = "press")
     val background = Brush.linearGradient(
-        colors = listOf(
-            MaterialTheme.colorScheme.primary,
-            MaterialTheme.colorScheme.onPrimaryContainer
-        ),
+        colors = listOf(AccentFrom, AccentTo),
         start = androidx.compose.ui.geometry.Offset.Zero,
         end = androidx.compose.ui.geometry.Offset.Infinite
     )
@@ -101,7 +99,7 @@ fun GlowButton(
         modifier = modifier
             .height(height.dp)
             .scale(scale)
-            .shadow(14.dp, shape, ambientColor = GlowColor, spotColor = GlowColor)
+            .shadow(8.dp, shape, ambientColor = AccentFrom.copy(alpha = 0.25f), spotColor = AccentFrom.copy(alpha = 0.25f))
             .clip(shape)
     ) {
         Box(
@@ -114,7 +112,7 @@ fun GlowButton(
             Text(
                 text = text,
                 style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onPrimary,
                 modifier = Modifier.padding(horizontal = 16.dp)
             )
