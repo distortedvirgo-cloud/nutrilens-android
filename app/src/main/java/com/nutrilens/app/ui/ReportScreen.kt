@@ -125,7 +125,7 @@ class ReportViewModel(application: Application) : AndroidViewModel(application) 
         if (_aiLoading.value) return
         viewModelScope.launch {
             val settings = settingsRepo.get()
-            if (settings.apiKey.isBlank()) {
+            if (settings.apiKey.isBlank() && settings.nanoApiKey.isBlank()) {
                 _aiError.value = "Сначала добавьте ключ Gemini в настройках"
                 return@launch
             }
@@ -137,8 +137,7 @@ class ReportViewModel(application: Application) : AndroidViewModel(application) 
             _aiLoading.value = true
             _aiError.value = null
             try {
-                _aiText.value = GeminiTools.statsInsight(
-                    settings.apiKey,
+                _aiText.value = GeminiTools.statsInsight(settings,
                     settings.dailyGoal,
                     current.recentData
                 )

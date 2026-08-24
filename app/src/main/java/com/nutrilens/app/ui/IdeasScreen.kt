@@ -83,7 +83,7 @@ class IdeasViewModel(application: Application) : AndroidViewModel(application) {
         if (_loading.value) return
         viewModelScope.launch {
             val settings = settingsRepository.get()
-            if (settings.apiKey.isBlank()) {
+            if (settings.apiKey.isBlank() && settings.nanoApiKey.isBlank()) {
                 _error.value = "Сначала добавьте ключ Gemini в настройках"
                 return@launch
             }
@@ -100,7 +100,7 @@ class IdeasViewModel(application: Application) : AndroidViewModel(application) {
                     settings.dailyGoal, weight
                 )
                 val ideas = GeminiTools.getRecommendations(
-                    apiKey = settings.apiKey,
+                    settings = settings,
                     userContext = settings.userContext,
                     userInput = mealType,
                     remainingCalories = remaining,
@@ -123,7 +123,7 @@ class IdeasViewModel(application: Application) : AndroidViewModel(application) {
             _recipeText.value = null
             _recipeLoading.value = true
             try {
-                _recipeText.value = GeminiTools.getDetailedRecipe(settings.apiKey, rec.recipePrompt)
+                _recipeText.value = GeminiTools.getDetailedRecipe(settings, rec.recipePrompt)
             } catch (e: Exception) {
                 _recipeText.value = "Не удалось загрузить рецепт: ${e.message}"
             }

@@ -288,48 +288,7 @@ fun DashboardScreen(
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
         item {
-            // Шапка как во fresh-оболочке веба: градиентная плитка-логотип,
-            // вордмарк NutriLens и дата.
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-                val logoShape = RoundedCornerShape(12.dp)
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(logoShape)
-                        .background(
-                            Brush.linearGradient(
-                                listOf(
-                                    MaterialTheme.colorScheme.primary,
-                                    MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                            )
-                        )
-                        .shadow(
-                            10.dp, logoShape,
-                            ambientColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
-                            spotColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("🌿", fontSize = 18.sp)
-                }
-                Spacer(Modifier.width(10.dp))
-                Column {
-                    Text(
-                        text = "NutriLens",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                    Text(
-                        text = dateLabelRu(selectedDate).replaceFirstChar { it.uppercase() },
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.outline
-                    )
-                }
-            }
-        }
-        item {
+            // Верх страницы — только дата: без логотипа, названия и приветствия.
             DaySelectorRow(
                 selected = selectedDate,
                 streak = streak,
@@ -473,13 +432,12 @@ private fun DaySelectorRow(
     onShift: (Long) -> Unit,
     onToday: () -> Unit
 ) {
-    val g = greeting(LocalTime.now().hour)
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "${g.emoji} ${g.text}",
+                text = dateLabelRu(selected).replaceFirstChar { it.uppercase() },
                 style = MaterialTheme.typography.displaySmall,
-                fontWeight = FontWeight.ExtraBold,
+                fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground
             )
             Spacer(Modifier.height(4.dp))

@@ -91,15 +91,14 @@ class WaterToolViewModel(application: Application) : AndroidViewModel(applicatio
         if (_loadingAdvice.value) return
         viewModelScope.launch {
             val settings = settingsRepository.get()
-            if (settings.apiKey.isBlank()) {
+            if (settings.apiKey.isBlank() && settings.nanoApiKey.isBlank()) {
                 _error.value = "Сначала добавьте ключ Gemini в настройках"
                 return@launch
             }
             _loadingAdvice.value = true
             _error.value = null
             try {
-                _advice.value = GeminiTools.waterAdvice(
-                    settings.apiKey,
+                _advice.value = GeminiTools.waterAdvice(settings,
                     settings.userContext,
                     mealRepository.getLatestWeight()
                 )

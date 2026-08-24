@@ -129,6 +129,9 @@ import kotlin.math.roundToInt
 
 sealed interface AddMealPhase {
     data object Idle : AddMealPhase
+    data object Analyzing : AddMealPhase
+    data class Result(val result: MealAnalysisResult) : AddMealPhase
+    data object Saving : AddMealPhase
     data object Sent : AddMealPhase
 }
 
@@ -161,18 +164,6 @@ class AddMealViewModel(application: Application) : AndroidViewModel(application)
 
     private val _messages = MutableSharedFlow<String>()
     val messages: SharedFlow<String> = _messages.asSharedFlow()
-
-    // Редактируемые поля результата анализа перед сохранением.
-    private val _resultName = MutableStateFlow("")
-    val resultName: StateFlow<String> = _resultName.asStateFlow()
-    private val _resultCalories = MutableStateFlow("")
-    val resultCalories: StateFlow<String> = _resultCalories.asStateFlow()
-    private val _resultProtein = MutableStateFlow("")
-    val resultProtein: StateFlow<String> = _resultProtein.asStateFlow()
-    private val _resultFat = MutableStateFlow("")
-    val resultFat: StateFlow<String> = _resultFat.asStateFlow()
-    private val _resultCarbs = MutableStateFlow("")
-    val resultCarbs: StateFlow<String> = _resultCarbs.asStateFlow()
 
 
     fun setNote(value: String) {
@@ -219,6 +210,46 @@ class AddMealViewModel(application: Application) : AndroidViewModel(application)
         _error.value = null
     }
 
+    /** Анализ в переднем плане: подготовка фото + запрос к Gemini. */
+    fun analyze(context: Context) {
+        if (_photos.value.isEmpty()) return
+        viewModelScope.launch {
+            _error.value = null
+            _phase.value = AddMealPhase.Analyzing
+            try {
+                val settings = settingsRepository.get()
+                if (settings.apiKey.isBlank()) {
+                    _phase.value = AddMealPhase.Idle
+                    _error.value = "Укажите ключ Gemini в настройках"
+                    return@launch
+                }
+                val processed = _photos.value.map { uri ->
+                    ImagePrep.process(
+                        context,
+                        uri,
+                        File(context.filesDir, "photos/manual_${System.currentTimeMillis()}")
+                    )
+                }
+                val fullBytes = processed.map { ImagePrep.readBytes(it.full) }
+                val recent = buildRecentMealsContext(
+                    mealRepository.mealsOn(LocalDate.now().toString())
+                )
+                val result = GeminiApi(settings.apiKey).analyzeMeal(
+                    imagesJpeg = fullBytes,
+                    userContext = settings.userContext,
+                    userNote = _note.value,
+                    recentMealsContext = recent
+                )
+                preparedFiles = processed
+                prefillResult(result)
+                _phase.value = AddMealPhase.Result(result)
+            } catch (e: Exception) {
+                _phase.value = AddMealPhase.Idle
+                _error.value = e.message ?: "Не удалось проанализировать фото"
+            }
+        }
+    }
+
     /** Фоновый анализ через AnalysisScheduler. Экран показывает состояние «отправлено». */
     fun enqueueBackground(context: Context, onDone: () -> Unit) {
         if (_photos.value.isEmpty()) return
@@ -248,7 +279,95 @@ class AddMealViewModel(application: Application) : AndroidViewModel(application)
         _note.value = ""
     }
 
+    fun setResultName(value: String) { _resultName.value = value }
+    fun setResultCalories(value: String) { _resultCalories.value = value }
+    fun setResultProtein(value: String) { _resultProtein.value = value }
+    fun setResultFat(value: String) { _resultFat.value = value }
+    fun setResultCarbs(value: String) { _resultCarbs.value = value }
 
+    /** Отмена просмотра результата: возврат к редактированию (фото остаются). */
+    fun cancelResult() {
+        _phase.value = AddMealPhase.Idle
+        _error.value = null
+    }
+
+    /** Сохраняет приём пищи: MealEntity + MealImageEntity (FULL/THUMB) + MealItemEntity. */
+    fun saveMeal(onDone: () -> Unit) {
+        val res = (_phase.value as? AddMealPhase.Result)?.result ?: return
+        val calories = _resultCalories.value.trim().replace(",", ".").toDoubleOrNull() ?: return
+        val protein = _resultProtein.value.trim().replace(",", ".").toDoubleOrNull() ?: return
+        val fat = _resultFat.value.trim().replace(",", ".").toDoubleOrNull() ?: return
+        val carbs = _resultCarbs.value.trim().replace(",", ".").toDoubleOrNull() ?: return
+
+        viewModelScope.launch {
+            _error.value = null
+            _phase.value = AddMealPhase.Saving
+            try {
+                val now = LocalDateTime.now()
+                val settings = settingsRepository.get()
+                val mealId = UUID.randomUUID().toString()
+
+                val meal = MealEntity(
+                    id = mealId,
+                    date = now.toLocalDate().toString(),
+                    time = now.toLocalTime().format(HH_MM),
+                    name = _resultName.value.trim().ifBlank { res.name },
+                    calories = calories,
+                    protein = protein,
+                    fat = fat,
+                    carbs = carbs,
+                    aiThoughts = res.aiThoughts,
+                    reasoning = res.reasoning,
+                    confidenceScore = res.confidenceScore,
+                    dailyGoalSnapshot = settings.dailyGoal,
+                    createdAt = System.currentTimeMillis()
+                )
+
+                val images = preparedFiles.flatMapIndexed { index, prep ->
+                    listOf(
+                        MealImageEntity(
+                            id = UUID.randomUUID().toString(),
+                            mealId = mealId,
+                            path = prep.full.absolutePath,
+                            kind = "FULL",
+                            sortIndex = index * 2
+                        ),
+                        MealImageEntity(
+                            id = UUID.randomUUID().toString(),
+                            mealId = mealId,
+                            path = prep.thumb.absolutePath,
+                            kind = "THUMB",
+                            sortIndex = index * 2 + 1
+                        )
+                    )
+                }
+
+                val items = res.items.map { item ->
+                    MealItemEntity(
+                        id = UUID.randomUUID().toString(),
+                        mealId = mealId,
+                        name = item.name,
+                        weightG = item.weightG,
+                        portionBasis = item.portionBasis,
+                        calorieDensity = item.calorieDensity,
+                        calories = item.calories,
+                        protein = item.protein,
+                        fat = item.fat,
+                        carbs = item.carbs,
+                        breakdown = item.breakdown
+                    )
+                }
+
+                mealRepository.addMeal(meal, images, items)
+                _phase.value = AddMealPhase.Idle
+                _messages.emit("Сохранено")
+                onDone()
+            } catch (e: Exception) {
+                _phase.value = AddMealPhase.Result(res)
+                _error.value = e.message ?: "Не удалось сохранить"
+            }
+        }
+    }
 
     /** Быстрое добавление блюда из избранного — без фото и анализа. */
     fun addFromFavorite(favorite: FavoriteEntity, onDone: () -> Unit) {
@@ -281,6 +400,16 @@ class AddMealViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    private fun prefillResult(result: MealAnalysisResult) {
+        _resultName.value = result.name
+        _resultCalories.value = formatNumber(result.calories)
+        _resultProtein.value = formatNumber(result.protein)
+        _resultFat.value = formatNumber(result.fat)
+        _resultCarbs.value = formatNumber(result.carbs)
+    }
+
+    private fun formatNumber(value: Double): String =
+        if (value % 1.0 == 0.0) value.toLong().toString() else value.toString()
 
     companion object {
         private val HH_MM: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
@@ -369,8 +498,20 @@ fun AddMealScreen(
             }
         }
 
-when (phase) {
-            AddMealPhase.Sent -> Unit
+        when (val p = phase) {
+            is AddMealPhase.Analyzing -> AnalyzingBlock()
+            is AddMealPhase.Saving -> SavingBlock()
+            // Состояние «отправлено» показывается полноэкранным оверлеем ниже.
+            is AddMealPhase.Sent -> Unit
+            is AddMealPhase.Result -> {
+                error?.let { ErrorBlock(message = it, onGoSettings = onGoSettings) }
+                ResultEditorBlock(
+                    result = p.result,
+                    viewModel = viewModel,
+                    onSave = { viewModel.saveMeal(onDone) },
+                    onCancel = viewModel::cancelResult
+                )
+            }
             AddMealPhase.Idle -> {
                 error?.let { ErrorBlock(message = it, onGoSettings = onGoSettings) }
                 if (photos.isEmpty() && favorites.isNotEmpty()) {
@@ -477,6 +618,49 @@ private fun FavoritesRow(favorites: List<FavoriteEntity>, onPick: (FavoriteEntit
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AnalyzingBlock() {
+    PhaseCard(emoji = "🔍", title = "ИИ считает калории…", subtitle = "Обычно это занимает несколько секунд")
+}
+
+@Composable
+private fun SavingBlock() {
+    PhaseCard(emoji = "💾", title = "Сохраняем…", subtitle = null)
+}
+
+@Composable
+private fun PhaseCard(emoji: String, title: String, subtitle: String?) {
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surface
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 40.dp, horizontal = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(emoji, style = MaterialTheme.typography.displaySmall)
+            Spacer(Modifier.height(12.dp))
+            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(16.dp))
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            if (subtitle != null) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
@@ -754,6 +938,153 @@ private fun PhotoPreviewRow(photos: List<Uri>, onRemove: (Uri) -> Unit) {
                         contentDescription = "Убрать фото",
                         tint = Color.White,
                         modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ---------- Фаза результата: редактирование ----------
+
+@Composable
+private fun ResultEditorBlock(
+    result: MealAnalysisResult,
+    viewModel: AddMealViewModel,
+    onSave: () -> Unit,
+    onCancel: () -> Unit
+) {
+    val name by viewModel.resultName.collectAsStateWithLifecycle()
+    val calories by viewModel.resultCalories.collectAsStateWithLifecycle()
+    val protein by viewModel.resultProtein.collectAsStateWithLifecycle()
+    val fat by viewModel.resultFat.collectAsStateWithLifecycle()
+    val carbs by viewModel.resultCarbs.collectAsStateWithLifecycle()
+
+    val caloriesValue = calories.trim().replace(",", ".").toDoubleOrNull()
+    val proteinValue = protein.trim().replace(",", ".").toDoubleOrNull()
+    val fatValue = fat.trim().replace(",", ".").toDoubleOrNull()
+    val carbsValue = carbs.trim().replace(",", ".").toDoubleOrNull()
+    val canSave = caloriesValue != null && proteinValue != null &&
+        fatValue != null && carbsValue != null
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        OutlinedTextField(
+            value = name,
+            onValueChange = viewModel::setResultName,
+            label = { Text("Название") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
+        )
+        OutlinedTextField(
+            value = calories,
+            onValueChange = viewModel::setResultCalories,
+            label = { Text("Калории, ккал") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedTextField(
+                value = protein,
+                onValueChange = viewModel::setResultProtein,
+                label = { Text("Белки, г") },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+            )
+            OutlinedTextField(
+                value = fat,
+                onValueChange = viewModel::setResultFat,
+                label = { Text("Жиры, г") },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+            )
+            OutlinedTextField(
+                value = carbs,
+                onValueChange = viewModel::setResultCarbs,
+                label = { Text("Углеводы, г") },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+            )
+        }
+        if (result.confidenceScore < 7.0) {
+            Text(
+                text = "⚠️ Низкая уверенность — проверьте значения",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color(0xFFEF6C00)
+            )
+        }
+        ProductsBlock(items = result.items)
+        if (result.aiThoughts.isNotBlank()) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp)) {
+                    Text("Мысли ИИ", style = MaterialTheme.typography.titleSmall)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = result.aiThoughts,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+        HorizontalDivider()
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) {
+                Text("Отмена")
+            }
+            Button(onClick = onSave, enabled = canSave, modifier = Modifier.weight(1f)) {
+                Text("Сохранить")
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProductsBlock(items: List<com.nutrilens.app.ai.AnalyzedItemResult>) {
+    if (items.isEmpty()) return
+    var expanded by remember { mutableStateOf(true) }
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded }
+                .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Продукты (${items.size})",
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.weight(1f)
+            )
+            Icon(
+                imageVector = if (expanded) {
+                    Icons.Filled.KeyboardArrowUp
+                } else {
+                    Icons.Filled.KeyboardArrowDown
+                },
+                contentDescription = if (expanded) "Свернуть" else "Развернуть"
+            )
+        }
+        if (expanded) {
+            items.forEach { item ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = item.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = "${item.weightG.roundToInt()} г · ${item.calories.roundToInt()} ккал",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }

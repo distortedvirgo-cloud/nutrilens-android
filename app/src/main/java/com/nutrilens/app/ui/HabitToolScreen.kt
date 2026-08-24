@@ -49,13 +49,12 @@ fun HabitToolScreen(onBack: () -> Unit) {
                 val settings = SettingsRepository(
                     NutriLensDatabase.getInstance(context).settingsDao()
                 ).get()
-                if (settings.apiKey.isBlank()) {
+                if (settings.apiKey.isBlank() && settings.nanoApiKey.isBlank()) {
                     error = "Сначала добавьте ключ Gemini в настройках"
                     loading = false
                     return@launch
                 }
-                result = GeminiTools.analyzeHabit(
-                    settings.apiKey,
+                result = GeminiTools.analyzeHabit(settings,
                     settings.userContext,
                     habitText.trim()
                 )

@@ -109,7 +109,7 @@ private fun PhotoToolScreen(kind: PhotoToolKind, onBack: () -> Unit) {
                     db.mealDao(), db.waterDao(), db.weightDao(), db.workoutDao()
                 )
                 val settings = SettingsRepository(db.settingsDao()).get()
-                if (settings.apiKey.isBlank()) {
+                if (settings.apiKey.isBlank() && settings.nanoApiKey.isBlank()) {
                     error = "Сначала добавьте ключ Gemini в настройках"
                     loading = false
                     return@launch
@@ -121,13 +121,11 @@ private fun PhotoToolScreen(kind: PhotoToolKind, onBack: () -> Unit) {
                     Base64.encodeToString(ImagePrep.readBytes(it), Base64.NO_WRAP)
                 }
                 result = if (kind == PhotoToolKind.FRIDGE) {
-                    GeminiTools.analyzeFridge(
-                        settings.apiKey, settings.userContext, settings.dailyGoal,
+                    GeminiTools.analyzeFridge(settings, settings.userContext, settings.dailyGoal,
                         remaining, useRemaining, images
                     )
                 } else {
-                    GeminiTools.analyzeMenu(
-                        settings.apiKey, settings.userContext, settings.dailyGoal,
+                    GeminiTools.analyzeMenu(settings, settings.userContext, settings.dailyGoal,
                         remaining, useRemaining, images
                     )
                 }

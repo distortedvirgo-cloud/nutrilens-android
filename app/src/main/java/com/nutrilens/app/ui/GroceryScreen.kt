@@ -63,13 +63,12 @@ fun GroceryScreen(onBack: () -> Unit) {
                 val settings = SettingsRepository(
                     NutriLensDatabase.getInstance(context).settingsDao()
                 ).get()
-                if (settings.apiKey.isBlank()) {
+                if (settings.apiKey.isBlank() && settings.nanoApiKey.isBlank()) {
                     error = "Сначала добавьте ключ Gemini в настройках"
                     loading = false
                     return@launch
                 }
-                val plan = GeminiTools.generateGroceryList(
-                    settings.apiKey,
+                val plan = GeminiTools.generateGroceryList(settings,
                     settings.userContext,
                     settings.dailyGoal,
                     preferences.trim()

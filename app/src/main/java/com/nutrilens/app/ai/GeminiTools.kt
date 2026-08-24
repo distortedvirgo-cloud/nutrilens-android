@@ -1,5 +1,6 @@
 package com.nutrilens.app.ai
 
+import com.nutrilens.app.data.SettingsEntity
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
@@ -109,7 +110,7 @@ object GeminiTools {
      * Подбор 3 идей для еды под оставшиеся калории. Возвращает структурированный список.
      */
     suspend fun getRecommendations(
-        apiKey: String,
+        settings: SettingsEntity,
         userContext: String,
         userInput: String,
         remainingCalories: Int,
@@ -148,7 +149,7 @@ object GeminiTools {
             Верни РОВНО 3 идеи в виде JSON-объекта со строгой структурой (см. schema). Поле 'recipePrompt' для каждого блюда — это КРАТКОЕ описание состава и способа приготовления (2-3 предложения), которое позже будет развёрнуто в полный рецепт. 'calories' — итоговая калорийность порции (целое число, не больше остатка).
         """.trimIndent()
 
-        val responseBody = execute(apiKey, buildRecommendationsBody(prompt))
+        val responseBody = modelText(settings, buildRecommendationsBody(prompt))
         val jsonText = stripFence(parseText(responseBody))
         val payload = try {
             mealJson.decodeFromString<RecommendationsPayload>(jsonText)
@@ -164,14 +165,14 @@ object GeminiTools {
     /**
      * Полный пошаговый рецепт из краткого описания. Простой текст, без JSON-схемы.
      */
-    suspend fun getDetailedRecipe(apiKey: String, recipePrompt: String): String {
+    suspend fun getDetailedRecipe(settings: SettingsEntity, recipePrompt: String): String {
         val prompt = """
             Напиши подробный пошаговый рецепт для следующего блюда:
             ${recipePrompt}
             Включи ингредиенты (с граммовками) и пошаговую инструкцию. Отвечай просто текстом (без сложного форматирования, используй обычные списки с тире). Не используй JSON.
         """.trimIndent()
 
-        val responseBody = execute(apiKey, buildSchemalessBody(prompt))
+        val responseBody = modelText(settings, buildSchemalessBody(prompt))
         return parseText(responseBody)
     }
 
@@ -179,7 +180,7 @@ object GeminiTools {
      * План питания на неделю + список покупок. При ошибке парсинга — пустой план.
      */
     suspend fun generateGroceryList(
-        apiKey: String,
+        settings: SettingsEntity,
         userContext: String,
         dailyGoal: Double,
         preferences: String
@@ -205,7 +206,7 @@ object GeminiTools {
             }
         """.trimIndent()
 
-        val responseBody = execute(apiKey, buildGroceryBody(prompt))
+        val responseBody = modelText(settings, buildGroceryBody(prompt))
         val jsonText = stripFence(parseText(responseBody))
         return try {
             mealJson.decodeFromString<GroceryPlan>(jsonText)
@@ -218,7 +219,7 @@ object GeminiTools {
      * Анализ фото холодильника/стола: 3 здоровых рецепта из того, что есть (Markdown).
      */
     suspend fun analyzeFridge(
-        apiKey: String,
+        settings: SettingsEntity,
         userContext: String,
         dailyGoal: Double,
         remainingCalories: Int,
@@ -236,7 +237,7 @@ object GeminiTools {
             Опиши с Markdown-форматированием. Не предлагай блюда, если на фото нет соответствующих ингредиентов.
         """.trimIndent()
 
-        val responseBody = execute(apiKey, buildSchemalessBody(prompt, imagesBase64))
+        val responseBody = modelText(settings, buildSchemalessBody(prompt, imagesBase64))
         return parseText(responseBody)
     }
 
@@ -244,7 +245,7 @@ object GeminiTools {
      * Анализ фото меню ресторана/кафе: топ-3, «если хочется...», красные флаги (Markdown).
      */
     suspend fun analyzeMenu(
-        apiKey: String,
+        settings: SettingsEntity,
         userContext: String,
         dailyGoal: Double,
         remainingCalories: Int,
@@ -261,14 +262,14 @@ object GeminiTools {
             Отвечай структурированно, используй Markdown. Не давай медицинских рекомендаций.
         """.trimIndent()
 
-        val responseBody = execute(apiKey, buildSchemalessBody(prompt, imagesBase64))
+        val responseBody = modelText(settings, buildSchemalessBody(prompt, imagesBase64))
         return parseText(responseBody)
     }
 
     /**
      * Анализ привычки/проблемы с питанием (Markdown).
      */
-    suspend fun analyzeHabit(apiKey: String, userContext: String, habit: String): String {
+    suspend fun analyzeHabit(settings: SettingsEntity, userContext: String, habit: String): String {
         val prompt = """
             Ты опытный нутрициолог-консультант (НЕ врач). Пользователь: ${userContext}.
             У пользователя есть следующая привычка или проблема с питанием: "${habit}".
@@ -281,14 +282,14 @@ object GeminiTools {
             Структурируй ответ и используй Markdown.
         """.trimIndent()
 
-        val responseBody = execute(apiKey, buildSchemalessBody(prompt))
+        val responseBody = modelText(settings, buildSchemalessBody(prompt))
         return parseText(responseBody)
     }
 
     /**
      * Рекомендации по водному балансу (Markdown).
      */
-    suspend fun waterAdvice(apiKey: String, userContext: String, weightKg: Double?): String {
+    suspend fun waterAdvice(settings: SettingsEntity, userContext: String, weightKg: Double?): String {
         val weightLine = if (weightKg != null) {
             " Текущий вес пользователя: ${"%.1f".format(weightKg)} кг."
         } else {
@@ -305,14 +306,14 @@ object GeminiTools {
             Отвечай структурированно, используй Markdown. Не давай медицинских диагнозов.
         """.trimIndent()
 
-        val responseBody = execute(apiKey, buildSchemalessBody(prompt))
+        val responseBody = modelText(settings, buildSchemalessBody(prompt))
         return parseText(responseBody)
     }
 
     /**
      * Короткая оценка рациона за последние дни (свободный текст).
      */
-    suspend fun statsInsight(apiKey: String, dailyGoal: Double, recentData: String): String {
+    suspend fun statsInsight(settings: SettingsEntity, dailyGoal: Double, recentData: String): String {
         val prompt = """
             Проанализируй рацион за последние дни:
             ${recentData}
@@ -322,7 +323,7 @@ object GeminiTools {
             Дай оценку от 1 до 10 (где 10 - идеально) и 2-3 коротких конструктивных совета по улучшению нутриентов/выбора блюд. Отвечай коротко и только по делу.
         """.trimIndent()
 
-        val responseBody = execute(apiKey, buildSchemalessBody(prompt))
+        val responseBody = modelText(settings, buildSchemalessBody(prompt))
         return parseText(responseBody)
     }
 
@@ -533,6 +534,49 @@ object GeminiTools {
                 }
             })
         }
+
+    /**
+     * Единый путь текстовых ИИ-инструментов (идеи, рецепты, покупки, холодильник,
+     * ресторан, привычки, вода, оценка отчёта): при ключе NanoGPT и режиме
+     * simple/advanced (или отсутствии Gemini) запрос идёт через NanoGPT с тем же
+     * промптом (тело конвертируется в messages), иначе — напрямую в Gemini.
+     */
+    private suspend fun modelText(settings: SettingsEntity, bodyJson: String): String {
+        val hasNano = settings.nanoApiKey.isNotBlank()
+        val useNano = hasNano && (settings.analysisMode != "free" || settings.apiKey.isBlank())
+        if (!useNano) return parseText(execute(settings.apiKey, bodyJson))
+
+        val root = org.json.JSONObject(bodyJson)
+        val system = root.optJSONObject("systemInstruction")
+            ?.optJSONArray("parts")?.optJSONObject(0)?.optString("text") ?: ""
+        val messages = mutableListOf<NanoGptApi.Msg>()
+        root.optJSONArray("contents")?.let { contents ->
+            for (i in 0 until contents.length()) {
+                val c = contents.getJSONObject(i)
+                val role = if (c.optString("role") == "model") "assistant" else "user"
+                val parts = c.optJSONArray("parts") ?: continue
+                val text = StringBuilder()
+                val images = mutableListOf<String>()
+                for (j in 0 until parts.length()) {
+                    val part = parts.getJSONObject(j)
+                    if (part.has("text")) text.append(part.optString("text"))
+                    part.optJSONObject("inlineData")?.optString("data")?.let { images += it }
+                }
+                messages += NanoGptApi.Msg(role, text.toString(), images)
+            }
+        }
+        if (messages.isEmpty()) return parseText(execute(settings.apiKey, bodyJson))
+        val jsonMode = root.optJSONObject("generationConfig")
+            ?.optString("responseMimeType") == "application/json"
+        val model = if (settings.analysisMode == "advanced") {
+            com.nutrilens.app.ai.NANO_MODEL_ADVANCED
+        } else {
+            com.nutrilens.app.ai.NANO_MODEL_SIMPLE
+        }
+        return NanoGptApi.complete(
+            settings.nanoApiKey, settings.nanoApiEndpoint, model, system, messages, jsonMode
+        )
+    }
 
     /** Достаёт текст из candidates[0].content.parts[].text. Пусто — ошибка «Пустой ответ модели». */
     private fun parseText(body: String): String {
