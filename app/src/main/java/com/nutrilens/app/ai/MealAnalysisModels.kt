@@ -18,6 +18,13 @@ data class MealAnalysisResult(
     val aiThoughts: String = "",
     val reasoning: String = "",
     @SerialName("confidence_score") val confidenceScore: Double = 0.0,
+    /**
+     * Оценка полезности блюда по составу и БЖУ (0–100) от ИИ и нейтральная
+     * короткая фраза о составе. null — модель не вернула (старые записи
+     * показывают детерминированную оценку по БЖУ).
+     */
+    @SerialName("health_score") val healthScore: Double? = null,
+    @SerialName("health_note") val healthNote: String? = null,
     val items: List<AnalyzedItemResult> = emptyList()
 )
 

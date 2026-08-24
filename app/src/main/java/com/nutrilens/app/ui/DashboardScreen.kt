@@ -1264,7 +1264,7 @@ private fun MealCard(
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.outline
                 )
-                ConfidenceBadge(score = meal.meal.confidenceScore)
+                HealthBadge(score = healthScoreOf(meal.meal))
             }
             Spacer(Modifier.width(4.dp))
             Column {
@@ -1324,25 +1324,59 @@ private fun MealThumbnail(meal: MealWithImages) {
     }
 }
 
-@Composable
-private fun ConfidenceBadge(score: Double) {
-    val rounded = score.roundToInt()
-    if (rounded <= 0) return
-    val color = when {
-        rounded >= 7 -> MaterialTheme.colorScheme.primary
-        rounded >= 4 -> MaterialTheme.colorScheme.tertiary
-        else -> MaterialTheme.colorScheme.error
+/**
+ * Оценка полезности блюда для пользователя (0–100). Если ИИ вернул
+ * health_score — его и показываем; старые записи без неё получают
+ * справедливый детерминированный прогноз по БЖУ (не хуже случайного нуля).
+ */
+private fun healthScoreOf(meal: MealEntity): Int {
+    meal.healthScore?.let { return it.coerceIn(0, 100) }
+    val total = meal.calories.takeIf { it > 0 } ?: return 50
+    val proteinShare = (meal.protein * 4) / total
+    val fatShare = (meal.fat * 9) / total
+    val carbShare = (meal.carbs * 4) / total
+    var score = 55.0
+    when {
+        proteinShare in 0.18..0.42 -> score += 15
+        proteinShare in 0.10..0.18 -> score += 5
+        proteinShare < 0.10 || proteinShare > 0.50 -> score -= 10
     }
+    when {
+        fatShare > 0.45 -> score -= 20
+        fatShare > 0.35 -> score -= 8
+        fatShare < 0.25 -> score += 5
+    }
+    if (carbShare > 0.70) score -= 8
+    return score.roundToInt().coerceIn(5, 95)
+}
+
+@Composable
+private fun healthBandColor(score: Int): Color = when {
+    score >= 75 -> MaterialTheme.colorScheme.primary
+    score >= 50 -> WaterBlue
+    score >= 25 -> MaterialTheme.colorScheme.tertiary
+    else -> MaterialTheme.colorScheme.error
+}
+
+private fun healthBandLabel(score: Int): String = when {
+    score >= 75 -> "Сбалансированный состав"
+    score >= 50 -> "Нейтральный состав"
+    score >= 25 -> "Плотное блюдо"
+    else -> "Тяжёлое блюдо"
+}
+
+@Composable
+private fun HealthBadge(score: Int) {
     Box(
         modifier = Modifier
             .padding(top = 2.dp)
             .size(22.dp)
             .clip(CircleShape)
-            .background(color),
+            .background(healthBandColor(score)),
         contentAlignment = Alignment.Center
     ) {
         Text(
-            text = "$rounded",
+            text = "$score",
             color = Color.White,
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Bold
@@ -1351,6 +1385,33 @@ private fun ConfidenceBadge(score: Double) {
 }
 
 // ---------- Диалог деталей ----------
+
+/** Оценка состава: счёт 0–100 с цветом зоны, подписью и нейтральной заметкой ИИ. */
+@Composable
+private fun MealHealthSection(score: Int, note: String?) {
+    Spacer(Modifier.height(8.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .size(12.dp)
+                .clip(CircleShape)
+                .background(healthBandColor(score))
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = "Оценка состава: $score/100 · ${healthBandLabel(score)}",
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium
+        )
+    }
+    if (!note.isNullOrBlank()) {
+        Text(
+            text = note,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
 
 @Composable
 private fun MealDetailsDialog(
@@ -1374,6 +1435,7 @@ private fun MealDetailsDialog(
                     text = "Б ${m.protein.roundToInt()} · Ж ${m.fat.roundToInt()} · У ${m.carbs.roundToInt()} г",
                     style = MaterialTheme.typography.bodyMedium
                 )
+                MealHealthSection(score = healthScoreOf(m), note = m.healthNote)
                 Spacer(Modifier.height(8.dp))
                 if (items.isNotEmpty()) {
                     Text("Продукты", style = MaterialTheme.typography.titleSmall)

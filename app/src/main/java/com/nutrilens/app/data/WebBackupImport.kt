@@ -152,6 +152,8 @@ object WebBackupImport {
                     aiThoughts = str(m, "ai_thoughts") ?: "",
                     reasoning = str(m, "reasoning") ?: "",
                     confidenceScore = num(m, "confidence_score") ?: 0.0,
+                    healthScore = num(m, "health_score")?.toInt(),
+                    healthNote = str(m, "health_note"),
                     dailyGoalSnapshot = num(m, "dailyGoalSnapshot"),
                     createdAt = parseDateMillis(date) ?: System.currentTimeMillis()
                 )

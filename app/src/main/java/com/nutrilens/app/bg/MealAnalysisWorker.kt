@@ -125,6 +125,8 @@ class MealAnalysisWorker(context: Context, params: WorkerParameters) : Coroutine
             aiThoughts = result.aiThoughts,
             reasoning = result.reasoning,
             confidenceScore = result.confidenceScore,
+            healthScore = result.healthScore?.toInt(),
+            healthNote = result.healthNote,
             dailyGoalSnapshot = dailyGoal
         )
 

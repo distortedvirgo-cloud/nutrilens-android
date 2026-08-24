@@ -19,6 +19,9 @@ data class MealEntity(
     val aiThoughts: String = "",
     val reasoning: String = "",
     val confidenceScore: Double = 0.0,
+    // Оценка полезности блюда (0–100) + нейтральная фраза о составе. null = нет данных.
+    val healthScore: Int? = null,
+    val healthNote: String? = null,
     val dailyGoalSnapshot: Double? = null,
     val createdAt: Long = System.currentTimeMillis()
 )

@@ -25,6 +25,14 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
     }
 }
 
+/** v4: оценка полезности блюда от ИИ (health_score/health_note) взамен видимой уверенности. */
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE meals ADD COLUMN healthScore INTEGER DEFAULT NULL")
+        db.execSQL("ALTER TABLE meals ADD COLUMN healthNote TEXT DEFAULT NULL")
+    }
+}
+
 @Database(
     entities = [
         MealEntity::class,
@@ -38,7 +46,7 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
         SettingsEntity::class,
         AnalysisJobEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class NutriLensDatabase : RoomDatabase() {
@@ -62,7 +70,7 @@ abstract class NutriLensDatabase : RoomDatabase() {
                     NutriLensDatabase::class.java,
                     "nutrilens.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build().also { INSTANCE = it }
             }
         }

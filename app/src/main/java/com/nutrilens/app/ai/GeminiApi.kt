@@ -164,6 +164,8 @@ class GeminiApi(private val apiKey: String) {
                         put("aiThoughts", buildJsonObject { put("type", "STRING") })
                         put("reasoning", buildJsonObject { put("type", "STRING") })
                         put("confidence_score", buildJsonObject { put("type", "NUMBER") })
+                        put("health_score", buildJsonObject { put("type", "NUMBER") })
+                        put("health_note", buildJsonObject { put("type", "STRING") })
                         putJsonObject("items") {
                             put("type", "ARRAY")
                             putJsonObject("items") {
