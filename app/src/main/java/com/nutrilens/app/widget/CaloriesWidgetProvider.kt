@@ -191,7 +191,7 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
         ): Bitmap {
             val density = context.resources.displayMetrics.density
             val k = 3f * density
-            val size = (56f * k).toInt().coerceAtLeast(64)
+            val size = (64f * k).toInt().coerceAtLeast(64)
             val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(bmp)
             val cx = size / 2f
@@ -208,10 +208,10 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
             val carbsColor = if (dark) COLOR_PURPLE_DARK else COLOR_PURPLE
             val trackAlpha = if (dark) 0.28f else 0.15f
 
-            // Толщины и радиусы: жирные дуги, но прижаты к краю, чтобы
-            // освободить центр под крупное число съеденных калорий.
-            val s1 = 8.0f * k
-            val s2 = 4.5f * k
+            // Толщины и радиусы: дуги жирные, но кольцо увеличено и чуть
+            // утончено к краю, чтобы центр остался свободным под крупное число.
+            val s1 = 7.0f * k
+            val s2 = 4.0f * k
             val r1 = size / 2f - s1 / 2f
             val r2 = r1 - s1 / 2f - 1.0f * k - s2 / 2f
 
