@@ -14,15 +14,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 /**
- * Амбиентный фон как во fresh-оболочке веба: два мягких свечения (accent +
- * синий, ~0.13/0.07) медленно дрейфуют в противофазе (26s и 32s), создавая
- * «дыхание» вместо статичной заливки. Радиальные градиенты — дёшево для GPU.
+ * Амбиентный фон: без «источника света». Вместо кругов с ярким центром —
+ * большие заливки (600dp), чьи ядра уходят за экран: видна только внешняя
+ * дымка, которая мягко тает к краям. Плюс едва заметная общая тональная
+ * подложка сверху вниз. Дрейф остаётся медленным (26s/32s, противофаза).
  */
 @Composable
 fun NutriGlowBackground(content: @Composable () -> Unit) {
@@ -34,11 +34,6 @@ fun NutriGlowBackground(content: @Composable () -> Unit) {
         initialValue = 0f, targetValue = 1f,
         animationSpec = infiniteRepeatable(tween(26000), RepeatMode.Reverse),
         label = "dxA"
-    )
-    val dyA by drift.animateFloat(
-        initialValue = 0f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(26000), RepeatMode.Reverse),
-        label = "dyA"
     )
     val dxB by drift.animateFloat(
         initialValue = 0f, targetValue = 1f,
@@ -52,24 +47,46 @@ fun NutriGlowBackground(content: @Composable () -> Unit) {
     )
 
     Box(Modifier.fillMaxSize()) {
-        // Свечение accent — справа сверху, дрейф (−34px, +28px), рост ×1.14.
+        // Общая тональная подложка: светлее сверху, чище снизу. Без точек.
         Box(
             Modifier
-                .size(440.dp)
-                .offset(x = (120 - 34 * dxA).dp, y = (-110 + 28 * dyA).dp)
-                .scale(1f + 0.14f * dxA)
+                .fillMaxSize()
                 .background(
-                    Brush.radialGradient(listOf(a.copy(alpha = 0.13f), Color.Transparent))
+                    Brush.verticalGradient(
+                        listOf(
+                            Color.White.copy(alpha = 0.30f),
+                            Color.Transparent,
+                            a.copy(alpha = 0.025f)
+                        ),
+                        endY = 1600f
+                    )
                 )
         )
-        // Свечение синего — слева на 40% высоты, дрейф (+30px, −24px), сжатие ×0.9.
+        // Дымка акцента сверху-справа: ядро за экраном, виден только шлейф
+        // (stops дают плато, а не яркую точку в центре).
         Box(
             Modifier
-                .size(380.dp)
-                .offset(x = (-120 + 30 * dxB).dp, y = (280 - 24 * dyB).dp)
-                .scale(1.06f - 0.16f * dyB)
+                .size(600.dp)
+                .offset(x = (260 - 30 * dxA).dp, y = (-240).dp)
                 .background(
-                    Brush.radialGradient(listOf(b.copy(alpha = 0.07f), Color.Transparent))
+                    Brush.radialGradient(
+                        0f to a.copy(alpha = 0.075f),
+                        0.55f to a.copy(alpha = 0.035f),
+                        1f to Color.Transparent
+                    )
+                )
+        )
+        // Вторая дымка (синяя) слева, чуть ниже середины.
+        Box(
+            Modifier
+                .size(640.dp)
+                .offset(x = (-300 + 26 * dxB).dp, y = (420 - 22 * dyB).dp)
+                .background(
+                    Brush.radialGradient(
+                        0f to b.copy(alpha = 0.05f),
+                        0.55f to b.copy(alpha = 0.025f),
+                        1f to Color.Transparent
+                    )
                 )
         )
         content()
