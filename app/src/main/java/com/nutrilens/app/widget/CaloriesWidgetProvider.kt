@@ -21,7 +21,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.time.LocalDate
-import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -114,8 +113,9 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
             }
             views.setTextViewText(
                 R.id.widget_remain,
-                abs(remaining).toString()
+                eaten.roundToInt().toString()
             )
+            views.setTextViewText(R.id.widget_remain_unit, "ккал")
             // Перебор — оранжевым, фирменный акцент тревоги.
             views.setTextColor(
                 R.id.widget_remain,
@@ -124,10 +124,6 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
                 } else {
                     if (dark) COLOR_WHITE else COLOR_INK
                 }
-            )
-            views.setTextViewText(
-                R.id.widget_remain_unit,
-                if (isOver) "перебор" else "ккал"
             )
             views.setTextViewText(R.id.widget_p, protein.toString())
             views.setTextViewText(R.id.widget_f, fat.toString())
@@ -212,11 +208,12 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
             val carbsColor = if (dark) COLOR_PURPLE_DARK else COLOR_PURPLE
             val trackAlpha = if (dark) 0.28f else 0.15f
 
-            // Толщины и радиусы: жирные дуги, чтобы кольца читались с шага.
+            // Толщины и радиусы: жирные дуги, но прижаты к краю, чтобы
+            // освободить центр под крупное число съеденных калорий.
             val s1 = 8.0f * k
-            val s2 = 5.0f * k
+            val s2 = 4.5f * k
             val r1 = size / 2f - s1 / 2f
-            val r2 = r1 - s1 / 2f - 1.6f * k - s2 / 2f
+            val r2 = r1 - s1 / 2f - 1.0f * k - s2 / 2f
 
             fun ring(radius: Float, stroke: Float, color: Int, fraction: Float, trackAlpha: Float) {
                 val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {

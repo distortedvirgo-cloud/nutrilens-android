@@ -7,15 +7,15 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <LinearLayout
+    <!-- Капсула-каркас: FrameLayout, чтобы единственный ребёнок (контент)
+         центрировался и горизонтально, и вертикально. -->
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
         android:layout_marginStart="1dp"
         android:layout_marginEnd="1dp"
         android:background="@drawable/widget_bg_dark"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
         android:paddingStart="8dp"
         android:paddingEnd="8dp"
         android:paddingTop="8dp"
@@ -53,13 +53,13 @@
                         android:layout_height="wrap_content"
                         android:autoSizeTextType="uniform"
                         android:autoSizeMinTextSize="8sp"
-                        android:autoSizeMaxTextSize="12sp"
+                        android:autoSizeMaxTextSize="14sp"
                         android:fontFamily="sans-serif-black"
                         android:gravity="center"
                         android:maxLines="1"
                         android:text="2100"
                         android:textColor="#F8FAFC"
-                        android:textSize="12sp" />
+                        android:textSize="14sp" />
 
                     <TextView
                         android:id="@+id/widget_remain_unit"
@@ -70,7 +70,7 @@
                         android:maxLines="1"
                         android:text="ккал"
                         android:textColor="#94A3B8"
-                        android:textSize="6.5sp" />
+                        android:textSize="7sp" />
                 </LinearLayout>
             </FrameLayout>
 
@@ -196,6 +196,6 @@
                 </LinearLayout>
             </LinearLayout>
         </LinearLayout>
-    </LinearLayout>
+    </FrameLayout>
 
 </FrameLayout>
