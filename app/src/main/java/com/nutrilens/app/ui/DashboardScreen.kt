@@ -2,9 +2,13 @@ package com.nutrilens.app.ui
 
 import android.app.Application
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.CubicBezierEasing
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -292,8 +296,11 @@ fun DashboardScreen(
             DaySelectorRow(
                 selected = selectedDate,
                 streak = streak,
+                lastWeight = lastWeight,
+                daysSince = daysSince,
                 onShift = viewModel::shiftDay,
-                onToday = viewModel::goToday
+                onToday = viewModel::goToday,
+                onWeighIn = { showWeightDialog = true }
             )
         }
         item { CaloriesHero(meals = meals, settings = settings) }
@@ -320,13 +327,7 @@ fun DashboardScreen(
                 hasAnyMeals = hasAnyMeals
             )
         }
-        item {
-            WeightCard(
-                lastWeight = lastWeight,
-                daysSince = daysSince,
-                onWeighIn = { showWeightDialog = true }
-            )
-        }
+
         if (meals.isEmpty()) {
             item { EmptyState() }
         } else {
@@ -429,8 +430,11 @@ private fun dateLabelRu(date: LocalDate): String {
 private fun DaySelectorRow(
     selected: LocalDate,
     streak: Int,
+    lastWeight: Double?,
+    daysSince: Int?,
     onShift: (Long) -> Unit,
-    onToday: () -> Unit
+    onToday: () -> Unit,
+    onWeighIn: () -> Unit
 ) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.weight(1f)) {
@@ -476,6 +480,13 @@ private fun DaySelectorRow(
                         )
                     }
                 }
+                Spacer(Modifier.width(8.dp))
+                // Кнопка веса всегда на виду; мигает, если 7+ дней без записи.
+                WeightChip(
+                    lastWeight = lastWeight,
+                    daysSince = daysSince,
+                    onClick = onWeighIn
+                )
             }
         }
         Spacer(Modifier.width(8.dp))
@@ -535,6 +546,77 @@ private fun DayArrow(onClick: () -> Unit, contentDescription: String) {
                 contentDescription = contentDescription,
                 tint = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.size(20.dp)
+            )
+        }
+    }
+}
+
+/** Кнопка веса (всегда на виду): мигает, когда 7+ дней без записи. */
+@Composable
+private fun WeightChip(
+    lastWeight: Double?,
+    daysSince: Int?,
+    onClick: () -> Unit
+) {
+    val overdue = daysSince != null && daysSince >= 7
+    val needsWeighIn = daysSince == null || overdue
+    val label = when {
+        daysSince == null -> "⚖️ Взвеситься"
+        lastWeight != null -> "⚖️ " + "%.1f".format(lastWeight) + " кг"
+        else -> "⚖️ Взвеситься"
+    }
+    if (needsWeighIn) {
+        // Мигание: лёгкое дыхание альфой и масштабом оранжевой пилюли.
+        val t = rememberInfiniteTransition(label = "wgtPulse")
+        val alpha by t.animateFloat(
+            initialValue = 0.45f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(650), RepeatMode.Reverse),
+            label = "wgtAlpha"
+        )
+        val scale by t.animateFloat(
+            initialValue = 0.97f,
+            targetValue = 1.04f,
+            animationSpec = infiniteRepeatable(tween(650), RepeatMode.Reverse),
+            label = "wgtScale"
+        )
+        val shape = RoundedCornerShape(999.dp)
+        Surface(
+            onClick = onClick,
+            shape = shape,
+            color = MaterialTheme.colorScheme.tertiary,
+            modifier = Modifier
+                .scale(scale)
+                .shadow(6.dp, shape, ambientColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.3f), spotColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.3f))
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onTertiary,
+                modifier = Modifier
+                    .padding(horizontal = 12.dp, vertical = 5.dp)
+                    .graphicsLayer { this.alpha = alpha }
+            )
+        }
+    } else {
+        val shape = RoundedCornerShape(999.dp)
+        Surface(
+            onClick = onClick,
+            shape = shape,
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+            modifier = Modifier.shadow(
+                5.dp, shape,
+                ambientColor = Color(0x1216241C), spotColor = Color(0x1216241C)
+            )
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
             )
         }
     }
@@ -738,20 +820,12 @@ private fun MacroCard(
             .shadow(6.dp, shape, ambientColor = color.copy(alpha = 0.18f), spotColor = color.copy(alpha = 0.18f))
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier
-                        .size(8.dp)
-                        .background(color, CircleShape)
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             Spacer(Modifier.height(6.dp))
             Text(
                 text = "${eaten.roundToInt()} г",
@@ -944,63 +1018,6 @@ private fun InsightsPanel(
                 if (focusText.isNotBlank()) {
                     Text(
                         text = focusText,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
-    }
-}
-
-// ---------- Вес ----------
-
-@Composable
-private fun WeightCard(
-    lastWeight: Double?,
-    daysSince: Int?,
-    onWeighIn: () -> Unit
-) {
-    val needsWeighIn = daysSince == null || daysSince >= 7
-    Surface(
-        shape = MaterialTheme.shapes.large,
-        color = if (needsWeighIn) MaterialTheme.colorScheme.secondaryContainer
-        else MaterialTheme.colorScheme.surface,
-        onClick = onWeighIn
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("⚖️", style = MaterialTheme.typography.titleLarge)
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                if (needsWeighIn) {
-                    Text(
-                        text = "Пора взвеситься!",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
-                    )
-                    Text(
-                        text = if (daysSince == null) {
-                            "Записей о весе пока нет"
-                        } else {
-                            "Последний раз: ${dateLabelRu(LocalDate.now().minusDays(daysSince.toLong()))}"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.75f)
-                    )
-                } else {
-                    Text(
-                        text = "Вес: ${lastWeight?.let { "%.1f".format(it) } ?: "—"} кг",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = "Нажмите, чтобы обновить",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
