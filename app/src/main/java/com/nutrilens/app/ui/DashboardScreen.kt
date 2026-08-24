@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -645,37 +646,46 @@ private fun CaloriesHero(meals: List<MealWithImages>, settings: SettingsEntity) 
     )
     // Тап по карточке переключает центр кольца: съедено ↔ остаток/перебор.
     var showRemaining by remember { mutableStateOf(false) }
-    val gradient = if (isOver) HeroWarn else HeroOk
-    val shape = MaterialTheme.shapes.extraLarge
-    val glow = if (isOver) Color(0x40059669) else Color(0x40059669)
 
+    // «Дыхание» кольца при достижении цели (ring-breathe из веба).
+    val infinite = rememberInfiniteTransition(label = "breathe")
+    val arcAlpha by infinite.animateFloat(
+        initialValue = 0.55f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(1600), RepeatMode.Reverse),
+        label = "arcAlpha"
+    )
+    val arcColor = if (isOver) MaterialTheme.colorScheme.tertiary
+    else MaterialTheme.colorScheme.primary
+    val trackColor = MaterialTheme.colorScheme.primaryContainer
+
+    val shape = MaterialTheme.shapes.extraLarge
     Surface(
         onClick = { showRemaining = !showRemaining },
         shape = shape,
-        color = Color.Transparent,
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
         modifier = Modifier
             .fillMaxWidth()
-            .shadow(20.dp, shape, ambientColor = glow, spotColor = glow)
+            .shadow(1.dp, shape, ambientColor = Color(0x1A0F172A), spotColor = Color(0x1A0F172A))
+            .shadow(12.dp, shape, ambientColor = Color(0x1A0F172A), spotColor = Color(0x1A0F172A))
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Brush.linearGradient(gradient))
-        ) {
-            // Декоративный полупрозрачный «блик» сверху — мягче градиент.
+        Box(modifier = Modifier.fillMaxWidth()) {
+            // Мягкое свечение акцента в углу, как во fresh-карточках веба.
             Box(
                 Modifier
-                    .fillMaxSize()
+                    .size(160.dp)
+                    .offset(x = 190.dp, y = (-70).dp)
                     .background(
-                        Brush.verticalGradient(
-                            listOf(Color.White.copy(alpha = 0.10f), Color.Transparent)
+                        Brush.radialGradient(
+                            listOf(MaterialTheme.colorScheme.primary.copy(alpha = 0.13f), Color.Transparent)
                         )
                     )
             )
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 24.dp),
+                    .padding(vertical = 26.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Box(contentAlignment = Alignment.Center) {
@@ -687,9 +697,8 @@ private fun CaloriesHero(meals: List<MealWithImages>, settings: SettingsEntity) 
                             (size.height - radius * 2) / 2f
                         )
                         val arcSize = Size(radius * 2, radius * 2)
-                        // Трек — полупрозрачный белый, арка и её свечение — белые.
                         drawArc(
-                            color = Color.White.copy(alpha = 0.22f),
+                            color = trackColor,
                             startAngle = 0f,
                             sweepAngle = 360f,
                             useCenter = false,
@@ -698,17 +707,9 @@ private fun CaloriesHero(meals: List<MealWithImages>, settings: SettingsEntity) 
                             style = Stroke(width = stroke, cap = StrokeCap.Round)
                         )
                         if (fraction > 0f) {
+                            val done = fraction >= 0.999f && !isOver
                             drawArc(
-                                color = Color.White.copy(alpha = 0.16f),
-                                startAngle = -90f,
-                                sweepAngle = 360f * fraction,
-                                useCenter = false,
-                                topLeft = topLeft,
-                                size = arcSize,
-                                style = Stroke(width = stroke + 10.dp.toPx(), cap = StrokeCap.Round)
-                            )
-                            drawArc(
-                                color = Color.White,
+                                color = arcColor.copy(alpha = if (done) arcAlpha else 1f),
                                 startAngle = -90f,
                                 sweepAngle = 360f * fraction,
                                 useCenter = false,
@@ -720,22 +721,24 @@ private fun CaloriesHero(meals: List<MealWithImages>, settings: SettingsEntity) 
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         if (showRemaining) {
+                            val delta = (goal - eaten).roundToInt()
                             DisplayNumber(
-                                text = "${(goal - eaten).roundToInt().let { kotlin.math.abs(it) }}",
+                                text = "${kotlin.math.abs(delta)}",
                                 size = 44,
-                                color = Color.White
+                                color = if (delta < 0) MaterialTheme.colorScheme.tertiary
+                                else MaterialTheme.colorScheme.primary
                             )
                             Text(
                                 text = if (isOver) "перебор ккал" else "осталось ккал",
                                 style = MaterialTheme.typography.labelMedium,
-                                color = Color.White.copy(alpha = 0.75f)
+                                color = MaterialTheme.colorScheme.outline
                             )
                         } else {
-                            DisplayNumber(text = "${eaten.roundToInt()}", size = 44, color = Color.White)
+                            DisplayNumber(text = "${eaten.roundToInt()}", size = 44, color = MaterialTheme.colorScheme.onSurface)
                             Text(
                                 text = "из ${goal.roundToInt()} ккал",
                                 style = MaterialTheme.typography.labelMedium,
-                                color = Color.White.copy(alpha = 0.75f)
+                                color = MaterialTheme.colorScheme.outline
                             )
                         }
                     }
@@ -748,8 +751,7 @@ private fun CaloriesHero(meals: List<MealWithImages>, settings: SettingsEntity) 
                         "Осталось ${(goal - eaten).roundToInt()} ккал"
                     },
                     style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = Color.White.copy(alpha = 0.9f)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
