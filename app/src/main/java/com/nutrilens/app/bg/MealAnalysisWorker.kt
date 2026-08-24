@@ -3,8 +3,8 @@ package com.nutrilens.app.bg
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.nutrilens.app.ai.GeminiApi
 import com.nutrilens.app.ai.ImagePrep
+import com.nutrilens.app.ai.analyzeMealCascade
 import com.nutrilens.app.ai.buildRecentMealsContext
 import com.nutrilens.app.data.AnalysisJobRepository
 import com.nutrilens.app.data.MealEntity
@@ -40,8 +40,8 @@ class MealAnalysisWorker(context: Context, params: WorkerParameters) : Coroutine
         if (job.status == "DONE") return Result.success()
 
         val settings = settingsRepo.get()
-        if (settings.apiKey.isBlank()) {
-            val msg = "Не задан ключ Gemini — укажите его в настройках"
+        if (settings.apiKey.isBlank() && settings.nanoApiKey.isBlank()) {
+            val msg = "Не задан ключ Gemini или NanoGPT — укажите его в настройках"
             jobRepo.markFailed(jobId, msg)
             postFailureNotification(jobId, msg)
             return Result.failure()
@@ -80,8 +80,7 @@ class MealAnalysisWorker(context: Context, params: WorkerParameters) : Coroutine
             val fullBytes = photos.map { ImagePrep.readBytes(File(it.first)) }
             val today = LocalDate.now().toString()
             val recent = buildRecentMealsContext(db.mealDao().mealsBetween(today, today))
-            val result = GeminiApi(settings.apiKey)
-                .analyzeMeal(fullBytes, settings.userContext, job.note, recent)
+            val result = analyzeMealCascade(settings, fullBytes, job.note, recent)
 
             val meal = saveMeal(db, settings.dailyGoal, photos, result)
             jobRepo.markDone(jobId, meal.id)

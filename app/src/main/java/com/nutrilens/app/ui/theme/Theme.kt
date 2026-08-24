@@ -17,18 +17,22 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nutrilens.app.R
 
-// Фирменные шрифты веб-версии: Manrope — заголовки, Golos Text — текст.
-private val Manrope = FontFamily(
-    Font(R.font.manrope, FontWeight.Medium),
-    Font(R.font.manrope, FontWeight.SemiBold),
-    Font(R.font.manrope, FontWeight.Bold),
-    Font(R.font.manrope, FontWeight.ExtraBold)
+// Новая типографика: Unbounded — дисплейные заголовки, Onest — текст.
+// Статические начертания на каждый вес: вариативные TTF в Compose не
+// применяют ось веса, и весь текст выглядел одинаково тонким.
+private val Unbounded = FontFamily(
+    Font(R.font.unbounded_500, FontWeight.Medium),
+    Font(R.font.unbounded_600, FontWeight.SemiBold),
+    Font(R.font.unbounded_700, FontWeight.Bold),
+    Font(R.font.unbounded_800, FontWeight.ExtraBold)
 )
 
-private val GolosText = FontFamily(
-    Font(R.font.golostext, FontWeight.Normal),
-    Font(R.font.golostext, FontWeight.Medium),
-    Font(R.font.golostext, FontWeight.SemiBold)
+private val Onest = FontFamily(
+    Font(R.font.onest_400, FontWeight.Normal),
+    Font(R.font.onest_500, FontWeight.Medium),
+    Font(R.font.onest_600, FontWeight.SemiBold),
+    Font(R.font.onest_700, FontWeight.Bold),
+    Font(R.font.onest_800, FontWeight.ExtraBold)
 )
 
 // Палитра перенесена из дизайн-токенов веб-версии (src/index.css, fresh-тема).
@@ -107,21 +111,21 @@ private fun display(fontFamily: FontFamily, weight: FontWeight, size: Int, tight
     )
 
 private val NutriTypography = Typography(
-    displayLarge = display(Manrope, FontWeight.ExtraBold, 40, tight = true),
-    displayMedium = display(Manrope, FontWeight.ExtraBold, 34, tight = true),
-    displaySmall = display(Manrope, FontWeight.Bold, 28, tight = true),
-    headlineLarge = display(Manrope, FontWeight.Bold, 28, tight = true),
-    headlineMedium = display(Manrope, FontWeight.Bold, 24),
-    headlineSmall = display(Manrope, FontWeight.Bold, 21),
-    titleLarge = display(Manrope, FontWeight.SemiBold, 19),
-    titleMedium = display(Manrope, FontWeight.SemiBold, 16),
-    titleSmall = display(Manrope, FontWeight.SemiBold, 14),
-    bodyLarge = display(GolosText, FontWeight.Normal, 16),
-    bodyMedium = display(GolosText, FontWeight.Normal, 14),
-    bodySmall = display(GolosText, FontWeight.Normal, 12),
-    labelLarge = display(GolosText, FontWeight.SemiBold, 14),
-    labelMedium = display(GolosText, FontWeight.Medium, 12),
-    labelSmall = display(GolosText, FontWeight.Medium, 10)
+    displayLarge = display(Unbounded, FontWeight.ExtraBold, 32, tight = true),
+    displayMedium = display(Unbounded, FontWeight.ExtraBold, 28, tight = true),
+    displaySmall = display(Unbounded, FontWeight.Bold, 24, tight = true),
+    headlineLarge = display(Unbounded, FontWeight.Bold, 24, tight = true),
+    headlineMedium = display(Unbounded, FontWeight.Bold, 21),
+    headlineSmall = display(Unbounded, FontWeight.SemiBold, 19),
+    titleLarge = display(Unbounded, FontWeight.SemiBold, 17),
+    titleMedium = display(Onest, FontWeight.Bold, 16),
+    titleSmall = display(Onest, FontWeight.SemiBold, 14),
+    bodyLarge = display(Onest, FontWeight.Normal, 16),
+    bodyMedium = display(Onest, FontWeight.Normal, 14),
+    bodySmall = display(Onest, FontWeight.Normal, 12),
+    labelLarge = display(Onest, FontWeight.SemiBold, 14),
+    labelMedium = display(Onest, FontWeight.Medium, 12),
+    labelSmall = display(Onest, FontWeight.Medium, 10)
 )
 
 /** Цвета макронутриентов из веб-токенов (белки/жиры/углеводы). */

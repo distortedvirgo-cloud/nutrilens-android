@@ -56,6 +56,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.nutrilens.app.ai.GeminiTools
 import com.nutrilens.app.ai.ImagePrep
+import com.nutrilens.app.ai.chatWithCascade
 import com.nutrilens.app.data.ChatMessage
 import com.nutrilens.app.data.ChatStore
 import com.nutrilens.app.data.MealRepository
@@ -103,8 +104,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         if (_loading.value) return
         viewModelScope.launch {
             val settings = settingsRepository.get()
-            if (settings.apiKey.isBlank()) {
-                _error.value = "Сначала добавьте ключ Gemini в настройках"
+            if (settings.apiKey.isBlank() && settings.nanoApiKey.isBlank()) {
+                _error.value = "Сначала добавьте ключ Gemini или NanoGPT в настройках"
                 return@launch
             }
             val userMessage = ChatMessage(role = "user", text = text, imagePaths = imagePaths)
@@ -134,7 +135,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     )
                 }
-                val reply = GeminiTools.chat(settings.apiKey, system, history)
+                val reply = chatWithCascade(settings, system, history)
                 val modelMessage = ChatMessage(role = "model", text = reply)
                 _messages.value = _messages.value + modelMessage
                 ChatStore.append(getApplication(), modelMessage)

@@ -288,15 +288,6 @@ fun DashboardScreen(
         item { CaloriesHero(meals = meals, settings = settings) }
         item { MacrosRow(meals = meals, settings = settings, lastWeight = lastWeight) }
         item {
-            WorkoutChip(
-                done = workoutDone,
-                onToggle = {
-                    view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-                    viewModel.toggleWorkout()
-                }
-            )
-        }
-        item {
             WaterCard(
                 waterMl = waterMl,
                 lastWeight = lastWeight,
@@ -698,35 +689,6 @@ private fun MacroCard(
 }
 
 // ---------- Вода ----------
-
-@Composable
-private fun WorkoutChip(done: Boolean, onToggle: () -> Unit) {
-    Surface(
-        onClick = onToggle,
-        shape = RoundedCornerShape(20.dp),
-        color = if (done) MaterialTheme.colorScheme.primaryContainer
-        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            if (done) MaterialTheme.colorScheme.primary
-            else MaterialTheme.colorScheme.outlineVariant
-        )
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
-        ) {
-            Text("💪", style = MaterialTheme.typography.bodyMedium)
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = if (done) "Тренировочный день" else "Сегодня тренировки нет",
-                style = MaterialTheme.typography.labelLarge,
-                color = if (done) MaterialTheme.colorScheme.onPrimaryContainer
-                else MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
 
 @Composable
 private fun WaterCard(

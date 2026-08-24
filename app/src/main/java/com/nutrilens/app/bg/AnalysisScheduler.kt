@@ -24,8 +24,8 @@ object AnalysisScheduler {
      * задачу в WorkManager. Возвращает id задачи.
      */
     suspend fun enqueueBackground(context: Context, note: String, photoUris: List<Uri>): String {
-        val jobId = UUID.randomUUID().toString()
-        val dir = File(context.filesDir, "photos/$jobId")
+        val dirId = UUID.randomUUID().toString()
+        val dir = File(context.filesDir, "photos/$dirId")
         dir.mkdirs()
 
         // AnalysisJobRepository.createJob принимает List<String> (список строк-путей),
@@ -36,10 +36,12 @@ object AnalysisScheduler {
         }
 
         val jobRepo = AnalysisJobRepository(NutriLensDatabase.getInstance(context).analysisJobDao())
-        jobRepo.createJob(note, photoPaths)
+        // Id записи очереди = id, который получит воркер: createJob генерирует
+        // собственный UUID, поэтому локальный jobId больше не используется.
+        val job = jobRepo.createJob(note, photoPaths)
 
         val request = OneTimeWorkRequestBuilder<MealAnalysisWorker>()
-            .setInputData(workDataOf(MealAnalysisWorker.EXTRA_JOB_ID to jobId))
+            .setInputData(workDataOf(MealAnalysisWorker.EXTRA_JOB_ID to job.id))
             .setConstraints(
                 Constraints.Builder()
                     .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -49,6 +51,6 @@ object AnalysisScheduler {
             .build()
 
         WorkManager.getInstance(context).enqueue(request)
-        return jobId
+        return job.id
     }
 }

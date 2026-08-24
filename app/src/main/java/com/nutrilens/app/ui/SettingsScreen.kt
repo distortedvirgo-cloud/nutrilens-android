@@ -110,6 +110,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     // ---- ИИ ----
     fun setApiKey(value: String) = update { it.copy(apiKey = value) }
 
+    // ---- NanoGPT ----
+    fun setNanoApiKey(value: String) = update { it.copy(nanoApiKey = value) }
+    fun setNanoApiEndpoint(value: String) = update { it.copy(nanoApiEndpoint = value) }
+    fun setAnalysisMode(value: String) = update { it.copy(analysisMode = value) }
+
     // ---- Цели ----
     fun setDailyGoal(value: Double) = update { it.copy(dailyGoal = value) }
     fun setProteinGoal(value: Double?) = update { it.copy(proteinGoal = value) }
@@ -279,6 +284,34 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                 )
                 Text(
                     text = "Хранится только на этом устройстве",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Режим анализа",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                SettingsModeRow(
+                    selected = settings.analysisMode,
+                    onSelect = viewModel::setAnalysisMode
+                )
+                SettingsTextField(
+                    initial = settings.nanoApiKey,
+                    label = "Ключ NanoGPT (для Простой/Продвинутый)",
+                    onCommit = viewModel::setNanoApiKey,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardType = KeyboardType.Password
+                )
+                SettingsTextField(
+                    initial = settings.nanoApiEndpoint,
+                    label = "Адрес NanoGPT (необязательно)",
+                    onCommit = viewModel::setNanoApiEndpoint
+                )
+                Text(
+                    text = "«Бесплатно» — ваш ключ Gemini (при сбое — NanoGPT, если ключ задан). «Простой» и «Продвинутый» идут через nano-gpt.com; в «Продвинутом» сложные фото эскалируются на thinking-модель.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -668,3 +701,26 @@ private fun SettingsNumberField(
 
 private fun formatNumber(value: Double): String =
     if (value % 1.0 == 0.0) value.toLong().toString() else value.toString()
+/** Переключатель режима анализа: три варианта, как в веб-версии. */
+@Composable
+private fun SettingsModeRow(selected: String, onSelect: (String) -> Unit) {
+    val modes = listOf(
+        "free" to "Бесплатно",
+        "simple" to "Простой",
+        "advanced" to "Продвинутый"
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        modes.forEach { (key, label) ->
+            val isSelected = selected == key
+            if (isSelected) {
+                Button(onClick = { onSelect(key) }, modifier = Modifier.weight(1f)) {
+                    Text(label)
+                }
+            } else {
+                OutlinedButton(onClick = { onSelect(key) }, modifier = Modifier.weight(1f)) {
+                    Text(label)
+                }
+            }
+        }
+    }
+}

@@ -22,6 +22,7 @@ object NotificationHelper {
     const val CHANNEL_ANALYSIS = "analysis"
     const val CHANNEL_REMINDERS = "reminders"
     const val CHANNEL_WATER = "water"
+    const val CHANNEL_UPDATE = "update"
 
     /** Создаёт (идемпотентно) все каналы уведомлений. */
     fun ensureChannels(context: Context) {
@@ -45,6 +46,13 @@ object NotificationHelper {
                 CHANNEL_WATER,
                 "Вода",
                 NotificationManager.IMPORTANCE_DEFAULT
+            )
+        )
+        manager.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_UPDATE,
+                "Обновления",
+                NotificationManager.IMPORTANCE_HIGH
             )
         )
     }

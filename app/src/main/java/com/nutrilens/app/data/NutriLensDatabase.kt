@@ -16,6 +16,15 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
     }
 }
 
+/** v3: NanoGPT-ключ, свой эндпоинт и режим анализа (free/simple/advanced). */
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE settings ADD COLUMN nanoApiKey TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE settings ADD COLUMN nanoApiEndpoint TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE settings ADD COLUMN analysisMode TEXT NOT NULL DEFAULT 'free'")
+    }
+}
+
 @Database(
     entities = [
         MealEntity::class,
@@ -29,7 +38,7 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
         SettingsEntity::class,
         AnalysisJobEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class NutriLensDatabase : RoomDatabase() {
@@ -53,7 +62,7 @@ abstract class NutriLensDatabase : RoomDatabase() {
                     NutriLensDatabase::class.java,
                     "nutrilens.db"
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .build().also { INSTANCE = it }
             }
         }

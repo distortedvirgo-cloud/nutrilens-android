@@ -78,7 +78,7 @@ class GeminiApi(private val apiKey: String) {
             )
         }
 
-        return fixDrift(result)
+        return fixMealDrift(result)
     }
 
     /**
@@ -127,48 +127,6 @@ class GeminiApi(private val apiKey: String) {
             ?.takeIf { it.isNotEmpty() }
             ?: throw RuntimeException("Пустой ответ модели")
         return text
-    }
-
-    /** Срезает обёртку ```json ... ``` если модель её добавила. */
-    private fun stripJsonFence(text: String): String {
-        val trimmed = text.trim()
-        if (trimmed.startsWith("```")) {
-            val firstNewline = trimmed.indexOf('\n')
-            val lastFence = trimmed.lastIndexOf("```")
-            if (firstNewline > 0 && lastFence > firstNewline) {
-                return trimmed.substring(firstNewline + 1, lastFence).trim()
-            }
-        }
-        return trimmed
-    }
-
-    /**
-     * Фикс дрейфа (как в веб-версии): если сумма КБЖУ по items существенно
-     * расходится с итоговыми полями верхнего уровня — верим сумме items.
-     */
-    private fun fixDrift(result: MealAnalysisResult): MealAnalysisResult {
-        if (result.items.isEmpty()) return result
-
-        var sumCalories = 0.0
-        var sumProtein = 0.0
-        var sumFat = 0.0
-        var sumCarbs = 0.0
-        for (item in result.items) {
-            sumCalories += item.calories
-            sumProtein += item.protein
-            sumFat += item.fat
-            sumCarbs += item.carbs
-        }
-
-        if (abs(sumCalories - result.calories) > maxOf(30.0, result.calories * 0.10)) {
-            return result.copy(
-                calories = sumCalories,
-                protein = sumProtein,
-                fat = sumFat,
-                carbs = sumCarbs
-            )
-        }
-        return result
     }
 
     /** Собирает JSON-тело запроса generateContent (промпт + inline_data на каждое фото). */
@@ -280,4 +238,46 @@ class GeminiApi(private val apiKey: String) {
         private const val URL =
             "https://generativelanguage.googleapis.com/v1beta/models/$MODEL:generateContent"
     }
+}
+
+/** Срезает обёртку ```json ... ``` если модель её добавила. */
+internal fun stripJsonFence(text: String): String {
+    val trimmed = text.trim()
+    if (trimmed.startsWith("```")) {
+        val firstNewline = trimmed.indexOf('\n')
+        val lastFence = trimmed.lastIndexOf("```")
+        if (firstNewline > 0 && lastFence > firstNewline) {
+            return trimmed.substring(firstNewline + 1, lastFence).trim()
+        }
+    }
+    return trimmed
+}
+
+/**
+ * Фикс дрейфа (как в веб-версии): если сумма КБЖУ по items существенно
+ * расходится с итоговыми полями верхнего уровня — верим сумме items.
+ */
+internal fun fixMealDrift(result: MealAnalysisResult): MealAnalysisResult {
+    if (result.items.isEmpty()) return result
+
+    var sumCalories = 0.0
+    var sumProtein = 0.0
+    var sumFat = 0.0
+    var sumCarbs = 0.0
+    for (item in result.items) {
+        sumCalories += item.calories
+        sumProtein += item.protein
+        sumFat += item.fat
+        sumCarbs += item.carbs
+    }
+
+    if (abs(sumCalories - result.calories) > maxOf(30.0, result.calories * 0.10)) {
+        return result.copy(
+            calories = sumCalories,
+            protein = sumProtein,
+            fat = sumFat,
+            carbs = sumCarbs
+        )
+    }
+    return result
 }

@@ -516,25 +516,22 @@ fun AddMealScreen(
                     modifier = Modifier.fillMaxWidth(),
                     minLines = 2
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(
-                        onClick = { viewModel.analyze(context) },
-                        enabled = photos.isNotEmpty(),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("✨ Анализировать")
-                    }
-                    OutlinedButton(
-                        onClick = { viewModel.enqueueBackground(context, onDone) },
-                        enabled = photos.isNotEmpty(),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("🌙 В фоне")
-                    }
+                Button(
+                    onClick = { viewModel.enqueueBackground(context, onDone) },
+                    enabled = photos.isNotEmpty(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp)
+                ) {
+                    Text(
+                        "🚀 Проанализировать",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
                 if (photos.isNotEmpty()) {
                     Text(
-                        text = "Фоновый режим: приложение можно закрыть — результат придёт уведомлением",
+                        text = "Работает в фоне: приложение можно закрыть — результат придёт уведомлением",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

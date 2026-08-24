@@ -106,7 +106,11 @@ data class SettingsEntity(
     val waterReminderEnabled: Boolean = false,
     val waterIntervalMinutes: Int = 120,
     val weighInReminderEnabled: Boolean = true,
-    val updateRepo: String = "distortedvirgo-cloud/nutrilens-android"
+    val updateRepo: String = "distortedvirgo-cloud/nutrilens-android",
+    val nanoApiKey: String = "",
+    val nanoApiEndpoint: String = "",
+    // free | simple | advanced — каскад провайдеров как в веб-версии.
+    val analysisMode: String = "free"
 )
 
 @Entity(tableName = "analysis_jobs")

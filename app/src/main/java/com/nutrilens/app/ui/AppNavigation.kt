@@ -83,12 +83,19 @@ private val rightTabs = listOf(
  * и NavHost с анимированными переходами (как fresh-оболочка веб-версии).
  */
 @Composable
-fun NutriLensAppRoot(initialDate: String? = null) {
+fun NutriLensAppRoot(initialDate: String? = null, navigateTo: String? = null) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     val snackbarHostState = androidx.compose.runtime.remember { SnackbarHostState() }
     val navigate: (String) -> Unit = { route -> navController.navigateDock(route) }
+
+    // Глубокие ссылки из уведомлений: "settings" — сразу на экран настроек обновлений.
+    LaunchedEffect(navigateTo) {
+        if (navigateTo != null && navigateTo != "dashboard") {
+            navigate(navigateTo)
+        }
+    }
 
     // FAB «дышит», пока сегодня нет ни одной записи — мягкий призыв добавить еду.
     val appContext = LocalContext.current.applicationContext
