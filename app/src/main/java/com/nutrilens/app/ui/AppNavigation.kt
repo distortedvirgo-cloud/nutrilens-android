@@ -222,7 +222,7 @@ private fun FloatingDock(
                 val slot = (maxWidth - spacer) / 4
                 val pillX = when (selectedIndex) {
                     0, 1 -> slot * selectedIndex
-                    2, 3 -> spacer + slot * selectedIndex
+                    2, 3 -> spacer + slot * (selectedIndex - 2)
                     else -> (-1000).dp
                 }
                 val animatedX by animateDpAsState(
