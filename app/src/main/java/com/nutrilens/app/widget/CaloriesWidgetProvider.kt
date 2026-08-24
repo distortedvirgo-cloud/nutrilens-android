@@ -4,6 +4,7 @@ import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -81,8 +82,15 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
                 goal, weightKg
             )
 
+            // Светлая/тёмная тема: eсли в системе тёмный режим — тёмная капсула.
+            val dark = (context.resources.configuration.uiMode and
+                Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+
             // В БД load: синхронный доступ из фонового потока допустим (short-lived).
-            val views = RemoteViews(context.packageName, R.layout.widget_calories)
+            val views = RemoteViews(
+                context.packageName,
+                if (dark) R.layout.widget_calories_dark else R.layout.widget_calories
+            )
             views.setImageViewBitmap(
                 R.id.widget_ring,
                 drawRingBitmap(
@@ -94,9 +102,15 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
                     proteinFraction = if (macroGoals.protein > 0) {
                         (protein / macroGoals.protein).toFloat().coerceIn(0f, 1f)
                     } else 0f,
-                    isOver = isOver
+                    isOver = isOver,
+                    dark = dark
                 )
             )
+            if (dark) {
+                views.setImageViewResource(R.id.widget_dot_p, R.drawable.widget_dot_protein_dark)
+                views.setImageViewResource(R.id.widget_dot_f, R.drawable.widget_dot_fat_dark)
+                views.setImageViewResource(R.id.widget_dot_c, R.drawable.widget_dot_carbs_dark)
+            }
             views.setTextViewText(
                 R.id.widget_remain,
                 abs(remaining).toString()
@@ -104,7 +118,11 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
             // Перебор — оранжевым, фирменный акцент тревоги.
             views.setTextColor(
                 R.id.widget_remain,
-                if (isOver) COLOR_ORANGE else COLOR_INK
+                if (isOver) {
+                    if (dark) COLOR_ORANGE_DARK else COLOR_ORANGE
+                } else {
+                    if (dark) COLOR_WHITE else COLOR_INK
+                }
             )
             views.setTextViewText(
                 R.id.widget_remain_unit,
@@ -145,6 +163,13 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
         private const val COLOR_PURPLE = 0xFF7D5FD6.toInt()
         private const val COLOR_ORANGE = 0xFFEA580C.toInt()
         private const val COLOR_INK = 0xFF0F172A.toInt()
+        private const val COLOR_WHITE = 0xFFF8FAFC.toInt()
+
+        // Светлая/тёмная палитра макро.
+        private const val COLOR_GREEN_DARK = 0xFF10B981.toInt()
+        private const val COLOR_BLUE_DARK = 0xFF6BA3F2.toInt()
+        private const val COLOR_PURPLE_DARK = 0xFFA98FF0.toInt()
+        private const val COLOR_ORANGE_DARK = 0xFFFB923C.toInt()
 
         /**
          * Кольцо прогресса: внешнее — калории (зелёное, при переборе
@@ -158,19 +183,32 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
             calFraction: Float,
             carbsFraction: Float,
             proteinFraction: Float,
-            isOver: Boolean
+            isOver: Boolean,
+            dark: Boolean
         ): Bitmap {
             val density = context.resources.displayMetrics.density
             // Суперсэмплинг ×3, чтобы на плотных экранах кольцо было гладким.
-            val size = (40f * density * 3f).toInt().coerceAtLeast(120)
+            val size = (52f * density * 3f).toInt().coerceAtLeast(200)
             val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(bmp)
             val cx = size / 2f
             val cy = size / 2f
 
-            // Толщины и радиусы колец.
-            val s1 = 4.2f * density
-            val s2 = 2.6f * density
+            val calColor = when {
+                dark && isOver -> COLOR_ORANGE_DARK
+                dark -> COLOR_GREEN_DARK
+                isOver -> COLOR_ORANGE
+                else -> COLOR_GREEN
+            }
+            val proteinColor = if (dark) COLOR_BLUE_DARK else COLOR_BLUE
+            val carbsColor = if (dark) COLOR_PURPLE_DARK else COLOR_PURPLE
+            val beadColors = if (dark) intArrayOf(COLOR_GREEN_DARK, COLOR_BLUE_DARK, COLOR_PURPLE_DARK)
+            else intArrayOf(COLOR_GREEN, COLOR_BLUE, COLOR_PURPLE)
+            val trackAlpha = if (dark) 0.22f else 0.14f
+
+            // Толщины и радиусы колец: жирные, чтобы читались на маленьком размере.
+            val s1 = 7.0f * density
+            val s2 = 4.2f * density
             val r1 = size / 2f - s1 / 2f
             val r2 = r1 - s1 / 2f - 1.6f * density - s2 / 2f
 
@@ -180,7 +218,7 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
                     strokeWidth = stroke
                     strokeCap = Paint.Cap.ROUND
                 }
-                // Трек: бледный тон цвета дуги (читается на белой капсуле).
+                // Трек: бледный тон цвета дуги (читается на капсуле).
                 paint.color = color
                 paint.alpha = (trackAlpha * 255).toInt()
                 canvas.drawCircle(cx, cy, radius, paint)
@@ -193,19 +231,20 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
                 }
             }
 
-            ring(r1, s1, if (isOver) COLOR_ORANGE else COLOR_GREEN, calFraction, 0.12f)
+            ring(r1, s1, calColor, calFraction, trackAlpha)
 
-            // Внутреннее кольцо: сначала дуга белков, затем углеводов.
+            // Внутреннее кольцо: сначала дуга белков (голубая), затем углеводов.
             val innerTrack = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 style = Paint.Style.STROKE
                 strokeWidth = s2
                 strokeCap = Paint.Cap.ROUND
-                color = COLOR_PURPLE
-                alpha = (0.12f * 255).toInt()
+                color = carbsColor
+                alpha = (trackAlpha * 255).toInt()
             }
             canvas.drawCircle(cx, cy, r2, innerTrack)
             if (proteinFraction > 0.01f) {
                 innerTrack.alpha = 255
+                innerTrack.color = proteinColor
                 canvas.drawArc(
                     RectF(cx - r2, cy - r2, cx + r2, cy + r2),
                     -90f, 360f * proteinFraction.coerceIn(0f, 1f), false, innerTrack
@@ -213,7 +252,7 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
             }
             if (carbsFraction > 0.01f) {
                 innerTrack.alpha = 255
-                innerTrack.color = COLOR_PURPLE
+                innerTrack.color = carbsColor
                 canvas.drawArc(
                     RectF(cx - r2, cy - r2, cx + r2, cy + r2),
                     -90f + 360f * proteinFraction.coerceIn(0f, 1f),
@@ -226,14 +265,14 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
                 val a = Math.toRadians(angleDeg.toDouble())
                 val x = cx + (radius * sin(a)).toFloat()
                 val y = cy - (radius * cos(a)).toFloat()
-                val br = 2.0f * density
+                val br = 2.8f * density
                 val paint = Paint(Paint.ANTI_ALIAS_FLAG)
                 paint.color = color
                 canvas.drawCircle(x, y, br, paint)
             }
-            bead(-22f, r1, COLOR_GREEN)
-            bead(4f, r1, COLOR_BLUE)
-            bead(28f, r1, COLOR_PURPLE)
+            bead(-22f, r1, beadColors[0])
+            bead(4f, r1, beadColors[1])
+            bead(28f, r1, beadColors[2])
             return bmp
         }
     }

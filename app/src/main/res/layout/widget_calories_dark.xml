@@ -13,7 +13,7 @@
         android:layout_gravity="center"
         android:layout_marginStart="1dp"
         android:layout_marginEnd="1dp"
-        android:background="@drawable/widget_bg"
+        android:background="@drawable/widget_bg_dark"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingStart="8dp"
@@ -58,7 +58,7 @@
                         android:gravity="center"
                         android:maxLines="1"
                         android:text="2100"
-                        android:textColor="#0F172A"
+                        android:textColor="#F8FAFC"
                         android:textSize="13sp" />
 
                     <TextView
@@ -69,7 +69,7 @@
                         android:gravity="center"
                         android:maxLines="1"
                         android:text="ккал"
-                        android:textColor="#64748B"
+                        android:textColor="#94A3B8"
                         android:textSize="6.5sp" />
                 </LinearLayout>
             </FrameLayout>
@@ -80,7 +80,7 @@
                 android:layout_height="34dp"
                 android:layout_marginStart="6dp"
                 android:layout_marginEnd="6dp"
-                android:background="#E1F2ED" />
+                android:background="#263243" />
 
             <LinearLayout
                 android:layout_width="wrap_content"
@@ -109,7 +109,7 @@
                         android:fontFamily="sans-serif-black"
                         android:maxLines="1"
                         android:text="0"
-                        android:textColor="#0F172A"
+                        android:textColor="#F8FAFC"
                         android:textSize="14sp" />
 
                     <TextView
@@ -119,7 +119,7 @@
                         android:fontFamily="sans-serif"
                         android:maxLines="1"
                         android:text="Б"
-                        android:textColor="#64748B"
+                        android:textColor="#94A3B8"
                         android:textSize="8sp" />
                 </LinearLayout>
 
@@ -145,7 +145,7 @@
                         android:fontFamily="sans-serif-black"
                         android:maxLines="1"
                         android:text="0"
-                        android:textColor="#0F172A"
+                        android:textColor="#F8FAFC"
                         android:textSize="14sp" />
 
                     <TextView
@@ -155,7 +155,7 @@
                         android:fontFamily="sans-serif"
                         android:maxLines="1"
                         android:text="Ж"
-                        android:textColor="#64748B"
+                        android:textColor="#94A3B8"
                         android:textSize="8sp" />
                 </LinearLayout>
 
@@ -181,7 +181,7 @@
                         android:fontFamily="sans-serif-black"
                         android:maxLines="1"
                         android:text="0"
-                        android:textColor="#0F172A"
+                        android:textColor="#F8FAFC"
                         android:textSize="14sp" />
 
                     <TextView
@@ -191,7 +191,7 @@
                         android:fontFamily="sans-serif"
                         android:maxLines="1"
                         android:text="У"
-                        android:textColor="#64748B"
+                        android:textColor="#94A3B8"
                         android:textSize="8sp" />
                 </LinearLayout>
             </LinearLayout>
