@@ -43,11 +43,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// Тени из токенов веб-версии (--f-shadow-card / soft / lift / glow).
-private val ShadowCard = Color(0x1A16241C)   // 0.1 @ 12px
-private val ShadowSoft = Color(0x1216241C)   // 0.07 @ 4px
-private val ShadowLift = Color(0x2916241C)   // 0.16 @ 18px
-private val GlowColor = Color(0x73FF0C9D6B)  // accent 45%: 0x73
+// Тени из токенов веб-версии (--f-shadow-card / soft / lift): чёрнильное семейство.
+private val ShadowCard = Color(0x1A0F172A)   // 0.1 @ 12px
+private val ShadowSoft = Color(0x120F172A)   // 0.07 @ 4px
+private val ShadowLift = Color(0x290F172A)   // 0.16 @ 18px
 
 // Палитра кнопок (дизайн-система): здоровый изумруд → глубокий.
 private val AccentFrom = Color(0xFF059669)

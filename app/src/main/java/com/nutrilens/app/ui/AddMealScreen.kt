@@ -54,6 +54,8 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import com.nutrilens.app.ui.theme.AccentFrom
+import com.nutrilens.app.ui.theme.AccentTo
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -351,24 +353,11 @@ fun AddMealScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            BackPill(onClick = onBack)
-            Spacer(Modifier.width(12.dp))
-            Column {
-                Text(
-                    text = "Добавить еду 🍽️",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.ExtraBold,
-                    letterSpacing = MaterialTheme.typography.headlineMedium.letterSpacing
-                )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = "Сфотографируйте блюдо — ИИ посчитает калории и КБЖУ",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
+        ScreenHeader(
+            title = "Добавить еду 🍽️",
+            subtitle = "Сфотографируйте блюдо — ИИ посчитает калории и КБЖУ",
+            onBack = onBack
+        )
 
 when (phase) {
             AddMealPhase.Sent -> Unit
@@ -517,7 +506,7 @@ private fun PhotoSourceTile(
         modifier = modifier
             .aspectRatio(1f)
             .scale(scale)
-            .shadow(5.dp, shape, ambientColor = Color(0x1216241C), spotColor = Color(0x1216241C))
+            .shadow(5.dp, shape, ambientColor = Color(0x120F172A), spotColor = Color(0x120F172A))
             .dashedBorder(1.5.dp, MaterialTheme.colorScheme.outlineVariant, 26.dp)
     ) {
         Column(
@@ -619,11 +608,11 @@ private fun SentOverlay(onDone: () -> Unit) {
                         .scale(checkScale)
                         .shadow(
                             18.dp, CircleShape,
-                            ambientColor = Color(0x6617C289), spotColor = Color(0x6617C289)
+                            ambientColor = AccentFrom.copy(alpha = 0.4f), spotColor = AccentFrom.copy(alpha = 0.4f)
                         )
                         .clip(CircleShape)
                         .background(
-                            Brush.linearGradient(listOf(Color(0xFF1BC289), Color(0xFF0A7A55)))
+                            Brush.linearGradient(listOf(AccentFrom, AccentTo))
                         ),
                     contentAlignment = Alignment.Center
                 ) {
@@ -739,7 +728,7 @@ private fun PhotoPreviewRow(photos: List<Uri>, onRemove: (Uri) -> Unit) {
                     modifier = Modifier
                         .size(96.dp)
                         .clip(thumbShape)
-                        .shadow(5.dp, thumbShape, ambientColor = Color(0x1216241C), spotColor = Color(0x1216241C))
+                        .shadow(5.dp, thumbShape, ambientColor = Color(0x120F172A), spotColor = Color(0x120F172A))
                         .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f), thumbShape)
                 )
                 IconButton(

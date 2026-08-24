@@ -108,6 +108,8 @@ import com.nutrilens.app.insights.getDayTotals
 import com.nutrilens.app.insights.greeting
 import com.nutrilens.app.insights.nextMealFocus
 import com.nutrilens.app.insights.waterNormaMl
+import com.nutrilens.app.ui.theme.WaterBlue
+import com.nutrilens.app.ui.theme.WaterDeep
 import com.nutrilens.app.ui.theme.macroPalette
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -483,7 +485,7 @@ private fun DaySelectorRow(
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
                         modifier = Modifier.shadow(
                             5.dp, RoundedCornerShape(999.dp),
-                            ambientColor = Color(0x1216241C), spotColor = Color(0x1216241C)
+                            ambientColor = Color(0x120F172A), spotColor = Color(0x120F172A)
                         )
                     ) {
                         Text(
@@ -534,7 +536,7 @@ private fun DayPill(selected: LocalDate, onShift: (Long) -> Unit) {
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
         modifier = Modifier.shadow(
             6.dp, pillShape,
-            ambientColor = Color(0x1216241C), spotColor = Color(0x1216241C)
+            ambientColor = Color(0x120F172A), spotColor = Color(0x120F172A)
         )
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(4.dp)) {
@@ -567,7 +569,7 @@ private fun DayArrow(onClick: () -> Unit, contentDescription: String) {
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
         modifier = Modifier
             .size(40.dp)
-            .shadow(4.dp, iconShape, ambientColor = Color(0x1216241C), spotColor = Color(0x1216241C))
+            .shadow(4.dp, iconShape, ambientColor = Color(0x120F172A), spotColor = Color(0x120F172A))
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
@@ -638,7 +640,7 @@ private fun WeightChip(
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
             modifier = Modifier.shadow(
                 5.dp, shape,
-                ambientColor = Color(0x1216241C), spotColor = Color(0x1216241C)
+                ambientColor = Color(0x120F172A), spotColor = Color(0x120F172A)
             )
         ) {
             Text(
@@ -717,7 +719,7 @@ private fun ProcessingCard(job: AnalysisJobEntity, extraCount: Int) {
                         .graphicsLayer { translationY = sweepY }
                         .background(
                             Brush.verticalGradient(
-                                listOf(Color.Transparent, Color(0x8022C55E), Color.Transparent)
+                                listOf(Color.Transparent, Color(0x8010B981), Color.Transparent)
                             )
                         )
                 )
@@ -911,8 +913,6 @@ private fun CaloriesHero(meals: List<MealWithImages>, settings: SettingsEntity) 
 
 // ---------- Макросы ----------
 
-private val WATER_COLOR = Color(0xFF4FA3D8)
-
 @Composable
 private fun MacrosRow(
     meals: List<MealWithImages>,
@@ -1026,7 +1026,7 @@ private fun WaterCard(
 ) {
     val normMl = waterNormaMl(lastWeight, workoutDone)
     val fraction = if (normMl > 0) (waterMl.toFloat() / normMl).coerceIn(0f, 1f) else 0f
-    val waterGradient = Brush.horizontalGradient(listOf(WATER_COLOR, Color(0xFF2F7FB8)))
+    val waterGradient = Brush.horizontalGradient(listOf(WaterBlue, WaterDeep))
     Surface(
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surface
@@ -1049,7 +1049,7 @@ private fun WaterCard(
                         .fillMaxWidth()
                         .height(12.dp)
                         .clip(RoundedCornerShape(6.dp))
-                        .background(Color(0xFF4FA3D8).copy(alpha = 0.15f))
+                        .background(WaterBlue.copy(alpha = 0.15f))
                 ) {
                     Box(
                         modifier = Modifier
@@ -1079,8 +1079,8 @@ private fun WaterCard(
                     .scale(waterScale)
                     .shadow(
                         8.dp, RoundedCornerShape(999.dp),
-                        ambientColor = WATER_COLOR.copy(alpha = 0.35f),
-                        spotColor = WATER_COLOR.copy(alpha = 0.35f)
+                        ambientColor = WaterBlue.copy(alpha = 0.35f),
+                        spotColor = WaterBlue.copy(alpha = 0.35f)
                     )
             ) {
                 Box(
@@ -1220,8 +1220,8 @@ private fun MealCard(
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
         modifier = modifier
-            .shadow(1.dp, MaterialTheme.shapes.large, ambientColor = Color(0x1216241C), spotColor = Color(0x1216241C))
-            .shadow(8.dp, MaterialTheme.shapes.large, ambientColor = Color(0x1216241C), spotColor = Color(0x1216241C))
+            .shadow(1.dp, MaterialTheme.shapes.large, ambientColor = Color(0x120F172A), spotColor = Color(0x120F172A))
+            .shadow(8.dp, MaterialTheme.shapes.large, ambientColor = Color(0x120F172A), spotColor = Color(0x120F172A))
     ) {
         Row(
             modifier = Modifier
@@ -1329,9 +1329,9 @@ private fun ConfidenceBadge(score: Double) {
     val rounded = score.roundToInt()
     if (rounded <= 0) return
     val color = when {
-        rounded >= 7 -> Color(0xFF2E7D4F)
-        rounded >= 4 -> Color(0xFFEF6C00)
-        else -> Color(0xFFD32F2F)
+        rounded >= 7 -> MaterialTheme.colorScheme.primary
+        rounded >= 4 -> MaterialTheme.colorScheme.tertiary
+        else -> MaterialTheme.colorScheme.error
     }
     Box(
         modifier = Modifier

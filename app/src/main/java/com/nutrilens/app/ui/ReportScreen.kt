@@ -49,6 +49,7 @@ import com.nutrilens.app.ai.GeminiTools
 import com.nutrilens.app.data.NutriLensDatabase
 import com.nutrilens.app.data.SettingsRepository
 import com.nutrilens.app.data.WeightEntity
+import com.nutrilens.app.ui.theme.WaterBlue
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -255,18 +256,7 @@ fun ReportScreen(viewModel: ReportViewModel = androidx.lifecycle.viewmodel.compo
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 16.dp)
     ) {
-        Text(
-            text = "Отчёт",
-            style = MaterialTheme.typography.headlineMedium,
-            color = MaterialTheme.colorScheme.onBackground
-        )
-        Spacer(Modifier.height(4.dp))
-        Text(
-            text = "Как прошёл ваш период",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.height(16.dp))
+        ScreenHeader(title = "Отчёт", subtitle = "Как прошёл ваш период")
 
         PeriodSwitcher(
             onPeriod = { viewModel.setPeriod(it) },
@@ -502,7 +492,7 @@ private fun CalorieCard(
     title: String = "Калории по дням",
     labelMode: Int = 0
 ) {
-    val warningColor = Color(0xFFD08700)
+    val warningColor = MaterialTheme.colorScheme.tertiary
     Surface(
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surface
@@ -712,7 +702,7 @@ private fun WaterCard(avgMl: Int, normMl: Int) {
                         .fillMaxWidth(fraction)
                         .height(12.dp)
                         .background(
-                            androidx.compose.ui.graphics.Color(0xFF4FA3D8),
+                            WaterBlue,
                             RoundedCornerShape(6.dp)
                         )
                 )

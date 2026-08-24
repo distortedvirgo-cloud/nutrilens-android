@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Та же тема, но тёмная: иначе при ночном режиме до отрисовки Compose
+     видна белая вспышка стартового фона. -->
+<resources>
+    <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar" />
+</resources>

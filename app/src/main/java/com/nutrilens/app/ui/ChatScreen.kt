@@ -193,13 +193,13 @@ fun ChatScreen(onBack: () -> Unit, viewModel: ChatViewModel = viewModel()) {
             Column(Modifier.weight(1f)) {
                 Text(
                     "💬 Диетолог",
-                    style = MaterialTheme.typography.titleLarge,
+                    style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.ExtraBold,
                     color = MaterialTheme.colorScheme.onBackground
                 )
                 Text(
                     "ИИ-консультант, знает ваш дневник",
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -228,7 +228,7 @@ fun ChatScreen(onBack: () -> Unit, viewModel: ChatViewModel = viewModel()) {
                             modifier = Modifier
                                 .size(18.dp)
                                 .padding(0.dp),
-                            strokeWidth = 2.dp,
+                            strokeWidth = 3.dp,
                             color = MaterialTheme.colorScheme.primary
                         )
                     }
@@ -404,7 +404,7 @@ private fun ChatInputBar(
                 if (loading) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
+                        strokeWidth = 3.dp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 } else {

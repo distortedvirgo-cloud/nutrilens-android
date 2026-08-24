@@ -147,6 +147,12 @@ private val MacroDark = MacroPalette(
 fun macroPalette(): MacroPalette =
     if (isSystemInDarkTheme()) MacroDark else MacroLight
 
+// Общие акценты (кнопки, успех, вода) — единый источник для всех экранов.
+val AccentFrom = Color(0xFF059669)   // градиент: здоровый изумруд → глубокий
+val AccentTo = Color(0xFF047857)
+val WaterBlue = Color(0xFF4FA3D8)    // вода (и светлая, и тёмная тема)
+val WaterDeep = Color(0xFF2F7FB8)
+
 @Composable
 fun NutriLensTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),

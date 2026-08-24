@@ -210,7 +210,7 @@ private fun FloatingDock(
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .shadow(18.dp, dockShape, ambientColor = Color(0x2916241C), spotColor = Color(0x2916241C))
+                .shadow(18.dp, dockShape, ambientColor = Color(0x290F172A), spotColor = Color(0x290F172A))
         ) {
             BoxWithConstraints(
                 modifier = Modifier

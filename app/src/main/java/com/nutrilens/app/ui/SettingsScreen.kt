@@ -260,14 +260,10 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text(
-            text = "Настройки",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.SemiBold
-        )
+        ScreenHeader(title = "Настройки")
 
         // ---- ИИ ----
-        Card(modifier = Modifier.fillMaxWidth().staggeredIn(0)) {
+        FreshCard(modifier = Modifier.fillMaxWidth().staggeredIn(0)) {
             Column(
                 Modifier
                     .fillMaxWidth()
@@ -319,7 +315,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
         }
 
         // ---- Цели ----
-        Card(modifier = Modifier.fillMaxWidth().staggeredIn(1)) {
+        FreshCard(modifier = Modifier.fillMaxWidth().staggeredIn(1)) {
             Column(
                 Modifier
                     .fillMaxWidth()
@@ -355,7 +351,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
         }
 
         // ---- Профиль ----
-        Card(modifier = Modifier.fillMaxWidth().staggeredIn(2)) {
+        FreshCard(modifier = Modifier.fillMaxWidth().staggeredIn(2)) {
             Column(
                 Modifier
                     .fillMaxWidth()
@@ -373,7 +369,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
         }
 
         // ---- Напоминания ----
-        Card(modifier = Modifier.fillMaxWidth().staggeredIn(3)) {
+        FreshCard(modifier = Modifier.fillMaxWidth().staggeredIn(3)) {
             Column(
                 Modifier
                     .fillMaxWidth()
@@ -447,7 +443,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
             }
         }
 
-        Card(modifier = Modifier.fillMaxWidth().staggeredIn(4)) {
+        FreshCard(modifier = Modifier.fillMaxWidth().staggeredIn(4)) {
             Column(Modifier.padding(16.dp)) {
                 Text(
                     "Обновления",
@@ -532,7 +528,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
         }
 
         // ---- Данные ----
-        Card(modifier = Modifier.fillMaxWidth().staggeredIn(5)) {
+        FreshCard(modifier = Modifier.fillMaxWidth().staggeredIn(5)) {
             Column(
                 Modifier
                     .fillMaxWidth()
