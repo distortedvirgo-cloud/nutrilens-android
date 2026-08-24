@@ -824,17 +824,6 @@ private fun CaloriesHero(meals: List<MealWithImages>, settings: SettingsEntity) 
             .shadow(12.dp, shape, ambientColor = Color(0x1A0F172A), spotColor = Color(0x1A0F172A))
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
-            // Мягкое свечение акцента в углу, как во fresh-карточках веба.
-            Box(
-                Modifier
-                    .size(160.dp)
-                    .offset(x = 190.dp, y = (-70).dp)
-                    .background(
-                        Brush.radialGradient(
-                            listOf(MaterialTheme.colorScheme.primary.copy(alpha = 0.13f), Color.Transparent)
-                        )
-                    )
-            )
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
