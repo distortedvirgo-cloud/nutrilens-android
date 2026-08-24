@@ -17,14 +17,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nutrilens.app.R
 
-// Новая типографика: Unbounded — дисплейные заголовки, Onest — текст.
-// Статические начертания на каждый вес: вариативные TTF в Compose не
-// применяют ось веса, и весь текст выглядел одинаково тонким.
-private val Unbounded = FontFamily(
-    Font(R.font.unbounded_500, FontWeight.Medium),
-    Font(R.font.unbounded_600, FontWeight.SemiBold),
-    Font(R.font.unbounded_700, FontWeight.Bold),
-    Font(R.font.unbounded_800, FontWeight.ExtraBold)
+// Шрифты как в веб-версии: Manrope (статический) — заголовки и крупные цифры,
+// Onest — основной текст (близок к Golos Text из веба). Статические TTF на
+// каждый вес: вариативные в Compose рендерятся единственным весом.
+private val Manrope = FontFamily(
+    Font(R.font.manrope_500, FontWeight.Medium),
+    Font(R.font.manrope_600, FontWeight.SemiBold),
+    Font(R.font.manrope_700, FontWeight.Bold),
+    Font(R.font.manrope_800, FontWeight.ExtraBold)
 )
 
 private val Onest = FontFamily(
@@ -94,38 +94,43 @@ private val FreshDark = darkColorScheme(
     inverseOnSurface = Color(0xFF0E1512)
 )
 
-// Скругления как в веб-версии: карточки 24, элементы 16/12.
+// Скругления как в веб-версии: карточки 26/28, кнопки 16, поля 12.
 private val NutriShapes = Shapes(
     extraLarge = RoundedCornerShape(28.dp),
-    large = RoundedCornerShape(24.dp),
+    large = RoundedCornerShape(26.dp),
     medium = RoundedCornerShape(16.dp),
     small = RoundedCornerShape(12.dp)
 )
 
-private fun display(fontFamily: FontFamily, weight: FontWeight, size: Int, tight: Boolean = false) =
+/** tracking-tight как в вебе (-0.02em от размера). */
+private fun tight(size: Float) = (-0.02f * size).sp
+
+private fun display(fontFamily: FontFamily, weight: FontWeight, size: Float) =
     TextStyle(
         fontFamily = fontFamily,
         fontWeight = weight,
         fontSize = size.sp,
-        letterSpacing = if (tight) (-0.5).sp else 0.sp
+        letterSpacing = tight(size)
     )
 
+// Размеры перенесены с экранов веб-версии: крупные цифры 40-42px,
+// заголовки страниц 24-26px, заголовки экранов 18-20px, «вордмарк» 17px.
 private val NutriTypography = Typography(
-    displayLarge = display(Unbounded, FontWeight.ExtraBold, 32, tight = true),
-    displayMedium = display(Unbounded, FontWeight.ExtraBold, 28, tight = true),
-    displaySmall = display(Unbounded, FontWeight.Bold, 24, tight = true),
-    headlineLarge = display(Unbounded, FontWeight.Bold, 24, tight = true),
-    headlineMedium = display(Unbounded, FontWeight.Bold, 21),
-    headlineSmall = display(Unbounded, FontWeight.SemiBold, 19),
-    titleLarge = display(Unbounded, FontWeight.SemiBold, 17),
-    titleMedium = display(Onest, FontWeight.Bold, 16),
-    titleSmall = display(Onest, FontWeight.SemiBold, 14),
-    bodyLarge = display(Onest, FontWeight.Normal, 16),
-    bodyMedium = display(Onest, FontWeight.Normal, 14),
-    bodySmall = display(Onest, FontWeight.Normal, 12),
-    labelLarge = display(Onest, FontWeight.SemiBold, 14),
-    labelMedium = display(Onest, FontWeight.Medium, 12),
-    labelSmall = display(Onest, FontWeight.Medium, 10)
+    displayLarge = display(Manrope, FontWeight.ExtraBold, 40f),   // калории в hero
+    displayMedium = display(Manrope, FontWeight.ExtraBold, 32f),
+    displaySmall = display(Manrope, FontWeight.ExtraBold, 26f),   // заголовок страницы
+    headlineLarge = display(Manrope, FontWeight.ExtraBold, 24f),
+    headlineMedium = display(Manrope, FontWeight.ExtraBold, 20f), // заголовок экрана
+    headlineSmall = display(Manrope, FontWeight.Bold, 18f),
+    titleLarge = display(Manrope, FontWeight.ExtraBold, 17f),     // «вордмарк» NutriLens
+    titleMedium = display(Onest, FontWeight.Bold, 15f),
+    titleSmall = display(Onest, FontWeight.SemiBold, 13.5f),      // название блюда
+    bodyLarge = display(Onest, FontWeight.Normal, 16f),
+    bodyMedium = display(Onest, FontWeight.Normal, 14f),
+    bodySmall = display(Onest, FontWeight.Normal, 12f),
+    labelLarge = display(Onest, FontWeight.Bold, 14f),            // кнопки
+    labelMedium = display(Onest, FontWeight.SemiBold, 12f),
+    labelSmall = display(Onest, FontWeight.Medium, 10f)
 )
 
 /** Цвета макронутриентов из веб-токенов (белки/жиры/углеводы). */

@@ -1,20 +1,30 @@
 package com.nutrilens.app.ui
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -28,7 +38,6 @@ import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.SelfImprovement
 import androidx.compose.material.icons.filled.SpaceDashboard
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -43,12 +52,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -77,6 +87,9 @@ private val rightTabs = listOf(
     DockTab(route = "assistant", label = "Ассистент", icon = Icons.Filled.SelfImprovement),
     DockTab(route = "hub", label = "Ещё", icon = Icons.Filled.SpaceDashboard)
 )
+
+/** Кривая появления из веба: cubic-bezier(0.22, 1, 0.36, 1). */
+private val FreshEasing = androidx.compose.animation.core.CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
 
 /**
  * Корневой композабл: плавающий док с перелетающей пилюлей, пульсирующим FAB
@@ -127,17 +140,21 @@ fun NutriLensAppRoot(initialDate: String? = null, navigateTo: String? = null) {
                 navController = navController,
                 startDestination = "dashboard",
                 modifier = Modifier.padding(innerPadding),
+                // Мягкий «fresh-in» как в вебе: fade + лёгкий подъём снизу
+                // (translateY 10px) на decelerate-кривой, выход — просто fade.
                 enterTransition = {
-                    fadeIn(tween(240)) + slideInHorizontally(tween(240)) { it / 14 }
+                    fadeIn(tween(320, easing = FreshEasing)) +
+                        slideInVertically(tween(320, easing = FreshEasing)) { it / 16 }
                 },
                 exitTransition = {
-                    fadeOut(tween(160)) + slideOutHorizontally(tween(160)) { -it / 10 }
+                    fadeOut(tween(180))
                 },
                 popEnterTransition = {
-                    fadeIn(tween(240)) + slideInHorizontally(tween(240)) { -it / 14 }
+                    fadeIn(tween(320, easing = FreshEasing)) +
+                        slideInVertically(tween(320, easing = FreshEasing)) { it / 16 }
                 },
                 popExitTransition = {
-                    fadeOut(tween(160)) + slideOutHorizontally(tween(160)) { it / 10 }
+                    fadeOut(tween(180))
                 }
             ) {
                 composable("dashboard") {
@@ -170,7 +187,7 @@ fun NutriLensAppRoot(initialDate: String? = null, navigateTo: String? = null) {
     }
 }
 
-/** Плавающий док: пилюля активного таба «перелетает» spring-анимацией. */
+/** Плавающий док из веба: rounded-[26px], surface/95, border line/60, lift-тень. */
 @Composable
 private fun FloatingDock(
     currentRoute: String?,
@@ -180,33 +197,26 @@ private fun FloatingDock(
 ) {
     val allTabs = leftTabs + rightTabs
     val selectedIndex = allTabs.indexOfFirst { it.route == currentRoute }
-
-    val infinite = rememberInfiniteTransition(label = "fab")
-    val fabScale by infinite.animateFloat(
-        initialValue = 1f,
-        targetValue = 1.07f,
-        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-            tween(1100), RepeatMode.Reverse
-        ),
-        label = "fabPulse"
-    )
+    val dockShape = RoundedCornerShape(26.dp)
 
     Box(
         modifier = Modifier
             .padding(horizontal = 20.dp)
-            .padding(bottom = 14.dp)
+            .padding(bottom = 20.dp)
     ) {
         Surface(
-            shape = RoundedCornerShape(26.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            shadowElevation = 8.dp,
-            modifier = Modifier.align(Alignment.BottomCenter)
+            shape = dockShape,
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .shadow(18.dp, dockShape, ambientColor = Color(0x2916241C), spotColor = Color(0x2916241C))
         ) {
             BoxWithConstraints(
                 modifier = Modifier
                     .padding(horizontal = 10.dp)
-                    .padding(vertical = 8.dp)
-                    .height(56.dp)
+                    .padding(top = 4.dp, bottom = 8.dp)
+                    .height(58.dp)
             ) {
                 val spacer = 68.dp
                 val slot = (maxWidth - spacer) / 4
@@ -225,7 +235,7 @@ private fun FloatingDock(
                         Modifier
                             .offset(x = animatedX)
                             .width(slot - 6.dp)
-                            .height(48.dp)
+                            .height(50.dp)
                             .padding(2.dp)
                             .background(
                                 MaterialTheme.colorScheme.primaryContainer,
@@ -251,23 +261,88 @@ private fun FloatingDock(
                 }
             }
         }
-        FloatingActionButton(
+        PulseFab(
+            shouldPulse = shouldPulseFab,
             onClick = onAdd,
-            shape = CircleShape,
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary,
-            elevation = androidx.compose.material3.FloatingActionButtonDefaults.elevation(8.dp),
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .size(60.dp)
-                .offset(y = (-8).dp)
-                .scale(if (shouldPulseFab) fabScale else 1f)
-        ) {
-            Icon(
-                Icons.Filled.Add,
-                contentDescription = "Добавить еду",
-                modifier = Modifier.size(26.dp)
+                .offset(y = (-10).dp)
+        )
+    }
+}
+
+/** FAB из веба: градиент accent→strong, glow-тень, пульс-кольцо pulse-glow. */
+@Composable
+private fun PulseFab(
+    shouldPulse: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val infinite = rememberInfiniteTransition(label = "fabPulse")
+    val ringAlpha by infinite.animateFloat(
+        initialValue = 0.40f,
+        targetValue = 0f,
+        animationSpec = infiniteRepeatable(tween(2200)),
+        label = "ringAlpha"
+    )
+    val ringScale by infinite.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.45f,
+        animationSpec = infiniteRepeatable(tween(2200)),
+        label = "ringScale"
+    )
+    val bobScale by infinite.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.06f,
+        animationSpec = infiniteRepeatable(tween(1100), androidx.compose.animation.core.RepeatMode.Reverse),
+        label = "bobScale"
+    )
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(if (pressed) 0.92f else 1f, label = "fabPress")
+    val crane = if (shouldPulse) bobScale else 1f
+    val glow = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+
+    Box(modifier.size(64.dp), contentAlignment = Alignment.Center) {
+        if (shouldPulse) {
+            Box(
+                Modifier
+                    .size(64.dp)
+                    .scale(ringScale)
+                    .border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = ringAlpha), CircleShape)
             )
+        }
+        Surface(
+            onClick = onClick,
+            interactionSource = interaction,
+            shape = CircleShape,
+            color = Color.Transparent,
+            modifier = Modifier
+                .size(58.dp)
+                .scale(crane * pressScale)
+                .shadow(12.dp, CircleShape, ambientColor = glow, spotColor = glow)
+                .clip(CircleShape)
+        ) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.linearGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.primary,
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        )
+                    )
+            ) {
+                Icon(
+                    Icons.Filled.Add,
+                    contentDescription = "Добавить еду",
+                    tint = Color.White,
+                    modifier = Modifier.size(26.dp)
+                )
+            }
         }
     }
 }
@@ -289,11 +364,8 @@ private fun DockItem(
         Icon(
             tab.icon,
             contentDescription = tab.label,
-            tint = if (selected) {
-                MaterialTheme.colorScheme.onPrimaryContainer
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            },
+            tint = if (selected) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.outline,
             modifier = Modifier.size(22.dp)
         )
         Spacer(Modifier.height(2.dp))
@@ -303,11 +375,8 @@ private fun DockItem(
                 fontSize = 10.sp,
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
             ),
-            color = if (selected) {
-                MaterialTheme.colorScheme.onPrimaryContainer
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            }
+            color = if (selected) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.outline
         )
     }
 }

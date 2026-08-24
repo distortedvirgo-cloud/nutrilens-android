@@ -7,15 +7,26 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -40,6 +51,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -54,11 +66,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.clickable
 import androidx.core.content.FileProvider
@@ -105,6 +125,7 @@ sealed interface AddMealPhase {
     data object Analyzing : AddMealPhase
     data class Result(val result: MealAnalysisResult) : AddMealPhase
     data object Saving : AddMealPhase
+    data object Sent : AddMealPhase
 }
 
 class AddMealViewModel(application: Application) : AndroidViewModel(application) {
@@ -235,7 +256,7 @@ class AddMealViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    /** Фоновый анализ через AnalysisScheduler. */
+    /** Фоновый анализ через AnalysisScheduler. Экран показывает состояние «отправлено». */
     fun enqueueBackground(context: Context, onDone: () -> Unit) {
         if (_photos.value.isEmpty()) return
         viewModelScope.launch {
@@ -243,7 +264,7 @@ class AddMealViewModel(application: Application) : AndroidViewModel(application)
             try {
                 AnalysisScheduler.enqueueBackground(context, _note.value, _photos.value)
                 _messages.emit("✅ Анализ запущен в фоне — придёт уведомление")
-                onDone()
+                _phase.value = AddMealPhase.Sent
             } catch (e: Exception) {
                 _phase.value = AddMealPhase.Idle
                 _error.value = e.message ?: "Не удалось запустить фоновый анализ"
@@ -451,19 +472,14 @@ fun AddMealScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
-                Icon(
-                    Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Назад",
-                    tint = MaterialTheme.colorScheme.onSurface
-                )
-            }
-            Spacer(Modifier.width(4.dp))
+            BackPill(onClick = onBack)
+            Spacer(Modifier.width(12.dp))
             Column {
                 Text(
                     text = "Добавить еду 🍽️",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.ExtraBold
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = MaterialTheme.typography.headlineMedium.letterSpacing
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
@@ -477,6 +493,15 @@ fun AddMealScreen(
         when (val p = phase) {
             is AddMealPhase.Analyzing -> AnalyzingBlock()
             is AddMealPhase.Saving -> SavingBlock()
+            is AddMealPhase.Sent -> {
+                SentBlock()
+                // Мягкий уход на главную: показываем «отправлено» чуть больше
+                // секунды, дальше NavHost плавно переводит fade+подъёмом.
+                LaunchedEffect(Unit) {
+                    kotlinx.coroutines.delay(1400)
+                    onDone()
+                }
+            }
             is AddMealPhase.Result -> {
                 error?.let { ErrorBlock(message = it, onGoSettings = onGoSettings) }
                 ResultEditorBlock(
@@ -518,22 +543,21 @@ fun AddMealScreen(
                     value = note,
                     onValueChange = viewModel::setNote,
                     label = { Text("Что ели? Например: борщ со сметаной") },
+                    shape = RoundedCornerShape(16.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant
+                    ),
                     modifier = Modifier.fillMaxWidth(),
                     minLines = 2
                 )
-                Button(
+                GlowButton(
+                    text = "🚀 Проанализировать",
                     onClick = { viewModel.enqueueBackground(context, onDone) },
-                    enabled = photos.isNotEmpty(),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp)
-                ) {
-                    Text(
-                        "🚀 Проанализировать",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
+                    enabled = photos.isNotEmpty()
+                )
                 if (photos.isNotEmpty()) {
                     Text(
                         text = "Работает в фоне: приложение можно закрыть — результат придёт уведомлением",
@@ -645,6 +669,7 @@ private fun ErrorBlock(message: String, onGoSettings: () -> Unit) {
     }
 }
 
+/** Плашка источника фото как в вебе: пунктирная рамка, квадрат, сжатие. */
 @Composable
 private fun PhotoSourceTile(
     emoji: String,
@@ -652,31 +677,149 @@ private fun PhotoSourceTile(
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) 0.96f else 1f, label = "tilePress")
+    val shape = RoundedCornerShape(26.dp)
     Surface(
         onClick = onClick,
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.outlineVariant
-        ),
+        interactionSource = interaction,
+        shape = shape,
+        color = MaterialTheme.colorScheme.surface,
         modifier = modifier
+            .aspectRatio(1f)
+            .scale(scale)
+            .shadow(5.dp, shape, ambientColor = Color(0x1216241C), spotColor = Color(0x1216241C))
+            .dashedBorder(1.5.dp, MaterialTheme.colorScheme.outlineVariant, 26.dp)
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
             Text(emoji, style = MaterialTheme.typography.headlineMedium)
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(8.dp))
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
             )
         }
+    }
+}
+
+/** Пунктирная рамка как border-dashed в вебе (PathEffect). */
+private fun Modifier.dashedBorder(width: Dp, color: Color, radius: Dp): Modifier =
+    this.drawWithContent {
+        drawContent()
+        drawRoundRect(
+            color = color,
+            style = Stroke(
+                width = width.toPx(),
+                pathEffect = PathEffect.dashPathEffect(floatArrayOf(14f, 10f))
+            ),
+            cornerRadius = CornerRadius(radius.toPx(), radius.toPx())
+        )
+    }
+
+/** Состояние «отправлено»: карточка со скан-лентой, затем мягкий уход на главную. */
+@Composable
+private fun SentBlock() {
+    FreshCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 26.dp, horizontal = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text("✅", style = MaterialTheme.typography.displayMedium)
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = "Отправлено на анализ",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(14.dp))
+            ScanFrame()
+            Spacer(Modifier.height(14.dp))
+            Text(
+                text = "Результат придёт уведомлением — можно закрыть приложение",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+/** Скелет анализа как в вебе: серые плашки + лента сканирования (2s, вверх-вниз). */
+@Composable
+private fun ScanFrame() {
+    val t = rememberInfiniteTransition(label = "scan")
+    val sweep by t.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(2000), RepeatMode.Reverse),
+        label = "sweep"
+    )
+    val frameShape = RoundedCornerShape(18.dp)
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(92.dp)
+            .clip(frameShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Box(
+                Modifier
+                    .fillMaxWidth(0.7f)
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(MaterialTheme.colorScheme.outlineVariant)
+            )
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(18.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .height(18.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
+                )
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .height(18.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
+                )
+            }
+        }
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(3.dp)
+                .offset(y = (sweep * 89).dp)
+                .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(2.dp))
+                .shadow(
+                    10.dp, RoundedCornerShape(2.dp),
+                    ambientColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                    spotColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                )
+        )
     }
 }
 
@@ -684,6 +827,7 @@ private fun PhotoSourceTile(
 private fun PhotoPreviewRow(photos: List<Uri>, onRemove: (Uri) -> Unit) {
     LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         items(photos, key = { it.toString() }) { uri ->
+            val thumbShape = RoundedCornerShape(16.dp)
             Box {
                 AsyncImage(
                     model = uri,
@@ -691,7 +835,9 @@ private fun PhotoPreviewRow(photos: List<Uri>, onRemove: (Uri) -> Unit) {
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .size(96.dp)
-                        .clip(RoundedCornerShape(14.dp))
+                        .clip(thumbShape)
+                        .shadow(5.dp, thumbShape, ambientColor = Color(0x1216241C), spotColor = Color(0x1216241C))
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f), thumbShape)
                 )
                 IconButton(
                     onClick = { onRemove(uri) },

@@ -2,6 +2,7 @@ package com.nutrilens.app.ui
 
 import android.app.Application
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -49,6 +50,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import android.view.HapticFeedbackConstants
 import androidx.compose.ui.platform.LocalView
@@ -425,58 +428,75 @@ private fun DaySelectorRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = "${g.emoji} ${g.text}",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.SemiBold
+                style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.ExtraBold,
+                color = MaterialTheme.colorScheme.onBackground
             )
             Text(
                 text = dateLabelRu(selected).replaceFirstChar { it.uppercase() },
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.outline
             )
         }
         if (streak > 0) {
             Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = MaterialTheme.colorScheme.tertiaryContainer
+                shape = RoundedCornerShape(999.dp),
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                modifier = Modifier
+                    .shadow(5.dp, RoundedCornerShape(999.dp), ambientColor = Color(0x1216241C), spotColor = Color(0x1216241C))
             ) {
                 Text(
                     text = "🔥 $streak",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onTertiaryContainer,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
                 )
             }
-            Spacer(Modifier.width(4.dp))
+            Spacer(Modifier.width(8.dp))
         }
         if (selected != LocalDate.now()) {
             Surface(
                 onClick = onToday,
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(999.dp),
                 color = MaterialTheme.colorScheme.primaryContainer
             ) {
                 Text(
                     text = "Сегодня",
                     style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
                 )
             }
-            Spacer(Modifier.width(4.dp))
+            Spacer(Modifier.width(8.dp))
         }
-        IconButton(onClick = { onShift(-1) }) {
+        DayArrow(onClick = { onShift(-1) }, contentDescription = "Предыдущий день")
+        Spacer(Modifier.width(6.dp))
+        DayArrow(onClick = { onShift(1) }, contentDescription = "Следующий день")
+    }
+}
+
+/** Круглая кнопка дня как в вебе: bg-surface, border line/40, soft-тень. */
+@Composable
+private fun DayArrow(onClick: () -> Unit, contentDescription: String) {
+    val iconShape = CircleShape
+    Surface(
+        onClick = onClick,
+        shape = iconShape,
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+        modifier = Modifier
+            .size(36.dp)
+            .shadow(4.dp, iconShape, ambientColor = Color(0x1216241C), spotColor = Color(0x1216241C))
+    ) {
+        Box(contentAlignment = Alignment.Center) {
             Icon(
-                Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                contentDescription = "Предыдущий день",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        IconButton(onClick = { onShift(1) }) {
-            Icon(
-                Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = "Следующий день",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                Icons.AutoMirrored.Filled.KeyboardArrowLeft.takeIf { contentDescription == "Предыдущий день" }
+                    ?: Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = contentDescription,
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(20.dp)
             )
         }
     }
@@ -499,8 +519,12 @@ private fun CaloriesHero(meals: List<MealWithImages>, settings: SettingsEntity) 
 
     Surface(
         onClick = { showRemaining = !showRemaining },
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surface
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+        modifier = Modifier
+            .shadow(1.dp, MaterialTheme.shapes.extraLarge, ambientColor = Color(0x1A16241C), spotColor = Color(0x1A16241C))
+            .shadow(12.dp, MaterialTheme.shapes.extraLarge, ambientColor = Color(0x1A16241C), spotColor = Color(0x1A16241C))
     ) {
         Column(
             modifier = Modifier
@@ -541,29 +565,27 @@ private fun CaloriesHero(meals: List<MealWithImages>, settings: SettingsEntity) 
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     if (showRemaining) {
                         val delta = (goal - eaten).roundToInt()
-                        Text(
+                        DisplayNumber(
                             text = "${kotlin.math.abs(delta)}",
-                            style = MaterialTheme.typography.displaySmall,
-                            fontWeight = FontWeight.Bold,
+                            size = 42,
                             color = if (delta < 0) MaterialTheme.colorScheme.tertiary
                             else MaterialTheme.colorScheme.primary
                         )
                         Text(
                             text = if (delta < 0) "перебор ккал" else "осталось ккал",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.outline
                         )
                     } else {
-                        Text(
+                        DisplayNumber(
                             text = "${eaten.roundToInt()}",
-                            style = MaterialTheme.typography.displaySmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
+                            size = 42,
+                            color = MaterialTheme.colorScheme.onBackground
                         )
                         Text(
                             text = "из ${goal.roundToInt()} ккал",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.outline
                         )
                     }
                 }
@@ -929,7 +951,11 @@ private fun MealCard(
     Surface(
         onClick = onClick,
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surface
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+        modifier = Modifier
+            .shadow(1.dp, MaterialTheme.shapes.large, ambientColor = Color(0x1216241C), spotColor = Color(0x1216241C))
+            .shadow(8.dp, MaterialTheme.shapes.large, ambientColor = Color(0x1216241C), spotColor = Color(0x1216241C))
     ) {
         Row(
             modifier = Modifier
@@ -950,27 +976,27 @@ private fun MealCard(
                 Text(
                     text = meal.meal.time,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.outline
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
                     text = "Б ${meal.meal.protein.roundToInt()} · Ж ${meal.meal.fat.roundToInt()} · " +
                         "У ${meal.meal.carbs.roundToInt()}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.outline
                 )
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text(
                     text = "${meal.meal.calories.roundToInt()}",
                     style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.ExtraBold,
                     color = MaterialTheme.colorScheme.primary
                 )
                 Text(
                     text = "ккал",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.outline
                 )
                 ConfidenceBadge(score = meal.meal.confidenceScore)
             }
