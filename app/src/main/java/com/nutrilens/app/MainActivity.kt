@@ -44,7 +44,7 @@ class MainActivity : ComponentActivity() {
                 }
                 NutriLensAppRoot(
                     initialDate = dateExtra?.takeIf { it.isNotBlank() },
-                    navigateTo = navigateTo?.takeIf { it == "settings" || it == "dashboard" }
+                    navigateTo = navigateTo?.takeIf { it == "settings" || it == "dashboard" || it == "add" }
                 )
             }
         }

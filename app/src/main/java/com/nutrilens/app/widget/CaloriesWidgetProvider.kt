@@ -132,7 +132,7 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
             views.setOnClickPendingIntent(
                 R.id.widget_root,
                 com.nutrilens.app.notifications.NotificationHelper.mainActivityPendingIntent(
-                    context, 1001, navigate = "dashboard"
+                    context, 1001, navigate = "add"
                 )
             )
             return views
