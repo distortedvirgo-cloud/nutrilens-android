@@ -5,56 +5,134 @@
     android:layout_height="match_parent"
     android:background="@drawable/widget_bg">
 
-    <ImageView
-        android:id="@+id/widget_ring"
+    <FrameLayout
         android:layout_width="52dp"
         android:layout_height="52dp"
         android:layout_gravity="start|center_vertical"
-        android:layout_marginStart="12dp"
-        android:contentDescription="@null" />
+        android:layout_marginStart="13dp"
+        android:layout_marginEnd="6dp">
+
+        <ImageView
+            android:id="@+id/widget_ring"
+            android:layout_width="46dp"
+            android:layout_height="46dp"
+            android:layout_gravity="center"
+            android:contentDescription="@null" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/widget_remain"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:autoSizeTextType="uniform"
+                android:autoSizeMinTextSize="7sp"
+                android:autoSizeMaxTextSize="9sp"
+                android:fontFamily="sans-serif-medium"
+                android:gravity="center"
+                android:maxLines="1"
+                android:text="1690"
+                android:textColor="#FFFFFF"
+                android:textSize="9sp" />
+
+            <TextView
+                android:id="@+id/widget_remain_unit"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="sans-serif"
+                android:gravity="center"
+                android:maxLines="1"
+                android:text="ккал"
+                android:textColor="#80FFFFFF"
+                android:textSize="7sp" />
+        </LinearLayout>
+    </FrameLayout>
 
     <LinearLayout
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="center_vertical"
+        android:layout_gravity="start|center_vertical"
         android:layout_marginStart="72dp"
         android:layout_marginEnd="10dp"
         android:orientation="vertical">
 
-        <TextView
-            android:id="@+id/widget_remain_label"
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:fontFamily="sans-serif"
-            android:text="Осталось"
-            android:textColor="#64748B"
-            android:textSize="10sp"
-            android:maxLines="1" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
 
-        <TextView
-            android:id="@+id/widget_remain"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:fontFamily="sans-serif-medium"
-            android:text="2000 ккал"
-            android:textColor="#0F172A"
-            android:textSize="15sp"
-            android:maxLines="1" />
+            <ImageView
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:contentDescription="@null"
+                android:src="@drawable/widget_icon_protein" />
 
-        <TextView
-            android:id="@+id/widget_macros"
+            <TextView
+                android:id="@+id/widget_p"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="7dp"
+                android:fontFamily="sans-serif-medium"
+                android:maxLines="1"
+                android:text="0"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
-            android:autoSizeTextType="uniform"
-            android:autoSizeMinTextSize="7sp"
-            android:autoSizeMaxTextSize="9sp"
-            android:fontFamily="sans-serif-medium"
-            android:text="Б 0 · Ж 0 · У 0"
-            android:textColor="#475569"
-            android:textSize="9sp"
-            android:maxLines="1" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
 
+            <ImageView
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:contentDescription="@null"
+                android:src="@drawable/widget_icon_fat" />
+
+            <TextView
+                android:id="@+id/widget_f"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="7dp"
+                android:fontFamily="sans-serif-medium"
+                android:maxLines="1"
+                android:text="0"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:contentDescription="@null"
+                android:src="@drawable/widget_icon_carbs" />
+
+            <TextView
+                android:id="@+id/widget_c"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="7dp"
+                android:fontFamily="sans-serif-medium"
+                android:maxLines="1"
+                android:text="0"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp" />
+        </LinearLayout>
     </LinearLayout>
 
 </FrameLayout>
