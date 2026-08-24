@@ -213,9 +213,9 @@ fun IdeasScreen(onBack: () -> Unit, viewModel: IdeasViewModel = viewModel()) {
             }
         }
 
-        recommendations.forEach { rec ->
+        recommendations.forEachIndexed { idx, rec ->
             Spacer(Modifier.height(10.dp))
-            FreshCard(Modifier.fillMaxWidth()) {
+            FreshCard(Modifier.fillMaxWidth().staggeredIn(idx)) {
                 Column(Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(

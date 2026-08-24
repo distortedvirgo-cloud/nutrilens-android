@@ -745,7 +745,7 @@ private fun PhotoPreviewRow(photos: List<Uri>, onRemove: (Uri) -> Unit) {
                     onClick = { onRemove(uri) },
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .size(24.dp)
+                        .size(32.dp)
                         .clip(CircleShape)
                         .background(Color.Black.copy(alpha = 0.55f))
                 ) {

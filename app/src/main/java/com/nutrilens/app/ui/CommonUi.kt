@@ -2,6 +2,7 @@ package com.nutrilens.app.ui
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -23,6 +24,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.delay
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.alpha
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.Animatable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -293,5 +300,26 @@ fun TinyLabel(text: String, modifier: Modifier = Modifier, color: Color = Materi
         letterSpacing = 1.2.sp,
         color = color,
         modifier = modifier
+    )
+}
+
+/** Кривая появления: decelerate как в вебе. */
+private val InEasing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
+
+/**
+ * Мягкое появление элемента «лесенкой»: fade + подъём снизу, задержка растёт
+ * с индексом. Для статических списков (хаб, настройки, идеи) — живые экраны.
+ */
+@Composable
+fun Modifier.staggeredIn(index: Int, delayMs: Int = 40, durationMs: Int = 340): Modifier {
+    val progress = remember { Animatable(0f) }
+    LaunchedEffect(index) {
+        delay(delayMs * index.toLong())
+        progress.animateTo(1f, tween(durationMs, easing = InEasing))
+    }
+    return this.then(
+        Modifier
+            .alpha(progress.value)
+            .graphicsLayer { translationY = (1f - progress.value) * 26f }
     )
 }

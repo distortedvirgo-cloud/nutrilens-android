@@ -14,6 +14,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -536,7 +538,7 @@ private fun DayArrow(onClick: () -> Unit, contentDescription: String) {
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
         modifier = Modifier
-            .size(36.dp)
+            .size(40.dp)
             .shadow(4.dp, iconShape, ambientColor = Color(0x1216241C), spotColor = Color(0x1216241C))
     ) {
         Box(contentAlignment = Alignment.Center) {
@@ -913,15 +915,21 @@ private fun WaterCard(
                 )
             }
             Spacer(Modifier.width(12.dp))
+            val waterInteraction = remember { MutableInteractionSource() }
+            val waterPressed by waterInteraction.collectIsPressedAsState()
+            val waterScale by animateFloatAsState(if (waterPressed) 0.94f else 1f, label = "waterPress")
             Surface(
                 onClick = onAddWater,
+                interactionSource = waterInteraction,
                 shape = RoundedCornerShape(999.dp),
                 color = Color.Transparent,
-                modifier = Modifier.shadow(
-                    8.dp, RoundedCornerShape(999.dp),
-                    ambientColor = WATER_COLOR.copy(alpha = 0.35f),
-                    spotColor = WATER_COLOR.copy(alpha = 0.35f)
-                )
+                modifier = Modifier
+                    .scale(waterScale)
+                    .shadow(
+                        8.dp, RoundedCornerShape(999.dp),
+                        ambientColor = WATER_COLOR.copy(alpha = 0.35f),
+                        spotColor = WATER_COLOR.copy(alpha = 0.35f)
+                    )
             ) {
                 Box(
                     modifier = Modifier

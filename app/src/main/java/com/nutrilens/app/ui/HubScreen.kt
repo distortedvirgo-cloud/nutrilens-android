@@ -1,6 +1,14 @@
 package com.nutrilens.app.ui
 
-import androidx.compose.foundation.clickable
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -47,7 +55,7 @@ fun HubScreen(onNavigate: (String) -> Unit) {
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = 20.dp)
             .padding(bottom = 110.dp)
     ) {
         ScreenHeader(
@@ -57,14 +65,14 @@ fun HubScreen(onNavigate: (String) -> Unit) {
         var index = 0
         while (index < HUB_ITEMS.size) {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                HubCard(HUB_ITEMS[index], Modifier.weight(1f), onNavigate)
+                HubCard(HUB_ITEMS[index], index, Modifier.weight(1f), onNavigate)
                 if (index + 1 < HUB_ITEMS.size) {
-                    HubCard(HUB_ITEMS[index + 1], Modifier.weight(1f), onNavigate)
+                    HubCard(HUB_ITEMS[index + 1], index + 1, Modifier.weight(1f), onNavigate)
                 } else {
                     Spacer(Modifier.weight(1f))
                 }
             }
-            if (index + 2 < HUB_ITEMS.size) Spacer(Modifier.height(10.dp))
+            if (index + 2 < HUB_ITEMS.size) Spacer(Modifier.height(12.dp))
             index += 2
         }
     }
@@ -73,10 +81,25 @@ fun HubScreen(onNavigate: (String) -> Unit) {
 @Composable
 private fun HubCard(
     item: HubItem,
+    index: Int,
     modifier: Modifier = Modifier,
     onNavigate: (String) -> Unit
 ) {
-    FreshCard(modifier.clickable { onNavigate(item.route) }) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) 0.97f else 1f, label = "hubPress")
+    val shape = RoundedCornerShape(24.dp)
+    Surface(
+        onClick = { onNavigate(item.route) },
+        interactionSource = interaction,
+        shape = shape,
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+        modifier = modifier
+            .staggeredIn(index)
+            .scale(scale)
+            .shadow(4.dp, shape, ambientColor = Color(0x080F172A), spotColor = Color(0x080F172A))
+    ) {
         Column(Modifier.padding(16.dp)) {
             Surface(
                 shape = RoundedCornerShape(14.dp),
