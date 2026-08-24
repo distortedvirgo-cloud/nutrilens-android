@@ -819,9 +819,8 @@ private fun MacroCard(
     val shape = RoundedCornerShape(22.dp)
     Surface(
         shape = shape,
-        color = color.copy(alpha = 0.10f),
+        color = color.copy(alpha = 0.12f),
         modifier = modifier
-            .shadow(6.dp, shape, ambientColor = color.copy(alpha = 0.18f), spotColor = color.copy(alpha = 0.18f))
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(
