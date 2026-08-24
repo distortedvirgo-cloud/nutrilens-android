@@ -9,6 +9,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.LinearEasing
+import org.json.JSONArray
+import org.json.JSONObject
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -84,6 +87,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import com.nutrilens.app.data.AnalysisJobEntity
+import com.nutrilens.app.data.AnalysisJobRepository
 import com.nutrilens.app.data.FavoriteEntity
 import com.nutrilens.app.data.FavoriteRepository
 import com.nutrilens.app.data.MealEntity
@@ -132,8 +137,13 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private val waterRepository = WaterRepository(database.waterDao())
     private val weightRepository = WeightRepository(database.weightDao())
     private val favoriteRepository = FavoriteRepository(database.favoriteDao())
+    private val analysisJobRepository = AnalysisJobRepository(database.analysisJobDao())
 
     val favorites: StateFlow<List<FavoriteEntity>> = favoriteRepository.observe()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Блюда, которые ИИ сейчас анализирует в фоне (QUEUED/RUNNING). */
+    val activeJobs: StateFlow<List<AnalysisJobEntity>> = analysisJobRepository.observeActive()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _selectedDate = MutableStateFlow(LocalDate.now())
@@ -263,6 +273,7 @@ fun DashboardScreen(
     val scope = rememberCoroutineScope()
     val meals by viewModel.meals.collectAsStateWithLifecycle()
     val favorites by viewModel.favorites.collectAsStateWithLifecycle()
+    val activeJobs by viewModel.activeJobs.collectAsStateWithLifecycle()
     val selectedDate by viewModel.selectedDate.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val waterMl by viewModel.waterMl.collectAsStateWithLifecycle()
@@ -310,6 +321,14 @@ fun DashboardScreen(
             )
         }
         item { CaloriesHero(meals = meals, settings = settings) }
+        if (activeJobs.isNotEmpty()) {
+            item {
+                ProcessingCard(
+                    job = activeJobs.first(),
+                    extraCount = activeJobs.size - 1
+                )
+            }
+        }
         item { MacrosRow(meals = meals, settings = settings, lastWeight = lastWeight) }
         item {
             WaterCard(
@@ -636,6 +655,130 @@ private val HeroEasing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
 /** Градиентные пары hero (дизайн-система): изумруд; перебор — тёплый. */
 private val HeroOk = listOf(Color(0xFF059669), Color(0xFF047857))
 private val HeroWarn = listOf(Color(0xFFFB923C), Color(0xFFEA580C))
+
+// ---------- Блюдо в обработке ----------
+
+/**
+ * Карточка на главной: ИИ сейчас анализирует фото в фоне (фото из очереди,
+ * «сканирующая» лента и пульсирующая точка). Исчезает сама, когда воркер
+ * записал результат в дневник.
+ */
+@Composable
+private fun ProcessingCard(job: AnalysisJobEntity, extraCount: Int) {
+    val thumbPath = firstPhotoThumb(job.photoPaths)
+    val pulse = rememberInfiniteTransition(label = "processing")
+    val dotScale by pulse.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.35f,
+        animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
+        label = "dotScale"
+    )
+    val sweepY by pulse.animateFloat(
+        initialValue = -18f,
+        targetValue = 58f,
+        animationSpec = infiniteRepeatable(tween(1500, easing = LinearEasing), RepeatMode.Reverse),
+        label = "sweepY"
+    )
+    val title = job.note.ifBlank { "Анализ фотографии" }
+    val status = if (job.status == "RUNNING") "в обработке" else "в очереди"
+    FreshCard {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                Modifier
+                    .size(56.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                if (thumbPath != null) {
+                    AsyncImage(
+                        model = File(thumbPath),
+                        contentDescription = "Фото блюда",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Text("🍽️", fontSize = 24.sp, modifier = Modifier.align(Alignment.Center))
+                }
+                // «Лента сканирования» — бегущая полоса поверх фото.
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(18.dp)
+                        .graphicsLayer { translationY = sweepY }
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.Transparent, Color(0x8022C55E), Color.Transparent)
+                            )
+                        )
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    "ИИ считает калории и БЖУ — придёт уведомление",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Column(horizontalAlignment = Alignment.End) {
+                Box(
+                    Modifier
+                        .size(9.dp)
+                        .graphicsLayer {
+                            scaleX = dotScale
+                            scaleY = dotScale
+                        }
+                        .shadow(4.dp, CircleShape)
+                        .background(MaterialTheme.colorScheme.primary, CircleShape)
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    if (extraCount > 0) "$status · ещё $extraCount" else status,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+    }
+}
+
+/** Миниатюра первой фотографии из photoPaths (JSON-массив строк "full|thumb"). */
+private fun firstPhotoThumb(photoPathsJson: String): String? {
+    return try {
+        val array = JSONArray(photoPathsJson)
+        val element = array.opt(0) ?: return null
+        when (element) {
+            is JSONObject -> {
+                val thumb = element.optString("thumb")
+                val full = element.optString("full")
+                thumb.ifBlank { full.ifBlank { null } }
+            }
+            else -> {
+                val parts = element.toString().split("|", limit = 2)
+                parts.getOrNull(1)?.let { if (it.isNotBlank()) it else parts[0] }
+            }
+        }
+    } catch (_: Exception) {
+        null
+    }
+}
 
 @Composable
 private fun CaloriesHero(meals: List<MealWithImages>, settings: SettingsEntity) {

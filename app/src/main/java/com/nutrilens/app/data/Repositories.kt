@@ -113,6 +113,10 @@ class AnalysisJobRepository(private val jobDao: AnalysisJobDao) {
 
     suspend fun byId(id: String): AnalysisJobEntity? = jobDao.byId(id)
 
+    suspend fun active(): List<AnalysisJobEntity> = jobDao.active()
+
+    fun observeActive(): Flow<List<AnalysisJobEntity>> = jobDao.observeActive()
+
     suspend fun markRunning(id: String) = jobDao.setStatus(id, "RUNNING", null, null)
 
     suspend fun markDone(id: String, mealId: String) = jobDao.setStatus(id, "DONE", mealId, null)

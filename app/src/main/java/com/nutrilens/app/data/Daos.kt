@@ -175,6 +175,12 @@ interface AnalysisJobDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(job: AnalysisJobEntity)
 
+    @Query("SELECT * FROM analysis_jobs WHERE status = 'QUEUED' OR status = 'RUNNING' ORDER BY createdAt ASC")
+    suspend fun active(): List<AnalysisJobEntity>
+
+    @Query("SELECT * FROM analysis_jobs WHERE status = 'QUEUED' OR status = 'RUNNING' ORDER BY createdAt ASC")
+    fun observeActive(): Flow<List<AnalysisJobEntity>>
+
     @Query("SELECT * FROM analysis_jobs WHERE id = :id")
     suspend fun byId(id: String): AnalysisJobEntity?
 

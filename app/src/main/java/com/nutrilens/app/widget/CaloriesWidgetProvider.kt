@@ -4,6 +4,10 @@ import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.RectF
 import android.os.Bundle
 import android.widget.RemoteViews
 import com.nutrilens.app.MainActivity
@@ -65,15 +69,20 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
 
             // В БД load: синхронный доступ из фонового потока допустим (short-lived).
             val views = RemoteViews(context.packageName, R.layout.widget_calories)
-            if (remaining >= 0) {
-                views.setTextViewText(R.id.widget_remain, "Осталось $remaining ккал")
+            val isOver = remaining < 0
+            views.setImageViewBitmap(
+                R.id.widget_ring,
+                drawRingBitmap(context, (eaten / goal).toFloat().coerceIn(0f, 1f), isOver)
+            )
+            views.setTextViewText(R.id.widget_remain_label, if (isOver) "Перебор" else "Осталось")
+            if (isOver) {
+                views.setTextViewText(R.id.widget_remain, "${abs(remaining)} ккал")
             } else {
-                views.setTextViewText(R.id.widget_remain, "Перебор ${abs(remaining)} ккал")
+                views.setTextViewText(R.id.widget_remain, "$remaining ккал")
             }
-            val m = meals
-            val protein = m.sumOf { it.protein }.roundToInt()
-            val fat = m.sumOf { it.fat }.roundToInt()
-            val carbs = m.sumOf { it.carbs }.roundToInt()
+            val protein = meals.sumOf { it.protein }.roundToInt()
+            val fat = meals.sumOf { it.fat }.roundToInt()
+            val carbs = meals.sumOf { it.carbs }.roundToInt()
             views.setTextViewText(R.id.widget_macros, "Б $protein · Ж $fat · У $carbs")
 
             views.setOnClickPendingIntent(
@@ -100,6 +109,33 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
                 } catch (_: Exception) {
                 }
             }
+        }
+
+        /**
+         * Кольцо прогресса рисуем в битмап прямо в провайдере: кастомные View
+         * внутри RemoteViews грузятся не всеми лаунчерами (класс может уехать
+         * в небазовый dex), а ImageView с bitmap поддерживают все.
+         */
+        private fun drawRingBitmap(context: Context, fraction: Float, isOver: Boolean): Bitmap {
+            val density = context.resources.displayMetrics.density
+            val size = (52 * density).toInt().coerceAtLeast(64)
+            val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bmp)
+            val stroke = size * 0.12f
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.STROKE
+                strokeWidth = stroke
+                strokeCap = Paint.Cap.ROUND
+            }
+            val inset = stroke / 2f + 1f
+            val rect = RectF(inset, inset, size - inset, size - inset)
+            paint.color = 0xFFDCFCE7.toInt()
+            canvas.drawArc(rect, 0f, 360f, false, paint)
+            if (fraction > 0f) {
+                paint.color = if (isOver) 0xFFEA580C.toInt() else 0xFF059669.toInt()
+                canvas.drawArc(rect, -90f, 360f * fraction, false, paint)
+            }
+            return bmp
         }
     }
 }
