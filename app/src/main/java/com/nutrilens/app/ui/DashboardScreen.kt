@@ -2,9 +2,13 @@ package com.nutrilens.app.ui
 
 import android.app.Application
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -56,6 +60,7 @@ import androidx.compose.ui.geometry.Offset
 import android.view.HapticFeedbackConstants
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -64,6 +69,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.lifecycle.AndroidViewModel
@@ -332,7 +338,8 @@ fun DashboardScreen(
                         detailsMeal = meal
                         detailItems = emptyList()
                     },
-                    onDelete = { deleteTarget = meal }
+                    onDelete = { deleteTarget = meal },
+                    modifier = Modifier.animateItem()
                 )
             }
         }
@@ -504,105 +511,130 @@ private fun DayArrow(onClick: () -> Unit, contentDescription: String) {
 
 // ---------- Герой-карточка: калорийное кольцо ----------
 
+/** Кривая героя (decelerate), как в вебе. */
+private val HeroEasing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
+
+/** Градиентные пары hero: в норме — изумруд, перебор — тёплый янтарь→терракота. */
+private val HeroOk = listOf(Color(0xFF1BC289), Color(0xFF0A7A55))
+private val HeroWarn = listOf(Color(0xFFF09A4A), Color(0xFFDE5C5C))
+
 @Composable
 private fun CaloriesHero(meals: List<MealWithImages>, settings: SettingsEntity) {
     val eaten = meals.sumOf { it.meal.calories }
     val goal = settings.dailyGoal
-    val target = if (goal > 0) (eaten / goal).toFloat().coerceIn(0f, 1f) else 0f
-    val fraction by animateFloatAsState(targetValue = target, label = "ring")
     val isOver = goal > 0 && eaten > goal
-    val arcColor = if (isOver) MaterialTheme.colorScheme.tertiary
-    else MaterialTheme.colorScheme.primary
-    val trackColor = MaterialTheme.colorScheme.surfaceVariant
+    val fraction by animateFloatAsState(
+        targetValue = if (goal > 0) (eaten / goal).toFloat().coerceIn(0f, 1f) else 0f,
+        animationSpec = tween(900, easing = HeroEasing),
+        label = "ring"
+    )
     // Тап по карточке переключает центр кольца: съедено ↔ остаток/перебор.
     var showRemaining by remember { mutableStateOf(false) }
+    val gradient = if (isOver) HeroWarn else HeroOk
+    val shape = MaterialTheme.shapes.extraLarge
+    val glow = if (isOver) Color(0x59F09A4A) else Color(0x59FF0C9D6B)
 
     Surface(
         onClick = { showRemaining = !showRemaining },
-        shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+        shape = shape,
+        color = Color.Transparent,
         modifier = Modifier
-            .shadow(1.dp, MaterialTheme.shapes.extraLarge, ambientColor = Color(0x1A16241C), spotColor = Color(0x1A16241C))
-            .shadow(12.dp, MaterialTheme.shapes.extraLarge, ambientColor = Color(0x1A16241C), spotColor = Color(0x1A16241C))
+            .fillMaxWidth()
+            .shadow(20.dp, shape, ambientColor = glow, spotColor = glow)
     ) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .background(Brush.linearGradient(gradient))
         ) {
-            Box(contentAlignment = Alignment.Center) {
-                Canvas(modifier = Modifier.size(180.dp)) {
-                    val stroke = 14.dp.toPx()
-                    val radius = (size.minDimension - stroke) / 2f
-                    val topLeft = Offset(
-                        (size.width - radius * 2) / 2f,
-                        (size.height - radius * 2) / 2f
+            // Декоративный полупрозрачный «блик» сверху — мягче градиент.
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.White.copy(alpha = 0.10f), Color.Transparent)
+                        )
                     )
-                    val arcSize = Size(radius * 2, radius * 2)
-                    drawArc(
-                        color = trackColor,
-                        startAngle = 0f,
-                        sweepAngle = 360f,
-                        useCenter = false,
-                        topLeft = topLeft,
-                        size = arcSize,
-                        style = Stroke(width = stroke, cap = StrokeCap.Round)
-                    )
-                    if (fraction > 0f) {
+            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Canvas(modifier = Modifier.size(180.dp)) {
+                        val stroke = 14.dp.toPx()
+                        val radius = (size.minDimension - stroke) / 2f
+                        val topLeft = Offset(
+                            (size.width - radius * 2) / 2f,
+                            (size.height - radius * 2) / 2f
+                        )
+                        val arcSize = Size(radius * 2, radius * 2)
+                        // Трек — полупрозрачный белый, арка и её свечение — белые.
                         drawArc(
-                            color = arcColor,
-                            startAngle = -90f,
-                            sweepAngle = 360f * fraction,
+                            color = Color.White.copy(alpha = 0.22f),
+                            startAngle = 0f,
+                            sweepAngle = 360f,
                             useCenter = false,
                             topLeft = topLeft,
                             size = arcSize,
                             style = Stroke(width = stroke, cap = StrokeCap.Round)
                         )
+                        if (fraction > 0f) {
+                            drawArc(
+                                color = Color.White.copy(alpha = 0.16f),
+                                startAngle = -90f,
+                                sweepAngle = 360f * fraction,
+                                useCenter = false,
+                                topLeft = topLeft,
+                                size = arcSize,
+                                style = Stroke(width = stroke + 10.dp.toPx(), cap = StrokeCap.Round)
+                            )
+                            drawArc(
+                                color = Color.White,
+                                startAngle = -90f,
+                                sweepAngle = 360f * fraction,
+                                useCenter = false,
+                                topLeft = topLeft,
+                                size = arcSize,
+                                style = Stroke(width = stroke, cap = StrokeCap.Round)
+                            )
+                        }
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        if (showRemaining) {
+                            DisplayNumber(
+                                text = "${(goal - eaten).roundToInt().let { kotlin.math.abs(it) }}",
+                                size = 44,
+                                color = Color.White
+                            )
+                            Text(
+                                text = if (isOver) "перебор ккал" else "осталось ккал",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = Color.White.copy(alpha = 0.75f)
+                            )
+                        } else {
+                            DisplayNumber(text = "${eaten.roundToInt()}", size = 44, color = Color.White)
+                            Text(
+                                text = "из ${goal.roundToInt()} ккал",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = Color.White.copy(alpha = 0.75f)
+                            )
+                        }
                     }
                 }
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    if (showRemaining) {
-                        val delta = (goal - eaten).roundToInt()
-                        DisplayNumber(
-                            text = "${kotlin.math.abs(delta)}",
-                            size = 42,
-                            color = if (delta < 0) MaterialTheme.colorScheme.tertiary
-                            else MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = if (delta < 0) "перебор ккал" else "осталось ккал",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.outline
-                        )
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    text = if (isOver) {
+                        "Перебор на ${(eaten - goal).roundToInt()} ккал — ничего страшного 🌿"
                     } else {
-                        DisplayNumber(
-                            text = "${eaten.roundToInt()}",
-                            size = 42,
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
-                        Text(
-                            text = "из ${goal.roundToInt()} ккал",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.outline
-                        )
-                    }
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-            if (isOver) {
-                Text(
-                    text = "Перебор на ${(eaten - goal).roundToInt()} ккал — ничего страшного 🌿",
+                        "Осталось ${(goal - eaten).roundToInt()} ккал"
+                    },
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.tertiary,
-                    fontWeight = FontWeight.Medium
-                )
-            } else {
-                Text(
-                    text = "Осталось ${(goal - eaten).roundToInt()} ккал",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White.copy(alpha = 0.9f)
                 )
             }
         }
@@ -667,30 +699,44 @@ private fun MacroCard(
     modifier: Modifier = Modifier
 ) {
     val fraction = if (goal > 0) (eaten / goal).toFloat().coerceIn(0f, 1f) else 0f
+    val shape = RoundedCornerShape(22.dp)
     Surface(
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surface,
+        shape = shape,
+        color = color.copy(alpha = 0.10f),
         modifier = modifier
+            .shadow(6.dp, shape, ambientColor = color.copy(alpha = 0.18f), spotColor = color.copy(alpha = 0.18f))
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier
+                        .size(8.dp)
+                        .background(color, CircleShape)
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.height(6.dp))
             Text(
                 text = "${eaten.roundToInt()} г",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
+                fontSize = 20.sp,
+                fontFamily = MaterialTheme.typography.displayLarge.fontFamily,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = MaterialTheme.typography.displayLarge.letterSpacing,
+                color = color
             )
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(8.dp))
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(6.dp)
                     .clip(RoundedCornerShape(3.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .background(color.copy(alpha = 0.15f))
             ) {
                 Box(
                     modifier = Modifier
@@ -700,11 +746,11 @@ private fun MacroCard(
                         .background(color)
                 )
             }
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(5.dp))
             Text(
                 text = "цель ${goal.roundToInt()} г",
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.outline
             )
         }
     }
@@ -721,6 +767,7 @@ private fun WaterCard(
 ) {
     val normMl = waterNormaMl(lastWeight, workoutDone)
     val fraction = if (normMl > 0) (waterMl.toFloat() / normMl).coerceIn(0f, 1f) else 0f
+    val waterGradient = Brush.horizontalGradient(listOf(WATER_COLOR, Color(0xFF2F7FB8)))
     Surface(
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surface
@@ -743,36 +790,46 @@ private fun WaterCard(
                         .fillMaxWidth()
                         .height(12.dp)
                         .clip(RoundedCornerShape(6.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .background(Color(0xFF4FA3D8).copy(alpha = 0.15f))
                 ) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth(fraction)
                             .height(12.dp)
                             .clip(RoundedCornerShape(6.dp))
-                            .background(WATER_COLOR)
+                            .background(waterGradient)
                     )
                 }
                 Spacer(Modifier.height(6.dp))
                 Text(
                     text = "$waterMl мл из ~$normMl мл",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.outline
                 )
             }
             Spacer(Modifier.width(12.dp))
             Surface(
                 onClick = onAddWater,
-                shape = RoundedCornerShape(20.dp),
-                color = MaterialTheme.colorScheme.secondaryContainer
-            ) {
-                Text(
-                    text = "+250 мл",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+                shape = RoundedCornerShape(999.dp),
+                color = Color.Transparent,
+                modifier = Modifier.shadow(
+                    8.dp, RoundedCornerShape(999.dp),
+                    ambientColor = WATER_COLOR.copy(alpha = 0.35f),
+                    spotColor = WATER_COLOR.copy(alpha = 0.35f)
                 )
+            ) {
+                Box(
+                    modifier = Modifier
+                        .background(waterGradient, RoundedCornerShape(999.dp))
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                ) {
+                    Text(
+                        text = "+250 мл",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
             }
         }
     }
@@ -946,14 +1003,15 @@ private fun MealCard(
     showFavorite: Boolean,
     onFavorite: () -> Unit,
     onClick: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Surface(
         onClick = onClick,
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-        modifier = Modifier
+        modifier = modifier
             .shadow(1.dp, MaterialTheme.shapes.large, ambientColor = Color(0x1216241C), spotColor = Color(0x1216241C))
             .shadow(8.dp, MaterialTheme.shapes.large, ambientColor = Color(0x1216241C), spotColor = Color(0x1216241C))
     ) {
@@ -1027,6 +1085,7 @@ private fun MealCard(
 private fun MealThumbnail(meal: MealWithImages) {
     val photo = meal.images.firstOrNull { it.kind == "THUMB" }
         ?: meal.images.firstOrNull { it.kind == "FULL" }
+    val shape = RoundedCornerShape(16.dp)
     if (photo != null) {
         AsyncImage(
             model = File(photo.path),
@@ -1034,21 +1093,25 @@ private fun MealThumbnail(meal: MealWithImages) {
             contentScale = ContentScale.Crop,
             modifier = Modifier
                 .size(64.dp)
-                .clip(RoundedCornerShape(14.dp))
+                .clip(shape)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f), shape)
         )
     } else {
         Box(
             modifier = Modifier
                 .size(64.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(MaterialTheme.colorScheme.primaryContainer),
+                .clip(shape)
+                .background(
+                    Brush.linearGradient(
+                        listOf(
+                            MaterialTheme.colorScheme.primaryContainer,
+                            MaterialTheme.colorScheme.surface
+                        )
+                    )
+                ),
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                imageVector = Icons.Filled.Restaurant,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onPrimaryContainer
-            )
+            Text("🍽️", fontSize = 26.sp)
         }
     }
 }

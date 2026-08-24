@@ -7,12 +7,16 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -70,6 +74,7 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -80,6 +85,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.clickable
 import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
@@ -464,13 +470,14 @@ fun AddMealScreen(
         uris.take(remaining).forEach { viewModel.addPhoto(context, it) }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             BackPill(onClick = onBack)
             Spacer(Modifier.width(12.dp))
@@ -493,15 +500,8 @@ fun AddMealScreen(
         when (val p = phase) {
             is AddMealPhase.Analyzing -> AnalyzingBlock()
             is AddMealPhase.Saving -> SavingBlock()
-            is AddMealPhase.Sent -> {
-                SentBlock()
-                // Мягкий уход на главную: показываем «отправлено» чуть больше
-                // секунды, дальше NavHost плавно переводит fade+подъёмом.
-                LaunchedEffect(Unit) {
-                    kotlinx.coroutines.delay(1400)
-                    onDone()
-                }
-            }
+            // Состояние «отправлено» показывается полноэкранным оверлеем ниже.
+            is AddMealPhase.Sent -> Unit
             is AddMealPhase.Result -> {
                 error?.let { ErrorBlock(message = it, onGoSettings = onGoSettings) }
                 ResultEditorBlock(
@@ -562,12 +562,19 @@ fun AddMealScreen(
                     Text(
                         text = "Работает в фоне: приложение можно закрыть — результат придёт уведомлением",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.outline
                     )
                 }
             }
         }
     }
+
+    // Полноэкранный оверлей «Анализ запущен»: плавно растворяется и уводит
+    // на главный экран (NavHost добавляет подъём+fade нового экрана).
+    if (phase is AddMealPhase.Sent) {
+        SentOverlay(onDone = onDone)
+    }
+}
 }
 
 // ---------- Блоки фаз ----------
@@ -723,33 +730,87 @@ private fun Modifier.dashedBorder(width: Dp, color: Color, radius: Dp): Modifier
         )
     }
 
-/** Состояние «отправлено»: карточка со скан-лентой, затем мягкий уход на главную. */
+/** Полноэкранный оверлей «Анализ запущен». */
 @Composable
-private fun SentBlock() {
-    FreshCard(modifier = Modifier.fillMaxWidth()) {
-        Column(
+private fun SentOverlay(onDone: () -> Unit) {
+    var visible by remember { mutableStateOf(true) }
+    val checkScale by animateFloatAsState(
+        targetValue = 1f,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 260f),
+        label = "check"
+    )
+    AnimatedVisibility(
+        visible = visible,
+        exit = fadeOut(tween(360)) + scaleOut(targetScale = 0.97f, animationSpec = tween(360))
+    ) {
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 26.dp, horizontal = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f),
+                            MaterialTheme.colorScheme.background
+                        ),
+                        startY = 0f,
+                        endY = 1200f
+                    )
+                )
         ) {
-            Text("✅", style = MaterialTheme.typography.displayMedium)
-            Spacer(Modifier.height(10.dp))
-            Text(
-                text = "Отправлено на анализ",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(Modifier.height(14.dp))
-            ScanFrame()
-            Spacer(Modifier.height(14.dp))
-            Text(
-                text = "Результат придёт уведомлением — можно закрыть приложение",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
-            )
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                // Круглая галочка с spring-появлением (эластично, как в вебе).
+                Box(
+                    modifier = Modifier
+                        .size(88.dp)
+                        .scale(checkScale)
+                        .shadow(
+                            18.dp, CircleShape,
+                            ambientColor = Color(0x6617C289), spotColor = Color(0x6617C289)
+                        )
+                        .clip(CircleShape)
+                        .background(
+                            Brush.linearGradient(listOf(Color(0xFF1BC289), Color(0xFF0A7A55)))
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("✓", fontSize = 44.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
+                }
+                Spacer(Modifier.height(22.dp))
+                Text(
+                    text = "Анализ запущен",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "ИИ считает калории на вашем фото",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(26.dp))
+                ScanFrame()
+                Spacer(Modifier.height(22.dp))
+                Text(
+                    text = "Можно закрыть приложение — результат придёт уведомлением",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline,
+                    textAlign = TextAlign.Center
+                )
+            }
         }
+    }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(1250)
+        visible = false
+        kotlinx.coroutines.delay(380)
+        onDone()
     }
 }
 

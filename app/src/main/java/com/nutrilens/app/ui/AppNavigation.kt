@@ -140,21 +140,21 @@ fun NutriLensAppRoot(initialDate: String? = null, navigateTo: String? = null) {
                 navController = navController,
                 startDestination = "dashboard",
                 modifier = Modifier.padding(innerPadding),
-                // Мягкий «fresh-in» как в вебе: fade + лёгкий подъём снизу
-                // (translateY 10px) на decelerate-кривой, выход — просто fade.
+                // Мягкий «fresh-in» как в вебе: fade + лёгкий подъём снизу на decelerate,
+                // уход — плавный fade (вызываем после анализа: оверлей уже растворился).
                 enterTransition = {
-                    fadeIn(tween(320, easing = FreshEasing)) +
-                        slideInVertically(tween(320, easing = FreshEasing)) { it / 16 }
+                    fadeIn(tween(380, easing = FreshEasing)) +
+                        slideInVertically(tween(380, easing = FreshEasing)) { it / 14 }
                 },
                 exitTransition = {
-                    fadeOut(tween(180))
+                    fadeOut(tween(240))
                 },
                 popEnterTransition = {
-                    fadeIn(tween(320, easing = FreshEasing)) +
-                        slideInVertically(tween(320, easing = FreshEasing)) { it / 16 }
+                    fadeIn(tween(380, easing = FreshEasing)) +
+                        slideInVertically(tween(380, easing = FreshEasing)) { it / 14 }
                 },
                 popExitTransition = {
-                    fadeOut(tween(180))
+                    fadeOut(tween(240))
                 }
             ) {
                 composable("dashboard") {
