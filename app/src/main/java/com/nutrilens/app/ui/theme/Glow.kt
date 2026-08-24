@@ -47,14 +47,16 @@ fun NutriGlowBackground(content: @Composable () -> Unit) {
     )
 
     Box(Modifier.fillMaxSize()) {
-        // Общая тональная подложка: светлее сверху, чище снизу. Без точек.
+        // Общая тональная подложка: мягко-мятный свет сверху (в тон палитры
+        // вместо белого), чище к низу. В тёмной теме — глубокий зелёный.
+        val wash = MaterialTheme.colorScheme.primaryContainer
         Box(
             Modifier
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
                         listOf(
-                            Color.White.copy(alpha = 0.30f),
+                            wash.copy(alpha = 0.45f),
                             Color.Transparent,
                             a.copy(alpha = 0.025f)
                         ),
