@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Светлая тема. Корень прозрачный: лаунчер может отдать виджету больше
-     места, чем 1 ряд (старый инстанс после обновления приложения сохраняет
-     прежний размер), поэтому «капсула» всегда центрируется. -->
+<!-- Светлая тема. Корень заполняет ячейку лаунчера целиком: если лаунчер
+     отдаёт 1-рядной 2x1 ячейке высоту больше контента, капсула тянется
+     на неё, а контент центрируется. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content">
+    android:layout_height="match_parent">
 
     <!-- Капсула-каркас: FrameLayout, чтобы единственный ребёнок (контент)
          центрировался и горизонтально, и вертикально. -->
@@ -30,14 +30,14 @@
 
             <!-- Кольцо с числом остатка внутри (как в референсе). -->
             <FrameLayout
-                android:layout_width="64dp"
-                android:layout_height="64dp"
+                android:layout_width="72dp"
+                android:layout_height="72dp"
                 android:layout_marginEnd="4dp">
 
                 <ImageView
                     android:id="@+id/widget_ring"
-                    android:layout_width="64dp"
-                    android:layout_height="64dp"
+                    android:layout_width="72dp"
+                    android:layout_height="72dp"
                     android:contentDescription="@null"
                     android:scaleType="fitCenter" />
 
@@ -50,11 +50,11 @@
 
                     <TextView
                         android:id="@+id/widget_remain"
-                        android:layout_width="42dp"
+                        android:layout_width="46dp"
                         android:layout_height="wrap_content"
                         android:autoSizeTextType="uniform"
                         android:autoSizeMinTextSize="9sp"
-                        android:autoSizeMaxTextSize="16sp"
+                        android:autoSizeMaxTextSize="18sp"
                         android:fontFamily="sans-serif-black"
                         android:gravity="center"
                         android:maxLines="1"
@@ -78,7 +78,7 @@
             <!-- Разделитель: RemoteViews не умеет голый <View>, поэтому FrameLayout. -->
             <FrameLayout
                 android:layout_width="1.5dp"
-                android:layout_height="34dp"
+                android:layout_height="40dp"
                 android:layout_marginStart="4dp"
                 android:layout_marginEnd="4dp"
                 android:background="#E1F2ED" />
