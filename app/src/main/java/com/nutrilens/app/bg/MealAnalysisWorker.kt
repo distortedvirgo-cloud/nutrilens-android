@@ -55,7 +55,8 @@ class MealAnalysisWorker(context: Context, params: WorkerParameters) : Coroutine
             applicationContext,
             NotificationHelper.CHANNEL_ANALYSIS,
             jobId.hashCode(),
-            "Анализируем ваше фото 🍽️",
+            if (job.photoPaths == "[]" || job.photoPaths.isBlank()) "Считаем калории по описанию 🍽️"
+            else "Анализируем ваше фото 🍽️",
             "Результат придёт уведомлением — приложение можно свернуть",
             NotificationHelper.mainActivityPendingIntent(applicationContext, jobId.hashCode()),
             ongoing = true
@@ -69,8 +70,8 @@ class MealAnalysisWorker(context: Context, params: WorkerParameters) : Coroutine
             postFailureNotification(jobId, error)
             return Result.failure()
         }
-        if (photos.isEmpty()) {
-            val msg = "Нет фотографий для анализа"
+        if (photos.isEmpty() && job.note.isBlank()) {
+            val msg = "Нет фото и описания блюда"
             jobRepo.markFailed(jobId, msg)
             postFailureNotification(jobId, msg)
             return Result.failure()

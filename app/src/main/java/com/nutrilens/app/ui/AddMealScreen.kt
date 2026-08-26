@@ -223,7 +223,10 @@ class AddMealViewModel(application: Application) : AndroidViewModel(application)
 
     /** Фоновый анализ через AnalysisScheduler. Экран показывает состояние «отправлено». */
     fun enqueueBackground(context: Context, onDone: () -> Unit) {
-        if (_photos.value.isEmpty()) return
+        if (_photos.value.isEmpty() && _note.value.isBlank()) {
+            _error.value = "Опишите блюдо текстом или добавьте фото"
+            return
+        }
         viewModelScope.launch {
             _error.value = null
             try {
@@ -355,7 +358,7 @@ fun AddMealScreen(
         ) {
         ScreenHeader(
             title = "Добавить еду 🍽️",
-            subtitle = "Сфотографируйте блюдо — ИИ посчитает калории и КБЖУ",
+            subtitle = "Фото или текст — ИИ посчитает калории и КБЖУ",
             onBack = onBack
         )
 
@@ -406,15 +409,13 @@ when (phase) {
                 GlowButton(
                     text = "🚀 Проанализировать",
                     onClick = { viewModel.enqueueBackground(context, onDone) },
-                    enabled = photos.isNotEmpty()
+                    enabled = note.isNotBlank() || photos.isNotEmpty()
                 )
-                if (photos.isNotEmpty()) {
-                    Text(
-                        text = "Работает в фоне: приложение можно закрыть — результат придёт уведомлением",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.outline
-                    )
-                }
+                Text(
+                    text = "Работает в фоне: приложение можно закрыть — результат придёт уведомлением",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
             }
         }
     }
