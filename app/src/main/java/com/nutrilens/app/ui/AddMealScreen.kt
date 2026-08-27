@@ -25,6 +25,8 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -286,6 +288,17 @@ class AddMealViewModel(application: Application) : AndroidViewModel(application)
             }
         }
     }
+    /** Удаление блюда из избранного. */
+    fun removeFavorite(favorite: FavoriteEntity) {
+        viewModelScope.launch {
+            try {
+                favoriteRepository.remove(favorite.id)
+                _messages.emit("Удалено из избранного")
+            } catch (e: Exception) {
+                _error.value = e.message ?: "Не удалось удалить"
+            }
+        }
+    }
 
 
     companion object {
@@ -367,9 +380,13 @@ when (phase) {
             AddMealPhase.Idle -> {
                 error?.let { ErrorBlock(message = it, onGoSettings = onGoSettings) }
                 if (photos.isEmpty() && favorites.isNotEmpty()) {
-                    FavoritesRow(favorites = favorites) { favorite ->
-                        viewModel.addFromFavorite(favorite, onDone)
-                    }
+                    FavoritesRow(
+                        favorites = favorites,
+                        onPick = { favorite ->
+                            viewModel.addFromFavorite(favorite, onDone)
+                        },
+                        onRemove = { favorite -> viewModel.removeFavorite(favorite) }
+                    )
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     PhotoSourceTile(
@@ -433,9 +450,17 @@ when (phase) {
 
 // ---------- Блоки фаз ----------
 
-/** Избранное: тап по чипу сразу записывает блюдо в дневник. */
+/**
+ * Избранное: тап по чипу сразу записывает блюдо в дневник, крестик удаляет
+ * из избранного. Чипы переносятся на новые строки — прокрутки нет.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun FavoritesRow(favorites: List<FavoriteEntity>, onPick: (FavoriteEntity) -> Unit) {
+private fun FavoritesRow(
+    favorites: List<FavoriteEntity>,
+    onPick: (FavoriteEntity) -> Unit,
+    onRemove: (FavoriteEntity) -> Unit
+) {
     Column {
         Text(
             text = "⭐ Избранное",
@@ -443,8 +468,11 @@ private fun FavoritesRow(favorites: List<FavoriteEntity>, onPick: (FavoriteEntit
             fontWeight = FontWeight.Bold
         )
         Spacer(Modifier.height(8.dp))
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(favorites, key = { it.id }) { favorite ->
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            favorites.forEach { favorite ->
                 Surface(
                     onClick = { onPick(favorite) },
                     shape = RoundedCornerShape(16.dp),
@@ -454,18 +482,39 @@ private fun FavoritesRow(favorites: List<FavoriteEntity>, onPick: (FavoriteEntit
                         MaterialTheme.colorScheme.outlineVariant
                     )
                 ) {
-                    Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                        Text(
-                            text = favorite.name,
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "${favorite.calories.roundToInt()} ккал",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    Row(
+                        modifier = Modifier.padding(start = 14.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.padding(vertical = 4.dp)) {
+                            Text(
+                                text = favorite.name,
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "${favorite.calories.roundToInt()} ккал",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .clickable { onRemove(favorite) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = "Удалить из избранного",
+                                modifier = Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
