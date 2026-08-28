@@ -79,8 +79,8 @@ class MealAnalysisWorker(context: Context, params: WorkerParameters) : Coroutine
 
         return try {
             val fullBytes = photos.map { ImagePrep.readBytes(File(it.first)) }
-            val today = LocalDate.now().toString()
-            val recent = buildRecentMealsContext(db.mealDao().mealsBetween(today, today))
+            // Память между днями: последние приёмы пищи независимо от даты, в хронологическом порядке.
+            val recent = buildRecentMealsContext(db.mealDao().recentMeals(RECENT_MEALS_LIMIT).asReversed())
             val result = analyzeMealCascade(settings, fullBytes, job.note, recent)
 
             val meal = saveMeal(db, settings.dailyGoal, photos, result)
@@ -234,5 +234,8 @@ class MealAnalysisWorker(context: Context, params: WorkerParameters) : Coroutine
 
     companion object {
         const val EXTRA_JOB_ID = "jobId"
+
+        /** Сколько недавних приёмов пищи (между днями) отдавать модели как контекст. */
+        const val RECENT_MEALS_LIMIT = 10
     }
 }

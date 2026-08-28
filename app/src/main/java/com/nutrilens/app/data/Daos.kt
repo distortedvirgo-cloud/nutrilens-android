@@ -21,6 +21,9 @@ abstract class MealDao {
     @Query("SELECT * FROM meals WHERE date BETWEEN :start AND :end ORDER BY date, time")
     abstract suspend fun mealsBetween(start: String, end: String): List<MealEntity>
 
+    @Query("SELECT * FROM meals ORDER BY date DESC, time DESC LIMIT :limit")
+    abstract suspend fun recentMeals(limit: Int): List<MealEntity>
+
     @Query("SELECT DISTINCT date FROM meals")
     abstract suspend fun allDates(): List<String>
 

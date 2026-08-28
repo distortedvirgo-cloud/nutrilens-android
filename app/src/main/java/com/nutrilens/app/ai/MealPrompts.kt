@@ -5,10 +5,14 @@ import kotlin.math.roundToInt
 
 /**
  * Контекст недавних приёмов пищи для промпта (как recentMealsContext в веб-версии):
- * модель видит, что сегодня уже съедено, и не плюсет это к новой еде.
+ * последние приёмы за несколько дней с датами — память о рационе между днями.
+ * Формат строки — как в веб-версии (src/screens/AddMeal.tsx).
  */
 fun buildRecentMealsContext(meals: List<MealEntity>): String =
-    meals.joinToString("; ") { "${it.time} ${it.name} — ${it.calories.roundToInt()} ккал" }
+    meals.joinToString("\n") {
+        "- [${it.date} ${it.time}]: ${it.name} (${it.calories.roundToInt()} ккал, " +
+            "Б:${it.protein.roundToInt()} Ж:${it.fat.roundToInt()} У:${it.carbs.roundToInt()})"
+    }
 
 /**
  * Дословный порт промпта анализа еды из веб-версии
@@ -38,7 +42,7 @@ fun buildMealAnalysisPrompt(
         if (recentMealsContext.isBlank()) {
             ""
         } else {
-            "НЕДАВНИЕ ПРИЕМЫ ПИЩИ (ТОЛЬКО ДЛЯ КОНТЕКСТА, НЕ ПЛЮСУЙ ИХ К НОВОЙ ЕДЕ): $recentMealsContext\n"
+            "НЕДАВНИЕ ПРИЕМЫ ПИЩИ ЗА ПОСЛЕДНИЕ ДНИ, ВКЛЮЧАЯ СЕГОДНЯ (ТОЛЬКО ДЛЯ КОНТЕКСТА И ПАМЯТИ О РАЦИОНЕ, НЕ ПЛЮСУЙ ИХ К НОВОЙ ЕДЕ): $recentMealsContext\n"
         }
 
     return """Ты высокоточный эксперт-диетолог и анализатор еды. Твоя задача — определить КБЖУ (калории, белки, жиры, углеводы) СУММАРНО для ВСЕХ продуктов или блюд, представленных на фотографиях и/или описанных в тексте.

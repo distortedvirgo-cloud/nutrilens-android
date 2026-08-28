@@ -101,7 +101,6 @@ import coil.compose.AsyncImage
 import com.nutrilens.app.ai.GeminiApi
 import com.nutrilens.app.ai.ImagePrep
 import com.nutrilens.app.ai.MealAnalysisResult
-import com.nutrilens.app.ai.buildRecentMealsContext
 import com.nutrilens.app.bg.AnalysisScheduler
 import com.nutrilens.app.data.FavoriteEntity
 import com.nutrilens.app.data.FavoriteRepository
