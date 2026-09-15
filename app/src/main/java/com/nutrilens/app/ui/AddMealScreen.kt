@@ -277,6 +277,28 @@ class AddMealViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /** Убрать неудавшийся анализ из списка: чистим сохранённые фото и запись очереди. */
+    fun dismissFailedJob(job: AnalysisJobEntity) {
+        viewModelScope.launch {
+            try {
+                try {
+                    val paths = JSONArray(job.photoPaths)
+                    for (i in 0 until paths.length()) {
+                        paths.optString(i).split("|").forEach { path ->
+                            if (path.isNotBlank()) File(path).delete()
+                        }
+                    }
+                } catch (_: Exception) {
+                    // битый JSON путей — записи всё равно удаляем
+                }
+                analysisJobRepository.deleteJob(job.id)
+                _messages.emit("Убрано из списка")
+            } catch (e: Exception) {
+                _error.value = e.message ?: "Не удалось убрать"
+            }
+        }
+    }
+
     /** Быстрое добавление блюда из избранного — без фото и анализа. */
     fun addFromFavorite(favorite: FavoriteEntity, onDone: () -> Unit) {
         viewModelScope.launch {
@@ -403,7 +425,8 @@ when (phase) {
                 if (failedJobs.isNotEmpty()) {
                     FailedJobsSection(
                         jobs = failedJobs,
-                        onRetry = { viewModel.retryFailedJob(it) }
+                        onRetry = { viewModel.retryFailedJob(it) },
+                        onDismiss = { viewModel.dismissFailedJob(it) }
                     )
                 }
                 if (photos.isEmpty() && favorites.isNotEmpty()) {
@@ -556,7 +579,8 @@ private fun FavoritesRow(
 @Composable
 private fun FailedJobsSection(
     jobs: List<AnalysisJobEntity>,
-    onRetry: (AnalysisJobEntity) -> Unit
+    onRetry: (AnalysisJobEntity) -> Unit,
+    onDismiss: (AnalysisJobEntity) -> Unit
 ) {
     Column {
         Text(
@@ -604,6 +628,22 @@ private fun FailedJobsSection(
                         Spacer(Modifier.width(8.dp))
                         OutlinedButton(onClick = { onRetry(job) }) {
                             Text("Повторить")
+                        }
+                        Spacer(Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .clickable { onDismiss(job) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = "Убрать из списка",
+                                modifier = Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 }

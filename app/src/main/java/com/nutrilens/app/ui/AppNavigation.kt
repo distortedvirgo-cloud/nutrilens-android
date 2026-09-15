@@ -121,6 +121,15 @@ fun NutriLensAppRoot(initialDate: String? = null, navigateTo: String? = null) {
             .isNotEmpty()
     }
 
+    // Красная индикация на «+», пока есть анализы, завершившиеся ошибкой.
+    var failedJobCount by remember { mutableStateOf(0) }
+    LaunchedEffect(Unit) {
+        NutriLensDatabase.getInstance(appContext)
+            .analysisJobDao()
+            .observeFailed()
+            .collect { failedJobCount = it.size }
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = MaterialTheme.colorScheme.background,
@@ -129,6 +138,7 @@ fun NutriLensAppRoot(initialDate: String? = null, navigateTo: String? = null) {
                 FloatingDock(
                     currentRoute = currentRoute,
                     shouldPulseFab = !hasMealsToday,
+                    failedJobCount = failedJobCount,
                     onTab = navigate,
                     onAdd = { navigate("add") }
                 )
@@ -192,6 +202,7 @@ fun NutriLensAppRoot(initialDate: String? = null, navigateTo: String? = null) {
 private fun FloatingDock(
     currentRoute: String?,
     shouldPulseFab: Boolean,
+    failedJobCount: Int,
     onTab: (String) -> Unit,
     onAdd: () -> Unit
 ) {
@@ -263,6 +274,7 @@ private fun FloatingDock(
         }
         PulseFab(
             shouldPulse = shouldPulseFab,
+            failedCount = failedJobCount,
             onClick = onAdd,
             modifier = Modifier
                 .align(Alignment.TopCenter)
@@ -275,6 +287,7 @@ private fun FloatingDock(
 @Composable
 private fun PulseFab(
     shouldPulse: Boolean,
+    failedCount: Int = 0,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -328,12 +341,18 @@ private fun PulseFab(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(
-                        Brush.linearGradient(
-                            listOf(
-                                MaterialTheme.colorScheme.primary,
-                                MaterialTheme.colorScheme.onPrimaryContainer
+                        // Есть неудавшиеся анализы — кнопка «+» краснеет, чтобы
+                        // пользователь заметил и разобрал их на экране добавления.
+                        if (failedCount > 0) {
+                            Brush.linearGradient(listOf(Color(0xFFDC2626), Color(0xFFB91C1C)))
+                        } else {
+                            Brush.linearGradient(
+                                listOf(
+                                    MaterialTheme.colorScheme.primary,
+                                    MaterialTheme.colorScheme.onPrimaryContainer
+                                )
                             )
-                        )
+                        }
                     )
             ) {
                 Icon(
@@ -341,6 +360,23 @@ private fun PulseFab(
                     contentDescription = "Добавить еду",
                     tint = Color.White,
                     modifier = Modifier.size(26.dp)
+                )
+            }
+        }
+        if (failedCount > 0) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .size(22.dp)
+                    .background(Color(0xFFDC2626), CircleShape)
+                    .border(2.dp, MaterialTheme.colorScheme.background, CircleShape)
+            ) {
+                Text(
+                    text = failedCount.toString(),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
                 )
             }
         }

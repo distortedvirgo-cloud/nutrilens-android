@@ -197,6 +197,9 @@ interface AnalysisJobDao {
     @Query("SELECT * FROM analysis_jobs WHERE id = :id")
     suspend fun byId(id: String): AnalysisJobEntity?
 
+    @Query("DELETE FROM analysis_jobs WHERE id = :id")
+    suspend fun deleteById(id: String)
+
     @Query("UPDATE analysis_jobs SET status = :status, mealId = :mealId, error = :error WHERE id = :id")
     suspend fun setStatus(id: String, status: String, mealId: String?, error: String?)
 }

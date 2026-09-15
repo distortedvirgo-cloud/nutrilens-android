@@ -113,6 +113,9 @@ class AnalysisJobRepository(private val jobDao: AnalysisJobDao) {
 
     suspend fun byId(id: String): AnalysisJobEntity? = jobDao.byId(id)
 
+    /** Убрать неудавшуюся задачу из списка (фото чистит вызывающий код). */
+    suspend fun deleteJob(id: String) = jobDao.deleteById(id)
+
     suspend fun active(): List<AnalysisJobEntity> = jobDao.active()
 
     fun observeActive(): Flow<List<AnalysisJobEntity>> = jobDao.observeActive()
