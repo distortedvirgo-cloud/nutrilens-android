@@ -92,8 +92,13 @@ class MealAnalysisWorker(context: Context, params: WorkerParameters) : Coroutine
             postSuccessNotification(jobId, meal)
             Result.success()
         } catch (e: Exception) {
-            val error = e.message ?: e.javaClass.simpleName
+            var error = e.message ?: e.javaClass.simpleName
             val lower = error.lowercase()
+            // Типичные сетевые сбои в фоне = телефон режет сеть фоновому процессу
+            // (оптимизация батареи/экономия трафика). Подсказываем это прямо в ошибке.
+            if (lower.contains("dns") || lower.contains("сети") || lower.contains("таймаут")) {
+                error += " · Фон ограничен телефоном? Дайте NutriLens «работу без ограничений» (Настройки → Фоновая работа)"
+            }
             val nonRetryable = lower.contains("http 400") ||
                 lower.contains("http 403") ||
                 lower.contains("ключ")

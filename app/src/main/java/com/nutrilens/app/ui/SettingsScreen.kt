@@ -1,6 +1,10 @@
 package com.nutrilens.app.ui
 
 import android.app.Application
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.PowerManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -45,6 +49,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -614,6 +620,69 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                     MaterialTheme.colorScheme.error
                 }
             )
+        }
+
+        // Фоновая работа: без освобождения от оптимизации батареи часть телефонов
+        // (Xiaomi и др.) обрезает DNS/сеть фоновому процессу — анализ еды «не доходит».
+        val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        var batteryExempt by remember {
+            mutableStateOf(powerManager.isIgnoringBatteryOptimizations(context.packageName))
+        }
+        LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+            batteryExempt = powerManager.isIgnoringBatteryOptimizations(context.packageName)
+        }
+        FreshCard(modifier = Modifier.fillMaxWidth().staggeredIn(5)) {
+            Column(Modifier.padding(16.dp)) {
+                Text(
+                    "Фоновая работа",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    if (batteryExempt) {
+                        "✅ Освобождено от оптимизации батареи — фоновый анализ работает без ограничений"
+                    } else {
+                        "⚠️ Телефон может ограничивать сеть и CPU в фоне — анализ еды тогда не доходит " +
+                            "(«DNS не решается»). Разрешите работу без ограничений:"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (batteryExempt) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (!batteryExempt) {
+                    Spacer(Modifier.height(12.dp))
+                    Button(
+                        onClick = {
+                            val ok = runCatching {
+                                context.startActivity(
+                                    Intent(
+                                        android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                        Uri.parse("package:${context.packageName}")
+                                    )
+                                )
+                            }.isSuccess
+                            if (!ok) {
+                                runCatching {
+                                    context.startActivity(
+                                        Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                                    )
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("🔋 Разрешить работу в фоне")
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Не помогло — в настройках телефона отключите для NutriLens экономию трафика " +
+                        "и оптимизацию батареи (на Xiaomi: Приложения → NutriLens → Батарея → «Нет ограничений»).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
 
         Spacer(Modifier.height(24.dp))

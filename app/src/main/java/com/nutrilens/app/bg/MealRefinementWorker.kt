@@ -130,7 +130,12 @@ class MealRefinementWorker(
             )
             Result.success()
         } catch (e: Exception) {
-            val error = e.message ?: e.javaClass.simpleName
+            var error = e.message ?: e.javaClass.simpleName
+            val lower = error.lowercase()
+            // Та же подсказка про фоновые ограничения, что и в анализе еды.
+            if (lower.contains("dns") || lower.contains("сети") || lower.contains("таймаут")) {
+                error += " · Фон ограничен телефоном? Дайте NutriLens «работу без ограничений» (Настройки → Фоновая работа)"
+            }
             dao.setStatus(jobId, "FAILED", error)
             NotificationHelper.post(
                 applicationContext,

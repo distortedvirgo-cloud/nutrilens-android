@@ -127,33 +127,55 @@ object NanoGptApi {
         recentMealsContext: String,
         currentResultContext: String = ""
     ): MealAnalysisResult {
-        val prompt = buildMealAnalysisPrompt(
+        val basePrompt = buildMealAnalysisPrompt(
             userContext,
             userNote,
             recentMealsContext = recentMealsContext,
             photoCount = imagesJpeg.size,
             currentResultContext = currentResultContext
         )
-        val text = complete(
-            apiKey = apiKey,
-            endpoint = endpoint,
-            model = model,
-            system = null,
-            messages = listOf(
-                Msg(
-                    role = "user",
-                    text = prompt,
-                    imagesBase64 = imagesJpeg.map { Base64.encodeToString(it, Base64.NO_WRAP) }
-                )
-            ),
-            jsonMode = true
-        )
-        val result = try {
-            mealJson.decodeFromString<MealAnalysisResult>(text)
-        } catch (e: Exception) {
-            throw RuntimeException("Ошибка парсинга NanoGPT: ${e.message}. Ответ: ${text.take(300)}", e)
+
+        suspend fun attempt(prompt: String): MealAnalysisResult {
+            val text = complete(
+                apiKey = apiKey,
+                endpoint = endpoint,
+                model = model,
+                system = null,
+                messages = listOf(
+                    Msg(
+                        role = "user",
+                        text = prompt,
+                        imagesBase64 = imagesJpeg.map { Base64.encodeToString(it, Base64.NO_WRAP) }
+                    )
+                ),
+                jsonMode = true
+            )
+            return try {
+                mealJson.decodeFromString<MealAnalysisResult>(text)
+            } catch (e: Exception) {
+                throw RuntimeException("Ошибка парсинга NanoGPT: ${e.message}. Ответ: ${text.take(300)}", e)
+            }
         }
-        return fixMealDrift(result)
+
+        val first = attempt(basePrompt)
+        if (first.items.isNotEmpty() || first.calories > 0.0) {
+            return fixMealDrift(first)
+        }
+        // Reasoning-модели иногда отдают разбор только текстом: без массива items и
+        // без итоговых КБЖУ — приём сохранился бы с нулями. Переспрашиваем с поправкой.
+        val corrective = basePrompt +
+            "\n\nВАЖНО (исправление): в прошлом ответе НЕ БЫЛО массива items и итоговых " +
+            "calories/protein/fat/carbs. Верни ПОЛНЫЙ JSON: обязательный массив items " +
+            "(по каждому блюду: name, estimated_weight_g, portion_basis, calorie_density, " +
+            "calories, protein, fat, carbs, breakdown) И итоговые calories/protein/fat/carbs " +
+            "на верхнем уровне."
+        val second = attempt(corrective)
+        if (second.items.isEmpty() && second.calories <= 0.0) {
+            throw RuntimeException(
+                "Модель не вернула разбивку по продуктам и итоговые КБЖУ — повторите анализ"
+            )
+        }
+        return fixMealDrift(second)
     }
 
     private suspend fun execute(request: Request): String = suspendCancellableCoroutine { cont ->
