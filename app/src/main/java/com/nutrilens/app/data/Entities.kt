@@ -126,3 +126,14 @@ data class AnalysisJobEntity(
     val mealId: String? = null,
     val error: String? = null
 )
+
+/** Задача уточнения уже добавленного блюда («Поправить»): ИИ пересчитывает с учётом правки. */
+@Entity(tableName = "refinement_jobs")
+data class RefinementJobEntity(
+    @PrimaryKey val id: String,
+    val mealId: String,
+    val correction: String,
+    val status: String = "QUEUED", // QUEUED|RUNNING|DONE|FAILED
+    val createdAt: Long = System.currentTimeMillis(),
+    val error: String? = null
+)

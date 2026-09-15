@@ -39,6 +39,9 @@ abstract class MealDao {
     @Query("SELECT * FROM meal_images WHERE mealId = :mealId ORDER BY sortIndex")
     abstract fun imagesByMeal(mealId: String): Flow<List<MealImageEntity>>
 
+    @Query("SELECT * FROM meal_images WHERE mealId = :mealId ORDER BY sortIndex")
+    abstract suspend fun imagesByMealList(mealId: String): List<MealImageEntity>
+
     @Query("DELETE FROM meal_images WHERE mealId = :mealId")
     abstract suspend fun deleteImagesByMeal(mealId: String)
 
@@ -196,4 +199,16 @@ interface AnalysisJobDao {
 
     @Query("UPDATE analysis_jobs SET status = :status, mealId = :mealId, error = :error WHERE id = :id")
     suspend fun setStatus(id: String, status: String, mealId: String?, error: String?)
+}
+
+@Dao
+interface RefinementJobDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(job: RefinementJobEntity)
+
+    @Query("SELECT * FROM refinement_jobs WHERE id = :id")
+    suspend fun byId(id: String): RefinementJobEntity?
+
+    @Query("UPDATE refinement_jobs SET status = :status, error = :error WHERE id = :id")
+    suspend fun setStatus(id: String, status: String, error: String?)
 }

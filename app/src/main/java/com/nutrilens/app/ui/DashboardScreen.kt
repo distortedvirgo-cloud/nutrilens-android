@@ -87,6 +87,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import com.nutrilens.app.bg.AnalysisScheduler
 import com.nutrilens.app.data.AnalysisJobEntity
 import com.nutrilens.app.data.AnalysisJobRepository
 import com.nutrilens.app.data.FavoriteEntity
@@ -262,6 +263,11 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    /** Уточнение уже добавленного блюда: ИИ пересчитает его с учётом правки. */
+    suspend fun correctMeal(meal: MealEntity, correction: String) {
+        AnalysisScheduler.scheduleRefinement(getApplication(), meal.id, correction)
+    }
+
     suspend fun itemsForMeal(mealId: String): List<MealItemEntity> =
         mealRepository.itemsForMeal(mealId)
 
@@ -301,6 +307,7 @@ fun DashboardScreen(
     var detailItems by remember { mutableStateOf<List<MealItemEntity>>(emptyList()) }
     var deleteTarget by remember { mutableStateOf<MealWithImages?>(null) }
     var editTarget by remember { mutableStateOf<MealWithImages?>(null) }
+    var correctTarget by remember { mutableStateOf<MealWithImages?>(null) }
     var showWeightDialog by remember { mutableStateOf(false) }
 
     fun isFavorite(meal: MealEntity): Boolean =
@@ -388,7 +395,31 @@ fun DashboardScreen(
             onEdit = {
                 editTarget = meal
                 detailsMeal = null
+            },
+            onCorrect = {
+                correctTarget = meal
+                detailsMeal = null
             }
+        )
+    }
+
+    correctTarget?.let { target ->
+        MealCorrectionDialog(
+            meal = target.meal,
+            onSubmit = { correction ->
+                correctTarget = null
+                scope.launch {
+                    try {
+                        viewModel.correctMeal(target.meal, correction)
+                        snackbarHostState.showSnackbar("✏️ Уточнение отправлено — придёт уведомление")
+                    } catch (e: Exception) {
+                        snackbarHostState.showSnackbar(
+                            e.message ?: "Не удалось отправить уточнение"
+                        )
+                    }
+                }
+            },
+            onDismiss = { correctTarget = null }
         )
     }
 
@@ -1407,9 +1438,14 @@ private fun MealDetailsDialog(
     meal: MealWithImages,
     items: List<MealItemEntity>,
     onClose: () -> Unit,
-    onEdit: () -> Unit
+    onEdit: () -> Unit,
+    onCorrect: () -> Unit
 ) {
     val m = meal.meal
+    // Уточнение доступно только для сегодняшних и вчерашних приёмов пищи:
+    // позже правки перестают быть точными (а фото могут быть уже не актуальны).
+    val canCorrect = m.date == LocalDate.now().toString() ||
+        m.date == LocalDate.now().minusDays(1).toString()
     AlertDialog(
         onDismissRequest = onClose,
         title = { Text(m.name) },
@@ -1460,7 +1496,58 @@ private fun MealDetailsDialog(
             TextButton(onClick = onClose) { Text("Закрыть") }
         },
         dismissButton = {
-            TextButton(onClick = onEdit) { Text("Изменить") }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (canCorrect) {
+                    TextButton(onClick = onCorrect) { Text("Поправить ✏️") }
+                }
+                TextButton(onClick = onEdit) { Text("Изменить") }
+            }
+        }
+    )
+}
+
+// ---------- Диалог уточнения блюда («Поправить») ----------
+
+/**
+ * Пользователь пишет правку («вес не 170 г, а 125 г») — ИИ пересматривает
+ * фото/описание блюда и вносит правки в уже сохранённую запись.
+ */
+@Composable
+private fun MealCorrectionDialog(
+    meal: MealEntity,
+    onSubmit: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var text by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Поправить блюдо") },
+        text = {
+            Column {
+                Text(
+                    text = "«${meal.name}» — напишите, что исправить. " +
+                        "ИИ пересмотрит фото и пересчитает КБЖУ.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    placeholder = { Text("Например: вес не 170 г, а 125 г") },
+                    minLines = 2,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSubmit(text.trim()) },
+                enabled = text.isNotBlank()
+            ) { Text("Отправить") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Отмена") }
         }
     )
 }

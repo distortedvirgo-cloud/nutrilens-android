@@ -11,6 +11,7 @@ import androidx.work.workDataOf
 import com.nutrilens.app.ai.ImagePrep
 import com.nutrilens.app.data.AnalysisJobRepository
 import com.nutrilens.app.data.NutriLensDatabase
+import com.nutrilens.app.data.RefinementJobEntity
 import java.io.File
 import java.util.UUID
 
@@ -55,6 +56,32 @@ object AnalysisScheduler {
         if (job.status == "RUNNING") return // уже в работе — не дублируем
         jobRepo.requeueForRetry(job)
         WorkManager.getInstance(context).enqueue(analysisWorkRequest(jobId))
+    }
+
+    /**
+     * Уточнение уже добавленного блюда («Поправить»): создаёт задачу
+     * уточнения и ставит MealRefinementWorker — он пересчитает блюдо с учётом правки.
+     */
+    suspend fun scheduleRefinement(context: Context, mealId: String, correction: String): String {
+        val dao = NutriLensDatabase.getInstance(context).refinementJobDao()
+        val job = RefinementJobEntity(
+            id = UUID.randomUUID().toString(),
+            mealId = mealId,
+            correction = correction
+        )
+        dao.upsert(job)
+
+        val request = OneTimeWorkRequestBuilder<MealRefinementWorker>()
+            .setInputData(workDataOf(MealRefinementWorker.EXTRA_JOB_ID to job.id))
+            .setConstraints(
+                Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build()
+            )
+            .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+            .build()
+        WorkManager.getInstance(context).enqueue(request)
+        return job.id
     }
 
     private fun analysisWorkRequest(jobId: String) =

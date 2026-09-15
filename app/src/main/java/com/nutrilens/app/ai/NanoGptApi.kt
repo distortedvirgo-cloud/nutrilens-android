@@ -121,13 +121,15 @@ object NanoGptApi {
         imagesJpeg: List<ByteArray>,
         userContext: String,
         userNote: String,
-        recentMealsContext: String
+        recentMealsContext: String,
+        currentResultContext: String = ""
     ): MealAnalysisResult {
         val prompt = buildMealAnalysisPrompt(
             userContext,
             userNote,
             recentMealsContext = recentMealsContext,
-            photoCount = imagesJpeg.size
+            photoCount = imagesJpeg.size,
+            currentResultContext = currentResultContext
         )
         val text = complete(
             apiKey = apiKey,

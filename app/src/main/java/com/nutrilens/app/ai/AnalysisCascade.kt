@@ -19,18 +19,19 @@ suspend fun analyzeMealCascade(
     settings: SettingsEntity,
     imagesJpeg: List<ByteArray>,
     userNote: String,
-    recentMealsContext: String
+    recentMealsContext: String,
+    currentResultContext: String = ""
 ): MealAnalysisResult {
     val hasGemini = settings.apiKey.isNotBlank()
     val hasNano = settings.nanoApiKey.isNotBlank()
 
     suspend fun gemini(): MealAnalysisResult = GeminiApi(settings.apiKey).analyzeMeal(
-        imagesJpeg, settings.userContext, userNote, recentMealsContext
+        imagesJpeg, settings.userContext, userNote, recentMealsContext, currentResultContext
     )
 
     suspend fun nano(model: String): MealAnalysisResult = NanoGptApi.analyzeMeal(
         settings.nanoApiKey, settings.nanoApiEndpoint, model,
-        imagesJpeg, settings.userContext, userNote, recentMealsContext
+        imagesJpeg, settings.userContext, userNote, recentMealsContext, currentResultContext
     )
 
     return when (settings.analysisMode) {

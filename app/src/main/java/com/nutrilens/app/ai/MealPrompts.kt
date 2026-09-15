@@ -30,7 +30,8 @@ fun buildMealAnalysisPrompt(
     userContext: String,
     userNote: String,
     recentMealsContext: String = "",
-    photoCount: Int = 1
+    photoCount: Int = 1,
+    currentResultContext: String = ""
 ): String {
     val userRequest = when {
         userNote.isNotBlank() -> userNote
@@ -45,11 +46,22 @@ fun buildMealAnalysisPrompt(
             "НЕДАВНИЕ ПРИЕМЫ ПИЩИ ЗА ПОСЛЕДНИЕ ДНИ, ВКЛЮЧАЯ СЕГОДНЯ (ТОЛЬКО ДЛЯ КОНТЕКСТА И ПАМЯТИ О РАЦИОНЕ, НЕ ПЛЮСУЙ ИХ К НОВОЙ ЕДЕ): $recentMealsContext\n"
         }
 
+    val correctionBlock =
+        if (currentResultContext.isBlank()) {
+            ""
+        } else {
+            "ТЕКУЩИЙ РЕЗУЛЬТАТ ПРЕДЫДУЩЕГО АНАЛИЗА ЭТОГО ЖЕ ПРИЁМА ПИЩИ (исходная точка):\n" +
+                "$currentResultContext\n" +
+                "Пользователь в «ЗАПРОС ПОЛЬЗОВАТЕЛЯ» пишет УТОЧНЕНИЕ (например, неверный вес или состав). " +
+                "Изучи текст/фото заново с учётом уточнения, исправь ТОЛЬКО то, что оно затрагивает, " +
+                "пересчитай КБЖУ, всё остальное сохрани близко к предыдущему результату.\n"
+        }
+
     return """Ты высокоточный эксперт-диетолог и анализатор еды. Твоя задача — определить КБЖУ (калории, белки, жиры, углеводы) СУММАРНО для ВСЕХ продуктов или блюд, представленных на фотографиях и/или описанных в тексте.
 
 ОБЩАЯ ИНФОРМАЦИЯ О ПОЛЬЗОВАТЕЛЕ: $userContext
 ЗАПРОС ПОЛЬЗОВАТЕЛЯ: $userRequest
-${recentBlock}
+${recentBlock}${correctionBlock}
 Количество предоставленных фотографий: $photoCount
 
 ИНСТРУКЦИЯ К ВЫПОЛНЕНИЮ (ОЧЕНЬ ВАЖНО СТРОГО СЛЕДОВАТЬ):
