@@ -1,6 +1,9 @@
 package com.nutrilens.app.bg
 
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
+import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.nutrilens.app.ai.ImagePrep
@@ -222,13 +225,27 @@ class MealAnalysisWorker(context: Context, params: WorkerParameters) : Coroutine
         val title = "Не удалось проанализировать 😔"
         val text = error.take(200)
         val intent = NotificationHelper.mainActivityPendingIntent(applicationContext, jobId.hashCode())
+        // Кнопка «Повторить»: без открытия приложения возвращает блюдо в очередь.
+        val retryIntent = Intent(applicationContext, AnalysisRetryReceiver::class.java)
+            .putExtra(EXTRA_JOB_ID, jobId)
+        val retryPending = PendingIntent.getBroadcast(
+            applicationContext,
+            jobId.hashCode(),
+            retryIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         NotificationHelper.post(
             applicationContext,
             NotificationHelper.CHANNEL_ANALYSIS,
             jobId.hashCode(),
             title,
             text,
-            intent
+            intent,
+            actions = listOf(
+                NotificationCompat.Action.Builder(
+                    0, "Повторить анализ", retryPending
+                ).build()
+            )
         )
     }
 

@@ -40,8 +40,26 @@ object AnalysisScheduler {
         // собственный UUID, поэтому локальный jobId больше не используется.
         val job = jobRepo.createJob(note, photoPaths)
 
-        val request = OneTimeWorkRequestBuilder<MealAnalysisWorker>()
-            .setInputData(workDataOf(MealAnalysisWorker.EXTRA_JOB_ID to job.id))
+        WorkManager.getInstance(context).enqueue(analysisWorkRequest(job.id))
+        return job.id
+    }
+
+    /**
+     * Повторный запуск неудавшейся задачи анализа (например, после сбоя API):
+     * возвращает её в очередь с чистым статусом и ставит в WorkManager заново.
+     * Фото уже лежат в filesDir и переживают сбой, поэтому пересаживать их не нужно.
+     */
+    suspend fun retry(context: Context, jobId: String) {
+        val jobRepo = AnalysisJobRepository(NutriLensDatabase.getInstance(context).analysisJobDao())
+        val job = jobRepo.byId(jobId) ?: return
+        if (job.status == "RUNNING") return // уже в работе — не дублируем
+        jobRepo.requeueForRetry(job)
+        WorkManager.getInstance(context).enqueue(analysisWorkRequest(jobId))
+    }
+
+    private fun analysisWorkRequest(jobId: String) =
+        OneTimeWorkRequestBuilder<MealAnalysisWorker>()
+            .setInputData(workDataOf(MealAnalysisWorker.EXTRA_JOB_ID to jobId))
             .setConstraints(
                 Constraints.Builder()
                     .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -49,8 +67,4 @@ object AnalysisScheduler {
             )
             .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
             .build()
-
-        WorkManager.getInstance(context).enqueue(request)
-        return job.id
-    }
 }

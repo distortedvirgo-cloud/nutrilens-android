@@ -88,6 +88,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -102,6 +103,8 @@ import com.nutrilens.app.ai.GeminiApi
 import com.nutrilens.app.ai.ImagePrep
 import com.nutrilens.app.ai.MealAnalysisResult
 import com.nutrilens.app.bg.AnalysisScheduler
+import com.nutrilens.app.data.AnalysisJobEntity
+import com.nutrilens.app.data.AnalysisJobRepository
 import com.nutrilens.app.data.FavoriteEntity
 import com.nutrilens.app.data.FavoriteRepository
 import com.nutrilens.app.data.MealEntity
@@ -110,6 +113,7 @@ import com.nutrilens.app.data.MealItemEntity
 import com.nutrilens.app.data.MealRepository
 import com.nutrilens.app.data.NutriLensDatabase
 import com.nutrilens.app.data.SettingsRepository
+import org.json.JSONArray
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -146,8 +150,13 @@ class AddMealViewModel(application: Application) : AndroidViewModel(application)
     )
     private val settingsRepository = SettingsRepository(database.settingsDao())
     private val favoriteRepository = FavoriteRepository(database.favoriteDao())
+    private val analysisJobRepository = AnalysisJobRepository(database.analysisJobDao())
 
     val favorites: StateFlow<List<FavoriteEntity>> = favoriteRepository.observe()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Неудавшиеся анализы — экран предлагает «Повторить». */
+    val failedJobs: StateFlow<List<AnalysisJobEntity>> = analysisJobRepository.observeFailed()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _note = MutableStateFlow("")
@@ -256,6 +265,18 @@ class AddMealViewModel(application: Application) : AndroidViewModel(application)
 
 
 
+    /** Повторный анализ неудавшегося блюда (например, после сбоя API). */
+    fun retryFailedJob(job: AnalysisJobEntity) {
+        viewModelScope.launch {
+            try {
+                AnalysisScheduler.retry(getApplication(), job.id)
+                _messages.emit("🔄 Отправлено на повторный анализ — придёт уведомление")
+            } catch (e: Exception) {
+                _error.value = e.message ?: "Не удалось повторить анализ"
+            }
+        }
+    }
+
     /** Быстрое добавление блюда из избранного — без фото и анализа. */
     fun addFromFavorite(favorite: FavoriteEntity, onDone: () -> Unit) {
         viewModelScope.launch {
@@ -331,6 +352,7 @@ fun AddMealScreen(
     val note by viewModel.note.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
     val favorites by viewModel.favorites.collectAsStateWithLifecycle()
+    val failedJobs by viewModel.failedJobs.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) {
         viewModel.messages.collect { message -> snackbarHostState.showSnackbar(message) }
@@ -378,6 +400,12 @@ when (phase) {
             AddMealPhase.Sent -> Unit
             AddMealPhase.Idle -> {
                 error?.let { ErrorBlock(message = it, onGoSettings = onGoSettings) }
+                if (failedJobs.isNotEmpty()) {
+                    FailedJobsSection(
+                        jobs = failedJobs,
+                        onRetry = { viewModel.retryFailedJob(it) }
+                    )
+                }
                 if (photos.isEmpty() && favorites.isNotEmpty()) {
                     FavoritesRow(
                         favorites = favorites,
@@ -520,6 +548,77 @@ private fun FavoritesRow(
         }
     }
 }
+
+/**
+ * Неудавшиеся анализы: что это было за блюдо, что написала ошибка и кнопка
+ * «Повторить» — фото и описание уже сохранены, ничего вводить заново не нужно.
+ */
+@Composable
+private fun FailedJobsSection(
+    jobs: List<AnalysisJobEntity>,
+    onRetry: (AnalysisJobEntity) -> Unit
+) {
+    Column {
+        Text(
+            text = "⚠️ Не удалось проанализировать",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.error
+        )
+        Spacer(Modifier.height(8.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            jobs.forEach { job ->
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.error.copy(alpha = 0.4f)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                text = failedJobLabel(job),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            job.error?.takeIf { it.isNotBlank() }?.let { err ->
+                                Text(
+                                    text = err,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        OutlinedButton(onClick = { onRetry(job) }) {
+                            Text("Повторить")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun failedJobLabel(job: AnalysisJobEntity): String =
+    if (job.note.isNotBlank()) {
+        job.note
+    } else {
+        val photoCount = try { JSONArray(job.photoPaths).length() } catch (e: Exception) { 0 }
+        "Фото (${photoCount} шт.)"
+    }
 
 @Composable
 private fun ErrorBlock(message: String, onGoSettings: () -> Unit) {

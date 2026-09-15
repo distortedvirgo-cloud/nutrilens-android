@@ -188,6 +188,9 @@ interface AnalysisJobDao {
     @Query("SELECT * FROM analysis_jobs WHERE status = 'QUEUED' OR status = 'RUNNING' ORDER BY createdAt ASC")
     fun observeActive(): Flow<List<AnalysisJobEntity>>
 
+    @Query("SELECT * FROM analysis_jobs WHERE status = 'FAILED' ORDER BY createdAt DESC")
+    fun observeFailed(): Flow<List<AnalysisJobEntity>>
+
     @Query("SELECT * FROM analysis_jobs WHERE id = :id")
     suspend fun byId(id: String): AnalysisJobEntity?
 

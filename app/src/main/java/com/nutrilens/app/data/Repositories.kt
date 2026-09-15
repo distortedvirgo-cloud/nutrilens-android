@@ -117,6 +117,13 @@ class AnalysisJobRepository(private val jobDao: AnalysisJobDao) {
 
     fun observeActive(): Flow<List<AnalysisJobEntity>> = jobDao.observeActive()
 
+    fun observeFailed(): Flow<List<AnalysisJobEntity>> = jobDao.observeFailed()
+
+    /** Повторный анализ: возвращаем неудавшуюся задачу в очередь с чистым статусом. */
+    suspend fun requeueForRetry(job: AnalysisJobEntity) {
+        jobDao.upsert(job.copy(status = "QUEUED", mealId = null, error = null))
+    }
+
     suspend fun markRunning(id: String) = jobDao.setStatus(id, "RUNNING", null, null)
 
     suspend fun markDone(id: String, mealId: String) = jobDao.setStatus(id, "DONE", mealId, null)

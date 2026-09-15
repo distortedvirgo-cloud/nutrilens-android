@@ -70,7 +70,8 @@ object NotificationHelper {
         title: String,
         text: String,
         contentIntent: PendingIntent?,
-        ongoing: Boolean = false
+        ongoing: Boolean = false,
+        actions: List<NotificationCompat.Action> = emptyList()
     ) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
@@ -78,7 +79,7 @@ object NotificationHelper {
         ) {
             return
         }
-        val notification = NotificationCompat.Builder(context, channelId)
+        val builder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle(title)
             .setContentText(text)
@@ -87,8 +88,8 @@ object NotificationHelper {
             .setOngoing(ongoing)
             .setOnlyAlertOnce(ongoing)
             .setContentIntent(contentIntent)
-            .build()
-        NotificationManagerCompat.from(context).notify(id, notification)
+        actions.forEach { builder.addAction(it) }
+        NotificationManagerCompat.from(context).notify(id, builder.build())
     }
 
     /** Intent на MainActivity с опциональными extras (navigate/date). */
