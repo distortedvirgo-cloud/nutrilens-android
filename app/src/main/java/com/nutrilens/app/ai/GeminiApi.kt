@@ -275,13 +275,22 @@ internal fun fixMealDrift(result: MealAnalysisResult): MealAnalysisResult {
         sumCarbs += item.carbs
     }
 
-    if (abs(sumCalories - result.calories) > maxOf(30.0, result.calories * 0.10)) {
-        return result.copy(
+    // Модель не вернула итоговые поля верхнего уровня (некоторые reasoning-модели
+    // отдают только items) — достраиваем их из суммы по продуктам.
+    var fixed = result.copy(
+        calories = if (result.calories <= 0.0 && sumCalories > 0.0) sumCalories else result.calories,
+        protein = if (result.protein <= 0.0 && sumProtein > 0.0) sumProtein else result.protein,
+        fat = if (result.fat <= 0.0 && sumFat > 0.0) sumFat else result.fat,
+        carbs = if (result.carbs <= 0.0 && sumCarbs > 0.0) sumCarbs else result.carbs
+    )
+
+    if (abs(sumCalories - fixed.calories) > maxOf(30.0, fixed.calories * 0.10)) {
+        fixed = fixed.copy(
             calories = sumCalories,
             protein = sumProtein,
             fat = sumFat,
             carbs = sumCarbs
         )
     }
-    return result
+    return fixed
 }

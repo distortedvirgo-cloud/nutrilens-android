@@ -11,10 +11,12 @@ import kotlinx.serialization.json.Json
 @Serializable
 data class MealAnalysisResult(
     val name: String,
-    val calories: Double,
-    val protein: Double,
-    val fat: Double,
-    val carbs: Double,
+    // Итоговые КБЖУ могут отсутствовать в ответе (часть reasoning-моделей отдаёт
+    // только items) — fixMealDrift достраивает их из суммы по продуктам.
+    val calories: Double = 0.0,
+    val protein: Double = 0.0,
+    val fat: Double = 0.0,
+    val carbs: Double = 0.0,
     val aiThoughts: String = "",
     val reasoning: String = "",
     @SerialName("confidence_score") val confidenceScore: Double = 0.0,
