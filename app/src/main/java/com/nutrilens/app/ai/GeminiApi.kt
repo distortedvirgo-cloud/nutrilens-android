@@ -3,10 +3,13 @@ package com.nutrilens.app.ai
 import android.util.Base64
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
@@ -37,6 +40,27 @@ class GeminiApi(private val apiKey: String) {
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
         .build()
+
+    /** Диагностика для настроек: GET списка моделей, возвращает отчёт без выброса исключений. */
+    suspend fun checkConnection(): String {
+        if (apiKey.isBlank()) return "Ключ Gemini не задан"
+        val request = Request.Builder()
+            .url("https://generativelanguage.googleapis.com/v1beta/models")
+            .addHeader("x-goog-api-key", apiKey)
+            .get()
+            .build()
+        val t0 = System.currentTimeMillis()
+        return try {
+            val body = execute(request)
+            val count = runCatching {
+                Json.parseToJsonElement(body).jsonObject["models"]?.jsonArray?.size
+            }.getOrNull()
+            "1) Список моделей: OK за ${((System.currentTimeMillis() - t0) / 100) / 10.0} с" +
+                (count?.let { ", доступно моделей: $it" } ?: "")
+        } catch (e: Exception) {
+            "1) Список моделей: СБОЙ — ${e.message?.take(160)}"
+        }
+    }
 
     /**
      * Анализирует фото еды: собирает промпт + inline-изображения, шлёт запрос

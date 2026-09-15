@@ -49,6 +49,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nutrilens.app.BuildConfig
+import com.nutrilens.app.ai.GeminiApi
+import com.nutrilens.app.ai.NANO_MODEL_SIMPLE
+import com.nutrilens.app.ai.NanoGptApi
 import com.nutrilens.app.bg.ReminderSync
 import com.nutrilens.app.data.Backup
 import com.nutrilens.app.data.NutriLensDatabase
@@ -197,6 +200,33 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    /** Результат «Проверить соединение с ИИ» — многострочный отчёт для экрана. */
+    private val _diagnostics = MutableStateFlow<String?>(null)
+    val diagnostics: StateFlow<String?> = _diagnostics
+
+    fun runDiagnostics() {
+        viewModelScope.launch {
+            _diagnostics.value = "Проверяю…"
+            val settings = settingsRepository.get()
+            _diagnostics.value = if (settings.nanoApiKey.isNotBlank()) {
+                NanoGptApi.diagnose(
+                    settings.nanoApiKey,
+                    settings.nanoApiEndpoint,
+                    NANO_MODEL_SIMPLE
+                )
+            } else if (settings.apiKey.isNotBlank()) {
+                // Ключ только от Gemini: проверяем прямой доступ к её API.
+                try {
+                    GeminiApi(settings.apiKey).checkConnection()
+                } catch (e: Exception) {
+                    "СБОЙ — ${e.message?.take(160)}"
+                }
+            } else {
+                "Ключи ИИ не заданы — укажите NanoGPT или Gemini в настройках"
+            }
+        }
+    }
+
     /** Сохраняет настройки и синхронизирует напоминания после каждого изменения. */
     private fun update(transform: (SettingsEntity) -> SettingsEntity) {
         viewModelScope.launch {
@@ -214,6 +244,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val updateState by viewModel.updateState.collectAsStateWithLifecycle()
     val dataMessage by viewModel.dataMessage.collectAsStateWithLifecycle()
+    val diagnostics by viewModel.diagnostics.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -565,6 +596,24 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
 
         Button(onClick = viewModel::testNotification, modifier = Modifier.fillMaxWidth()) {
             Text("🔔 Тестовое уведомление")
+        }
+
+        OutlinedButton(
+            onClick = viewModel::runDiagnostics,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("🩺 Проверить соединение с ИИ")
+        }
+        diagnostics?.let { message ->
+            Text(
+                message,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (message.startsWith("Проверяю") || message.contains("OK")) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.error
+                }
+            )
         }
 
         Spacer(Modifier.height(24.dp))

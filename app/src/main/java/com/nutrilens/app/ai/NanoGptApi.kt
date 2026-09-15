@@ -41,7 +41,10 @@ object NanoGptApi {
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(180, TimeUnit.SECONDS)
+        // Reasoning-модели (glm-5.3-flash, qwen thinking) на сложных промптах с фото
+        // могут думать дольше минуты — читаем ответ до 5 минут, иначе клиент обрывает
+        // соединение, пока запрос уже дошёл до провайдера и «висит» там.
+        .readTimeout(300, TimeUnit.SECONDS)
         .build()
 
     private val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
@@ -158,7 +161,7 @@ object NanoGptApi {
         cont.invokeOnCancellation { call.cancel() }
         call.enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                if (cont.isActive) cont.resumeWithException(e)
+                if (cont.isActive) cont.resumeWithException(readableNetworkError(e))
             }
 
             override fun onResponse(call: Call, response: Response) {
@@ -174,5 +177,66 @@ object NanoGptApi {
                 }
             }
         })
+    }
+
+    /** Читаемые сообщения для сетевых сбоев — они попадают в карточку сбоя и уведомление. */
+    private fun readableNetworkError(e: IOException): RuntimeException = when (e) {
+        is java.net.SocketTimeoutException -> RuntimeException(
+            "Ответ не пришёл вовремя (таймаут сети) — проверьте интернет или VPN и повторите"
+        )
+        else -> when {
+            e.message?.contains("ECONNREFUSED", ignoreCase = true) == true ->
+                RuntimeException("Соединение отклонено — проверьте интернет")
+            e.message?.contains("Unable to resolve", ignoreCase = true) == true ->
+                RuntimeException("Нет доступа к сети (DNS не решается) — проверьте интернет или VPN")
+            else -> RuntimeException("Сбой сети: ${e.message ?: e.javaClass.simpleName}")
+        }
+    }
+
+    /**
+     * Диагностика соединения с NanoGPT для кнопки в настройках: проверяет доступ к
+     * списку моделей и делает крошечный реальный вызов модели, возвращает отчёт.
+     * Ошибки не выбрасываются — превращаются в человекочитаемые строки отчёта.
+     */
+    suspend fun diagnose(apiKey: String, endpoint: String, simpleModel: String): String {
+        if (apiKey.isBlank()) return "Ключ NanoGPT не задан"
+        val base = endpoint.ifBlank { "https://nano-gpt.com" }.trimEnd('/')
+        val report = StringBuilder()
+
+        // 1) Доступность API: GET /api/v1/models.
+        val t0 = System.currentTimeMillis()
+        report.append("1) Список моделей: ")
+        try {
+            val modelsReq = Request.Builder()
+                .url("$base/api/v1/models")
+                .addHeader("Authorization", "Bearer $apiKey")
+                .get()
+                .build()
+            val modelsBody = execute(modelsReq)
+            val count = runCatching {
+                json.parseToJsonElement(modelsBody).jsonObject["data"]?.jsonArray?.size
+            }.getOrNull()
+            report.append(
+                "OK за ${((System.currentTimeMillis() - t0) / 100) / 10.0} с" +
+                    (count?.let { ", доступно моделей: $it" } ?: "")
+            )
+        } catch (e: Exception) {
+            report.append("СБОЙ — ${e.message?.take(160)}")
+            return report.toString()
+        }
+
+        // 2) Реальный крошечный вызов модели: отвечает ли она вообще.
+        report.append("\n2) Тестовый вызов $simpleModel: ")
+        val t1 = System.currentTimeMillis()
+        try {
+            complete(
+                apiKey, endpoint, simpleModel, null,
+                listOf(Msg("user", "Ответь ровно одним словом: работает")), jsonMode = false
+            )
+            report.append("OK за ${((System.currentTimeMillis() - t1) / 100) / 10.0} с — соединение в порядке")
+        } catch (e: Exception) {
+            report.append("СБОЙ — ${e.message?.take(160)}")
+        }
+        return report.toString()
     }
 }
