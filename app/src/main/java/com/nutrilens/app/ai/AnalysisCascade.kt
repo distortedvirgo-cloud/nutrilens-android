@@ -2,9 +2,9 @@ package com.nutrilens.app.ai
 
 import com.nutrilens.app.data.SettingsEntity
 
-/** NanoGPT-слаги как в веб-версии (src/utils/models.ts). */
-const val NANO_MODEL_SIMPLE = "google/gemini-3.1-flash-lite"
-const val NANO_MODEL_ADVANCED = "google/gemini-3.5-flash-thinking"
+/** NanoGPT-слаги моделей каскада: лёгкая для simple, thinking-модель для advanced. */
+const val NANO_MODEL_SIMPLE = "z-ai/glm-5.3-flash"
+const val NANO_MODEL_ADVANCED = "qwen/qwen3.8-max:thinking"
 
 /** Порог эскалации advanced-каскада: уверенность ниже — зовём thinking-модель. */
 const val ADVANCED_ESCALATION_THRESHOLD = 7
