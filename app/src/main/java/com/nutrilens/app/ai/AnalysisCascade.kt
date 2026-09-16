@@ -6,13 +6,21 @@ import com.nutrilens.app.data.SettingsEntity
 const val NANO_MODEL_SIMPLE = "z-ai/glm-5.3-flash"
 const val NANO_MODEL_ADVANCED = "qwen/qwen3.8-max:thinking"
 
+/**
+ * Быстрая модель первого прохода для simple-каскада — та же, на которой работал
+ * веб-анализатор (промпт писался под неё). У glm-5.3-flash провайдер не даёт
+ * отключить reasoning («GLM 5.3 always thinks»), поэтому время от 14 до 58 с;
+ * gemini-3.1-flash-lite отвечает без фазы размышлений стабильно за ~8 с.
+ */
+const val NANO_MODEL_FAST = "google/gemini-3.1-flash-lite"
+
 /** Порог эскалации advanced-каскада: уверенность ниже — зовём thinking-модель. */
 const val ADVANCED_ESCALATION_THRESHOLD = 7
 
 /**
  * Каскад провайдеров анализа еды, как в веб-версии:
  * - free: свой ключ Gemini; при сбое — NanoGPT-фолбэк, если ключ задан;
- * - simple: NanoGPT (лёгкая модель), без ключа — Gemini;
+ * - simple: NanoGPT — быстрая модель, при сбое glm; без ключа — Gemini;
  * - advanced: NanoGPT-каскад lite → thinking при низкой уверенности.
  */
 suspend fun analyzeMealCascade(
@@ -35,7 +43,16 @@ suspend fun analyzeMealCascade(
     )
 
     return when (settings.analysisMode) {
-        "simple" -> if (hasNano) nano(NANO_MODEL_SIMPLE) else gemini()
+        "simple" -> if (hasNano) {
+            // Сначала быстрая модель без reasoning-фазы; сбой (сеть, парсинг, пустая
+            // форма ответа) — откат на glm-каскад с его переспросами.
+            try {
+                val fast = nano(NANO_MODEL_FAST)
+                if (fast.items.isNotEmpty() || fast.calories > 0.0) fast else nano(NANO_MODEL_SIMPLE)
+            } catch (e: Exception) {
+                nano(NANO_MODEL_SIMPLE)
+            }
+        } else gemini()
         "advanced" -> if (hasNano) {
             val first = nano(NANO_MODEL_SIMPLE)
             if (first.confidenceScore < ADVANCED_ESCALATION_THRESHOLD) {
