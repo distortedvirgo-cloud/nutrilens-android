@@ -56,11 +56,15 @@ object NanoGptApi {
         model: String,
         system: String?,
         messages: List<Msg>,
-        jsonMode: Boolean
+        jsonMode: Boolean,
+        reasoningEffort: String? = null
     ): String {
         val base = endpoint.ifBlank { "https://nano-gpt.com" }.trimEnd('/')
         val body = buildJsonObject {
             put("model", model)
+            // Ускорение reasoning-моделей: "low" отключает фазу размышлений
+            // (замер: 27 с против 40–70 с на полном промпте с фото).
+            reasoningEffort?.let { put("reasoning_effort", it) }
             putJsonArray("messages") {
                 if (!system.isNullOrBlank()) {
                     addJsonObject {
@@ -135,7 +139,7 @@ object NanoGptApi {
             currentResultContext = currentResultContext
         )
 
-        suspend fun attempt(prompt: String): MealAnalysisResult {
+        suspend fun attempt(prompt: String, reasoningEffort: String?): MealAnalysisResult {
             val text = complete(
                 apiKey = apiKey,
                 endpoint = endpoint,
@@ -148,7 +152,8 @@ object NanoGptApi {
                         imagesBase64 = imagesJpeg.map { Base64.encodeToString(it, Base64.NO_WRAP) }
                     )
                 ),
-                jsonMode = true
+                jsonMode = true,
+                reasoningEffort = reasoningEffort
             )
             return try {
                 mealJson.decodeFromString<MealAnalysisResult>(text)
@@ -157,19 +162,49 @@ object NanoGptApi {
             }
         }
 
-        val first = attempt(basePrompt)
+        val first = attempt(basePrompt, reasoningEffort = "low")
         if (first.items.isNotEmpty() || first.calories > 0.0) {
             return fixMealDrift(first)
         }
-        // Reasoning-модели иногда отдают разбор только текстом: без массива items и
-        // без итоговых КБЖУ — приём сохранился бы с нулями. Переспрашиваем с поправкой.
+
+        // Модель отдала разбор только текстом (без items и итогов). Сначала пробуем
+        // БЫСТРОЕ структурирование без фото — glm с effort=low укладывается в секунды,
+        // тогда как повторный вызов с фото занимает ещё ~30–60 с. Материал для
+        // структурирования — рассуждения и сводка первого ответа.
+        val salvageMaterial = listOf(first.reasoning, first.aiThoughts)
+            .filter { it.isNotBlank() }
+            .joinToString("\n\n")
+        if (salvageMaterial.isNotBlank()) {
+            val structPrompt =
+                "Готовый расчёт анализатора еды не был структурирован в JSON. Преобразуй его " +
+                    "в JSON (фото недоступно, ничего не перевычисляй — используй числа из расчёта): " +
+                    "name, calories/protein/fat/carbs (итоги = сумма по блюдам), aiThoughts (кратко), " +
+                    "items (по каждому блюду: name, estimated_weight_g, portion_basis, calorie_density, " +
+                    "calories, protein, fat, carbs, breakdown), confidence_score (1–10), " +
+                    "health_score (0–100), health_note.\n\nРАСЧЁТ:\n$salvageMaterial\n\n" +
+                    "ЗАПРОС ПОЛЬЗОВАТЕЛЯ: ${userNote.ifBlank { "только фото" }}"
+            val structText = complete(
+                apiKey, endpoint, model, null,
+                listOf(Msg("user", structPrompt)), jsonMode = true, reasoningEffort = "low"
+            )
+            val salvage = try {
+                mealJson.decodeFromString<MealAnalysisResult>(structText)
+            } catch (e: Exception) {
+                null
+            }
+            if (salvage != null && (salvage.items.isNotEmpty() || salvage.calories > 0.0)) {
+                return fixMealDrift(salvage)
+            }
+        }
+
+        // Фолбэк: полный повторный вызов с фото и явной поправкой в промпте.
         val corrective = basePrompt +
             "\n\nВАЖНО (исправление): в прошлом ответе НЕ БЫЛО массива items и итоговых " +
             "calories/protein/fat/carbs. Верни ПОЛНЫЙ JSON: обязательный массив items " +
             "(по каждому блюду: name, estimated_weight_g, portion_basis, calorie_density, " +
             "calories, protein, fat, carbs, breakdown) И итоговые calories/protein/fat/carbs " +
             "на верхнем уровне."
-        val second = attempt(corrective)
+        val second = attempt(corrective, reasoningEffort = null)
         if (second.items.isEmpty() && second.calories <= 0.0) {
             throw RuntimeException(
                 "Модель не вернула разбивку по продуктам и итоговые КБЖУ — повторите анализ"
