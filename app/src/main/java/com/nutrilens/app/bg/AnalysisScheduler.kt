@@ -64,6 +64,9 @@ object AnalysisScheduler {
      */
     suspend fun scheduleRefinement(context: Context, mealId: String, correction: String): String {
         val dao = NutriLensDatabase.getInstance(context).refinementJobDao()
+        // Завершённые/неудавшиеся задачи этого блюда больше не нужны — чистим,
+        // чтобы индикатор и список неудач не засорялись старыми правками.
+        dao.deleteFinishedByMeal(mealId)
         val job = RefinementJobEntity(
             id = UUID.randomUUID().toString(),
             mealId = mealId,
@@ -82,6 +85,20 @@ object AnalysisScheduler {
             .build()
         WorkManager.getInstance(context).enqueue(request)
         return job.id
+    }
+
+    /** Повтор неудавшегося уточнения по кнопке «Повторить» на карточке сбоя. */
+    fun retryRefinement(context: Context, jobId: String) {
+        val request = OneTimeWorkRequestBuilder<MealRefinementWorker>()
+            .setInputData(workDataOf(MealRefinementWorker.EXTRA_JOB_ID to jobId))
+            .setConstraints(
+                Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build()
+            )
+            .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+            .build()
+        WorkManager.getInstance(context).enqueue(request)
     }
 
     private fun analysisWorkRequest(jobId: String) =

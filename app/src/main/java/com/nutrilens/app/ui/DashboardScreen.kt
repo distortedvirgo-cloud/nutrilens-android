@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -97,6 +98,8 @@ import com.nutrilens.app.data.MealItemEntity
 import com.nutrilens.app.data.MealRepository
 import com.nutrilens.app.data.MealWithImages
 import com.nutrilens.app.data.NutriLensDatabase
+import com.nutrilens.app.data.RefinementJobEntity
+import com.nutrilens.app.data.RefinementJobRepository
 import com.nutrilens.app.data.SettingsEntity
 import com.nutrilens.app.data.SettingsRepository
 import com.nutrilens.app.data.WaterRepository
@@ -141,6 +144,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private val weightRepository = WeightRepository(database.weightDao())
     private val favoriteRepository = FavoriteRepository(database.favoriteDao())
     private val analysisJobRepository = AnalysisJobRepository(database.analysisJobDao())
+    private val refinementJobRepository = RefinementJobRepository(database.refinementJobDao())
 
     init {
         // Виджет в лаунчере обновляется только по явному запросу — освежаем при открытии.
@@ -153,6 +157,27 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     /** Блюда, которые ИИ сейчас анализирует в фоне (QUEUED/RUNNING). */
     val activeJobs: StateFlow<List<AnalysisJobEntity>> = analysisJobRepository.observeActive()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Уточнения («Поправить») в работе — индикатор прямо на карточке блюда. */
+    val refiningJobs: StateFlow<List<RefinementJobEntity>> = refinementJobRepository.observeActive()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val failedRefinements: StateFlow<List<RefinementJobEntity>> =
+        refinementJobRepository.observeFailed()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Повтор неудавшегося уточнения: в очередь и заново в WorkManager. */
+    fun retryRefinement(job: RefinementJobEntity) {
+        viewModelScope.launch {
+            refinementJobRepository.requeueForRetry(job.id)
+            AnalysisScheduler.retryRefinement(getApplication(), job.id)
+        }
+    }
+
+    /** Скрыть неудавшееся уточнение из списка (без повтора). */
+    fun dismissRefinement(job: RefinementJobEntity) {
+        viewModelScope.launch { refinementJobRepository.deleteJob(job.id) }
+    }
 
     private val _selectedDate = MutableStateFlow(LocalDate.now())
     val selectedDate: StateFlow<LocalDate> = _selectedDate.asStateFlow()
@@ -287,6 +312,8 @@ fun DashboardScreen(
     val meals by viewModel.meals.collectAsStateWithLifecycle()
     val favorites by viewModel.favorites.collectAsStateWithLifecycle()
     val activeJobs by viewModel.activeJobs.collectAsStateWithLifecycle()
+    val refiningJobs by viewModel.refiningJobs.collectAsStateWithLifecycle()
+    val failedRefinements by viewModel.failedRefinements.collectAsStateWithLifecycle()
     val selectedDate by viewModel.selectedDate.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val waterMl by viewModel.waterMl.collectAsStateWithLifecycle()
@@ -303,7 +330,7 @@ fun DashboardScreen(
         viewModel.selectDay(date)
     }
 
-    var detailsMeal by remember { mutableStateOf<MealWithImages?>(null) }
+    var detailsMealId by remember { mutableStateOf<String?>(null) }
     var detailItems by remember { mutableStateOf<List<MealItemEntity>>(emptyList()) }
     var deleteTarget by remember { mutableStateOf<MealWithImages?>(null) }
     var editTarget by remember { mutableStateOf<MealWithImages?>(null) }
@@ -313,7 +340,11 @@ fun DashboardScreen(
     fun isFavorite(meal: MealEntity): Boolean =
         favorites.any { it.name == meal.name && kotlin.math.abs(it.calories - meal.calories) < 0.5 }
 
-    LaunchedEffect(detailsMeal?.meal?.id) {
+    // Диалог деталей держит блюдо ЖИВЫМ из потока: когда фоновое уточнение обновит
+    // запись в БД, цифры в открытом диалоге обновятся сами, без переоткрытия.
+    val detailsMeal = detailsMealId?.let { id -> meals.firstOrNull { it.meal.id == id } }
+    val refiningMealIds = refiningJobs.map { it.mealId }.toSet()
+    LaunchedEffect(detailsMeal?.meal?.id, detailsMeal?.meal?.calories) {
         detailsMeal?.let { detailItems = viewModel.itemsForMeal(it.meal.id) }
     }
 
@@ -340,6 +371,18 @@ fun DashboardScreen(
                 ProcessingCard(
                     job = activeJobs.first(),
                     extraCount = activeJobs.size - 1
+                )
+            }
+        }
+        if (refiningJobs.isNotEmpty()) {
+            item { RefinementProcessingCard(job = refiningJobs.first(), extraCount = refiningJobs.size - 1) }
+        }
+        if (failedRefinements.isNotEmpty()) {
+            item {
+                FailedRefinementsSection(
+                    jobs = failedRefinements,
+                    onRetry = viewModel::retryRefinement,
+                    onDismiss = viewModel::dismissRefinement
                 )
             }
         }
@@ -375,9 +418,10 @@ fun DashboardScreen(
                 MealCard(
                     meal = meal,
                     showFavorite = !isFavorite(meal.meal),
+                    refining = meal.meal.id in refiningMealIds,
                     onFavorite = { viewModel.addFavorite(meal.meal) },
                     onClick = {
-                        detailsMeal = meal
+                        detailsMealId = meal.meal.id
                         detailItems = emptyList()
                     },
                     onDelete = { deleteTarget = meal },
@@ -391,14 +435,15 @@ fun DashboardScreen(
         MealDetailsDialog(
             meal = meal,
             items = detailItems,
-            onClose = { detailsMeal = null },
+            refining = meal.meal.id in refiningMealIds,
+            onClose = { detailsMealId = null },
             onEdit = {
                 editTarget = meal
-                detailsMeal = null
+                detailsMealId = null
             },
             onCorrect = {
                 correctTarget = meal
-                detailsMeal = null
+                detailsMealId = null
             }
         )
     }
@@ -792,6 +837,118 @@ private fun ProcessingCard(job: AnalysisJobEntity, extraCount: Int) {
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary
                 )
+            }
+        }
+    }
+}
+
+/**
+ * Живая индикация уточнения («Поправить»): пока задача в очереди/в работе,
+ * на дашборде видно, что правка обрабатывается, — раньше не было никакого статуса.
+ */
+@Composable
+private fun RefinementProcessingCard(job: RefinementJobEntity, extraCount: Int) {
+    val pulse = rememberInfiniteTransition(label = "refining")
+    val dotScale by pulse.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.35f,
+        animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
+        label = "dotScale"
+    )
+    val status = if (job.status == "RUNNING") "в обработке" else "в очереди"
+    FreshCard {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                Modifier
+                    .size(56.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("✏️", fontSize = 24.sp)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "Уточняем блюдо",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    job.correction,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Column(horizontalAlignment = Alignment.End) {
+                Box(
+                    Modifier
+                        .size(9.dp)
+                        .graphicsLayer {
+                            scaleX = dotScale
+                            scaleY = dotScale
+                        }
+                        .shadow(4.dp, CircleShape)
+                        .background(MaterialTheme.colorScheme.primary, CircleShape)
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    if (extraCount > 0) "$status · ещё $extraCount" else status,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+    }
+}
+
+/** Неудавшиеся уточнения: причина, повтор и скрытие (как у сбоев анализа на экране добавления). */
+@Composable
+private fun FailedRefinementsSection(
+    jobs: List<RefinementJobEntity>,
+    onRetry: (RefinementJobEntity) -> Unit,
+    onDismiss: (RefinementJobEntity) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        jobs.forEach { job ->
+            FreshCard {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("😔", fontSize = 20.sp)
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "Уточнение не удалось",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            job.error ?: "Попробуйте ещё раз",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    TextButton(onClick = { onRetry(job) }) { Text("Повторить") }
+                    TextButton(onClick = { onDismiss(job) }) { Text("Скрыть") }
+                }
             }
         }
     }
@@ -1232,7 +1389,8 @@ private fun MealCard(
     onFavorite: () -> Unit,
     onClick: () -> Unit,
     onDelete: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    refining: Boolean = false
 ) {
     Surface(
         onClick = onClick,
@@ -1265,12 +1423,29 @@ private fun MealCard(
                     color = MaterialTheme.colorScheme.outline
                 )
                 Spacer(Modifier.height(2.dp))
-                Text(
-                    text = "Б ${meal.meal.protein.roundToInt()} · Ж ${meal.meal.fat.roundToInt()} · " +
-                        "У ${meal.meal.carbs.roundToInt()}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.outline
-                )
+                if (refining) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(11.dp),
+                            strokeWidth = 1.5.dp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.width(5.dp))
+                        Text(
+                            text = "Уточняем правку…",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                } else {
+                    Text(
+                        text = "Б ${meal.meal.protein.roundToInt()} · Ж ${meal.meal.fat.roundToInt()} · " +
+                            "У ${meal.meal.carbs.roundToInt()}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text(
@@ -1437,6 +1612,7 @@ private fun MealHealthSection(score: Int, note: String?) {
 private fun MealDetailsDialog(
     meal: MealWithImages,
     items: List<MealItemEntity>,
+    refining: Boolean,
     onClose: () -> Unit,
     onEdit: () -> Unit,
     onCorrect: () -> Unit
@@ -1444,8 +1620,8 @@ private fun MealDetailsDialog(
     val m = meal.meal
     // Уточнение доступно только для сегодняшних и вчерашних приёмов пищи:
     // позже правки перестают быть точными (а фото могут быть уже не актуальны).
-    val canCorrect = m.date == LocalDate.now().toString() ||
-        m.date == LocalDate.now().minusDays(1).toString()
+    val canCorrect = (m.date == LocalDate.now().toString() ||
+        m.date == LocalDate.now().minusDays(1).toString()) && !refining
     AlertDialog(
         onDismissRequest = onClose,
         title = { Text(m.name) },
@@ -1499,6 +1675,16 @@ private fun MealDetailsDialog(
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (canCorrect) {
                     TextButton(onClick = onCorrect) { Text("Поправить ✏️") }
+                } else if (refining) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(13.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text("Уточняем…", style = MaterialTheme.typography.labelLarge)
+                    }
                 }
                 TextButton(onClick = onEdit) { Text("Изменить") }
             }

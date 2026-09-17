@@ -212,6 +212,19 @@ interface RefinementJobDao {
     @Query("SELECT * FROM refinement_jobs WHERE id = :id")
     suspend fun byId(id: String): RefinementJobEntity?
 
+    @Query("SELECT * FROM refinement_jobs WHERE status IN ('QUEUED','RUNNING') ORDER BY createdAt")
+    fun observeActive(): Flow<List<RefinementJobEntity>>
+
+    @Query("SELECT * FROM refinement_jobs WHERE status = 'FAILED' ORDER BY createdAt DESC")
+    fun observeFailed(): Flow<List<RefinementJobEntity>>
+
     @Query("UPDATE refinement_jobs SET status = :status, error = :error WHERE id = :id")
     suspend fun setStatus(id: String, status: String, error: String?)
+
+    /** Убираем завершённые задачи этого блюда — новая правка стартует с чистой очередью. */
+    @Query("DELETE FROM refinement_jobs WHERE mealId = :mealId AND status IN ('DONE','FAILED')")
+    suspend fun deleteFinishedByMeal(mealId: String)
+
+    @Query("DELETE FROM refinement_jobs WHERE id = :id")
+    suspend fun deleteById(id: String)
 }

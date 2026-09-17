@@ -134,6 +134,20 @@ class AnalysisJobRepository(private val jobDao: AnalysisJobDao) {
     suspend fun markFailed(id: String, error: String) = jobDao.setStatus(id, "FAILED", null, error)
 }
 
+class RefinementJobRepository(private val jobDao: RefinementJobDao) {
+    /** Уточнения в работе (QUEUED/RUNNING) — для индикатора на дашборде. */
+    fun observeActive(): Flow<List<RefinementJobEntity>> = jobDao.observeActive()
+
+    fun observeFailed(): Flow<List<RefinementJobEntity>> = jobDao.observeFailed()
+
+    suspend fun byId(id: String): RefinementJobEntity? = jobDao.byId(id)
+
+    /** Возврат неудавшегося уточнения в очередь перед повтором. */
+    suspend fun requeueForRetry(id: String) = jobDao.setStatus(id, "QUEUED", null)
+
+    suspend fun deleteJob(id: String) = jobDao.deleteById(id)
+}
+
 class FavoriteRepository(private val favoriteDao: FavoriteDao) {
     fun observe(): Flow<List<FavoriteEntity>> = favoriteDao.all()
 
