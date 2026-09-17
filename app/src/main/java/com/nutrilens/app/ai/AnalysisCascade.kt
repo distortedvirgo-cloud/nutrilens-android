@@ -93,13 +93,23 @@ suspend fun chatWithCascade(
     suspend fun gemini(): String = GeminiTools.chat(settings.apiKey, system, history)
     suspend fun nano(model: String): String = NanoGptApi.complete(
         settings.nanoApiKey, settings.nanoApiEndpoint, model, system,
-        history.map { NanoGptApi.Msg(it.role, it.text, it.imagesBase64) },
+        // Роли в ChatTurn — гемини-формат ("user"/"model"); NanoGPT принимает
+        // только system/user/assistant/tool, "model" → 400 invalid_message_role.
+        history.map { NanoGptApi.Msg(if (it.role == "model") "assistant" else it.role, it.text, it.imagesBase64) },
         jsonMode = false
     )
 
     return when {
         settings.analysisMode == "advanced" && hasNano -> nano(NANO_MODEL_ADVANCED)
-        settings.analysisMode == "simple" && hasNano -> nano(NANO_MODEL_SIMPLE)
+        settings.analysisMode == "simple" && hasNano -> {
+            // Как в анализе еды: быстрая модель без reasoning-фазы первой, glm — фолбэк.
+            try {
+                val fast = nano(NANO_MODEL_FAST)
+                if (fast.isNotBlank()) fast else nano(NANO_MODEL_SIMPLE)
+            } catch (e: Exception) {
+                nano(NANO_MODEL_SIMPLE)
+            }
+        }
         hasGemini -> gemini()
         hasNano -> nano(NANO_MODEL_SIMPLE)
         else -> throw RuntimeException("Укажите ключ Gemini или NanoGPT в настройках")

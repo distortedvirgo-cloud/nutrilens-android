@@ -1,6 +1,7 @@
 package com.nutrilens.app.ai
 
 import android.util.Base64
+import android.util.Log
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -111,7 +112,14 @@ object NanoGptApi {
             .post(body.toRequestBody("application/json".toMediaType()))
             .build()
 
-        val responseBody = execute(request)
+        val t0 = System.currentTimeMillis()
+        val responseBody = try {
+            execute(request)
+        } catch (e: Exception) {
+            Log.e("NutriChat", "complete $model failed after ${System.currentTimeMillis() - t0}ms", e)
+            throw e
+        }
+        Log.d("NutriChat", "complete $model ok ${System.currentTimeMillis() - t0}ms")
         val root = json.parseToJsonElement(responseBody).jsonObject
         val text = root["choices"]?.jsonArray?.firstOrNull()
             ?.jsonObject?.get("message")?.jsonObject?.get("content")

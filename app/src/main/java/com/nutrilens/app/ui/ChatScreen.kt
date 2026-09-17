@@ -135,11 +135,17 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     )
                 }
+                android.util.Log.d(
+                    "NutriChat",
+                    "send: history=${history.size} roles=${history.joinToString { it.role }}"
+                )
                 val reply = chatWithCascade(settings, system, history)
+                android.util.Log.d("NutriChat", "reply len=${reply.length}")
                 val modelMessage = ChatMessage(role = "model", text = reply)
                 _messages.value = _messages.value + modelMessage
                 ChatStore.append(getApplication(), modelMessage)
             } catch (e: Exception) {
+                android.util.Log.e("NutriChat", "chat failed", e)
                 _error.value = e.message ?: "Не удалось получить ответ"
             }
             _loading.value = false
