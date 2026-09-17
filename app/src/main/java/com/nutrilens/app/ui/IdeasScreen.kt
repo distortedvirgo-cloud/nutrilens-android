@@ -34,15 +34,23 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nutrilens.app.ai.GeminiTools
-import com.nutrilens.app.ai.buildRecentMealsContext
+import com.nutrilens.app.ai.mealJson
+import com.nutrilens.app.bg.AnalysisScheduler
+import com.nutrilens.app.bg.ToolJobWorker
 import com.nutrilens.app.data.MealRepository
 import com.nutrilens.app.data.NutriLensDatabase
 import com.nutrilens.app.data.SettingsRepository
+import com.nutrilens.app.data.ToolJobEntity
+import com.nutrilens.app.data.ToolJobRepository
 import com.nutrilens.app.insights.effectiveMacroGoals
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.serialization.builtins.ListSerializer
+import org.json.JSONObject
 import java.time.LocalDate
 import kotlin.math.roundToInt
 
@@ -58,61 +66,82 @@ class IdeasViewModel(application: Application) : AndroidViewModel(application) {
         database.workoutDao()
     )
     private val settingsRepository = SettingsRepository(database.settingsDao())
+    private val jobRepository = ToolJobRepository(database.toolJobDao())
 
     private val today = LocalDate.now().toString()
-
-    private val _loading = MutableStateFlow(false)
-    val loading: StateFlow<Boolean> = _loading.asStateFlow()
-
-    private val _error = MutableStateFlow<String?>(null)
-    val error: StateFlow<String?> = _error.asStateFlow()
 
     private val _recommendations = MutableStateFlow<List<GeminiTools.Recommendation>>(emptyList())
     val recommendations: StateFlow<List<GeminiTools.Recommendation>> = _recommendations.asStateFlow()
 
-    private val _recipeTitle = MutableStateFlow<String?>(null)
-    val recipeTitle: StateFlow<String?> = _recipeTitle.asStateFlow()
+    /** Активные задачи идей (QUEUED/RUNNING) — для индикатора «в фоне». */
+    val activeJobs: StateFlow<List<ToolJobEntity>> = jobRepository
+        .observeActive(ToolJobWorker.KIND_IDEAS)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    private val _recipeText = MutableStateFlow<String?>(null)
-    val recipeText: StateFlow<String?> = _recipeText.asStateFlow()
+    /** Неудавшиеся задачи идей — для карточки сбоя с повтором. */
+    val failedJobs: StateFlow<List<ToolJobEntity>> = jobRepository
+        .observeFailed(ToolJobWorker.KIND_IDEAS)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    private val _recipeLoading = MutableStateFlow(false)
-    val recipeLoading: StateFlow<Boolean> = _recipeLoading.asStateFlow()
+    /** Последний готовый результат — источник списка идей. */
+    val lastDone: StateFlow<ToolJobEntity?> = jobRepository
+        .observeLastDone(ToolJobWorker.KIND_IDEAS)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    init {
+        viewModelScope.launch {
+            lastDone.collect { job ->
+                _recommendations.value = job?.let {
+                    runCatching {
+                        mealJson.decodeFromString(
+                            ListSerializer(GeminiTools.Recommendation.serializer()), it.result
+                        )
+                    }.getOrDefault(emptyList())
+                } ?: emptyList()
+            }
+        }
+    }
+
+    /**
+     * Идеи считаются фоновой задачей: экран только замораживает параметры
+     * в job.input и ставит ToolJobWorker; результат приходит через lastDone.
+     */
     fun loadIdeas(mealType: String) {
-        if (_loading.value) return
+        if (activeJobs.value.isNotEmpty()) return
         viewModelScope.launch {
             val settings = settingsRepository.get()
-            if (settings.apiKey.isBlank() && settings.nanoApiKey.isBlank()) {
-                _error.value = "Сначала добавьте ключ Gemini в настройках"
-                return@launch
+            val meals = mealRepository.mealsOn(today)
+            val totals = meals.sumOf { it.calories }
+            val remaining = (settings.dailyGoal - totals).roundToInt().coerceAtLeast(100)
+            val weight = mealRepository.getLatestWeight()
+            val goals = effectiveMacroGoals(
+                settings.proteinGoal, settings.fatGoal, settings.carbsGoal,
+                settings.dailyGoal, weight
+            )
+            val input = JSONObject().apply {
+                put("note", mealType)
+                put("remainingCalories", remaining)
+                put("macroP", goals.protein)
+                put("macroF", goals.fat)
+                put("macroC", goals.carbs)
             }
-            _loading.value = true
-            _error.value = null
-            _recommendations.value = emptyList()
-            try {
-                val meals = mealRepository.mealsOn(today)
-                val totals = meals.sumOf { it.calories }
-                val remaining = (settings.dailyGoal - totals).roundToInt().coerceAtLeast(100)
-                val weight = mealRepository.getLatestWeight()
-                val goals = effectiveMacroGoals(
-                    settings.proteinGoal, settings.fatGoal, settings.carbsGoal,
-                    settings.dailyGoal, weight
-                )
-                val ideas = GeminiTools.getRecommendations(
-                    settings = settings,
-                    userContext = settings.userContext,
-                    userInput = mealType,
-                    remainingCalories = remaining,
-                    recentMealsContext = buildRecentMealsContext(meals),
-                    macroGoals = Triple(goals.protein, goals.fat, goals.carbs)
-                )
-                _recommendations.value = ideas
-                if (ideas.isEmpty()) _error.value = "Идеи закончились — попробуйте другой тип приёма"
-            } catch (e: Exception) {
-                _error.value = e.message ?: "Не удалось получить идеи"
-            }
-            _loading.value = false
+            AnalysisScheduler.enqueueTool(
+                getApplication(), ToolJobWorker.KIND_IDEAS, input.toString()
+            )
+        }
+    }
+
+    /** Повтор неудавшейся задачи идей (кнопка «Повторить» на карточке сбоя). */
+    fun retryTool(job: ToolJobEntity) {
+        viewModelScope.launch {
+            AnalysisScheduler.retryTool(getApplication(), job.id)
+        }
+    }
+
+    /** Скрыть карточку сбоя. */
+    fun dismiss(job: ToolJobEntity) {
+        viewModelScope.launch {
+            jobRepository.deleteJob(job.id)
         }
     }
 
@@ -131,6 +160,15 @@ class IdeasViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private val _recipeTitle = MutableStateFlow<String?>(null)
+    val recipeTitle: StateFlow<String?> = _recipeTitle.asStateFlow()
+
+    private val _recipeText = MutableStateFlow<String?>(null)
+    val recipeText: StateFlow<String?> = _recipeText.asStateFlow()
+
+    private val _recipeLoading = MutableStateFlow(false)
+    val recipeLoading: StateFlow<Boolean> = _recipeLoading.asStateFlow()
+
     fun closeRecipe() {
         _recipeTitle.value = null
         _recipeText.value = null
@@ -139,8 +177,8 @@ class IdeasViewModel(application: Application) : AndroidViewModel(application) {
 
 @Composable
 fun IdeasScreen(onBack: () -> Unit, viewModel: IdeasViewModel = viewModel()) {
-    val loading by viewModel.loading.collectAsStateWithLifecycle()
-    val error by viewModel.error.collectAsStateWithLifecycle()
+    val activeJobs by viewModel.activeJobs.collectAsStateWithLifecycle()
+    val failedJobs by viewModel.failedJobs.collectAsStateWithLifecycle()
     val recommendations by viewModel.recommendations.collectAsStateWithLifecycle()
     val recipeTitle by viewModel.recipeTitle.collectAsStateWithLifecycle()
     val recipeText by viewModel.recipeText.collectAsStateWithLifecycle()
@@ -180,38 +218,28 @@ fun IdeasScreen(onBack: () -> Unit, viewModel: IdeasViewModel = viewModel()) {
             }
         }
 
-        Spacer(Modifier.height(12.dp))
-        PillButton(
-            text = if (loading) "Думаем…" else "Предложить идеи",
-            onClick = { viewModel.loadIdeas(selectedType) },
-            enabled = !loading,
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        error?.let { err ->
+        activeJobs.firstOrNull()?.let {
             Spacer(Modifier.height(12.dp))
-            Text(
-                err,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodyMedium
+            ToolJobProcessingCard("Идеи еды")
+        }
+
+        failedJobs.firstOrNull()?.let { job ->
+            Spacer(Modifier.height(12.dp))
+            ToolJobErrorCard(
+                title = "Идеи еды",
+                error = job.error ?: "Не удалось",
+                onRetry = { viewModel.retryTool(job) },
+                onDismiss = { viewModel.dismiss(job) }
             )
         }
 
-        if (loading) {
-            Spacer(Modifier.height(24.dp))
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "ИИ подбирает идеи под ваш остаток калорий…",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
+        Spacer(Modifier.height(12.dp))
+        PillButton(
+            text = "Предложить идеи",
+            onClick = { viewModel.loadIdeas(selectedType) },
+            enabled = activeJobs.isEmpty(),
+            modifier = Modifier.fillMaxWidth()
+        )
 
         recommendations.forEachIndexed { idx, rec ->
             Spacer(Modifier.height(10.dp))
@@ -252,7 +280,7 @@ fun IdeasScreen(onBack: () -> Unit, viewModel: IdeasViewModel = viewModel()) {
             }
         }
 
-        if (!loading && recommendations.isEmpty() && error == null) {
+        if (recommendations.isEmpty() && activeJobs.isEmpty()) {
             Spacer(Modifier.height(24.dp))
             Text(
                 "Нажмите «Предложить идеи» — ИИ учтёт съеденное сегодня и подберёт 3 подходящих блюда.",

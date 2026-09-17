@@ -148,6 +148,41 @@ class RefinementJobRepository(private val jobDao: RefinementJobDao) {
     suspend fun deleteJob(id: String) = jobDao.deleteById(id)
 }
 
+/** Очередь фоновых задач ИИ-инструментов «Ещё»: экран наблюдает активную/провальную задачу и последний готовый результат. */
+class ToolJobRepository(private val jobDao: ToolJobDao) {
+    suspend fun createJob(kind: String, input: String): ToolJobEntity {
+        val job = ToolJobEntity(
+            id = UUID.randomUUID().toString(),
+            kind = kind,
+            input = input
+        )
+        jobDao.upsert(job)
+        return job
+    }
+
+    fun observeActive(kind: String): Flow<List<ToolJobEntity>> = jobDao.observeActive(kind)
+
+    fun observeFailed(kind: String): Flow<List<ToolJobEntity>> = jobDao.observeFailed(kind)
+
+    fun observeLastDone(kind: String): Flow<ToolJobEntity?> = jobDao.observeLastDone(kind)
+
+    suspend fun byId(id: String): ToolJobEntity? = jobDao.byId(id)
+
+    suspend fun markRunning(id: String) = jobDao.setStatus(id, "RUNNING", null, null)
+
+    suspend fun markDone(id: String, result: String) = jobDao.setStatus(id, "DONE", result, null)
+
+    suspend fun markFailed(id: String, error: String) = jobDao.setStatus(id, "FAILED", null, error)
+
+    /** Готовые/сбитые задачи инструмента чистятся перед новой задачей того же вида. */
+    suspend fun deleteFinishedByKind(kind: String) = jobDao.deleteFinishedByKind(kind)
+
+    /** Возврат неудавшейся задачи инструмента в очередь перед повтором. */
+    suspend fun requeueForRetry(id: String) = jobDao.setStatus(id, "QUEUED", null, null)
+
+    suspend fun deleteJob(id: String) = jobDao.deleteById(id)
+}
+
 class FavoriteRepository(private val favoriteDao: FavoriteDao) {
     fun observe(): Flow<List<FavoriteEntity>> = favoriteDao.all()
 

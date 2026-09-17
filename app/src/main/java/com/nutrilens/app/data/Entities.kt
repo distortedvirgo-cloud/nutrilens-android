@@ -137,3 +137,19 @@ data class RefinementJobEntity(
     val createdAt: Long = System.currentTimeMillis(),
     val error: String? = null
 )
+
+/**
+ * Фоновая задача одного из ИИ-инструментов «Ещё» (ideas/fridge/menu/grocery/
+ * water/habit). Параметры запроса замораживаются в input (JSON) в момент
+ * запуска, результат готовой задачи — в result (JSON или markdown).
+ */
+@Entity(tableName = "tool_jobs")
+data class ToolJobEntity(
+    @PrimaryKey val id: String,
+    val kind: String,
+    val input: String = "{}",
+    val status: String = "QUEUED", // QUEUED|RUNNING|DONE|FAILED
+    val result: String = "",
+    val createdAt: Long = System.currentTimeMillis(),
+    val error: String? = null
+)

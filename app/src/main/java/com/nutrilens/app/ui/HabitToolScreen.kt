@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -20,14 +19,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.nutrilens.app.ai.GeminiTools
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nutrilens.app.bg.AnalysisScheduler
+import com.nutrilens.app.bg.ToolJobWorker
 import com.nutrilens.app.data.NutriLensDatabase
-import com.nutrilens.app.data.SettingsRepository
+import com.nutrilens.app.data.ToolJobRepository
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 
 @Composable
 fun HabitToolScreen(onBack: () -> Unit) {
@@ -35,33 +36,27 @@ fun HabitToolScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
 
     var habitText by remember { mutableStateOf("") }
-    var loading by remember { mutableStateOf(false) }
-    var result by remember { mutableStateOf<String?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
 
+    // Фоновая задача разбора привычки: активная/неудавшаяся/последний готовый результат.
+    val jobRepo = remember { ToolJobRepository(NutriLensDatabase.getInstance(context).toolJobDao()) }
+    val activeJobs by jobRepo.observeActive(ToolJobWorker.KIND_HABIT)
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val failedJobs by jobRepo.observeFailed(ToolJobWorker.KIND_HABIT)
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val lastDone by jobRepo.observeLastDone(ToolJobWorker.KIND_HABIT)
+        .collectAsStateWithLifecycle(initialValue = null)
+
+    /**
+     * Разбор привычки считается фоновой задачей: экран замораживает текст
+     * привычки в job.input и ставит ToolJobWorker; результат приходит через lastDone.
+     */
     fun analyze() {
-        if (habitText.isBlank() || loading) return
+        if (habitText.isBlank() || activeJobs.isNotEmpty()) return
         scope.launch {
-            loading = true
-            error = null
-            result = null
-            try {
-                val settings = SettingsRepository(
-                    NutriLensDatabase.getInstance(context).settingsDao()
-                ).get()
-                if (settings.apiKey.isBlank() && settings.nanoApiKey.isBlank()) {
-                    error = "Сначала добавьте ключ Gemini в настройках"
-                    loading = false
-                    return@launch
-                }
-                result = GeminiTools.analyzeHabit(settings,
-                    settings.userContext,
-                    habitText.trim()
-                )
-            } catch (e: Exception) {
-                error = e.message ?: "Не удалось разобрать привычку"
+            val input = JSONObject().apply {
+                put("note", habitText.trim())
             }
-            loading = false
+            AnalysisScheduler.enqueueTool(context, ToolJobWorker.KIND_HABIT, input.toString())
         }
     }
 
@@ -91,28 +86,28 @@ fun HabitToolScreen(onBack: () -> Unit) {
 
         Spacer(Modifier.height(12.dp))
         PillButton(
-            text = if (loading) "Разбираем…" else "Разобрать привычку",
+            text = "Разобрать привычку",
             onClick = ::analyze,
-            enabled = habitText.isNotBlank() && !loading,
+            enabled = habitText.isNotBlank() && activeJobs.isEmpty(),
             modifier = Modifier.fillMaxWidth()
         )
 
-        error?.let { err ->
+        if (activeJobs.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))
-            Text(err, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+            ToolJobProcessingCard("Разбор привычки")
         }
 
-        if (loading) {
-            Spacer(Modifier.height(24.dp))
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-            }
+        failedJobs.firstOrNull()?.let { job ->
+            Spacer(Modifier.height(12.dp))
+            ToolJobErrorCard(
+                title = "Разбор привычки",
+                error = job.error ?: "Не удалось разобрать привычку",
+                onRetry = { scope.launch { AnalysisScheduler.retryTool(context, job.id) } },
+                onDismiss = { scope.launch { jobRepo.deleteJob(job.id) } }
+            )
         }
 
-        result?.let { text ->
+        lastDone?.result?.takeIf { it.isNotBlank() }?.let { text ->
             Spacer(Modifier.height(14.dp))
             FreshCard(Modifier.fillMaxWidth()) {
                 MarkdownText(text, Modifier.padding(16.dp))

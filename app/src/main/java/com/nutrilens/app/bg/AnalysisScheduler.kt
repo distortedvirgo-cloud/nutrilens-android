@@ -12,6 +12,7 @@ import com.nutrilens.app.ai.ImagePrep
 import com.nutrilens.app.data.AnalysisJobRepository
 import com.nutrilens.app.data.NutriLensDatabase
 import com.nutrilens.app.data.RefinementJobEntity
+import com.nutrilens.app.data.ToolJobRepository
 import java.io.File
 import java.util.UUID
 
@@ -100,6 +101,43 @@ object AnalysisScheduler {
             .build()
         WorkManager.getInstance(context).enqueue(request)
     }
+
+    /**
+     * Фоновая задача ИИ-инструмента «Ещё» (ideas/fridge/menu/grocery/water/habit).
+     * inputJson — параметры, замороженные экраном в момент запуска (фото к этому
+     * моменту уже скопированы в filesDir, в JSON кладутся их абсолютные пути).
+     */
+    suspend fun enqueueTool(context: Context, kind: String, inputJson: String): String {
+        val db = NutriLensDatabase.getInstance(context)
+        val dao = db.toolJobDao()
+        // Готовые/неудавшиеся задачи этого инструмента больше не нужны —
+        // новая задача стартует с чистым экраном и свежим результатом.
+        dao.deleteFinishedByKind(kind)
+        val jobRepo = ToolJobRepository(dao)
+        val job = jobRepo.createJob(kind, inputJson)
+        WorkManager.getInstance(context).enqueue(toolWorkRequest(job.id))
+        return job.id
+    }
+
+    /** Повтор неудавшейся задачи инструмента (кнопка «Повторить»). */
+    suspend fun retryTool(context: Context, jobId: String) {
+        val jobRepo = ToolJobRepository(NutriLensDatabase.getInstance(context).toolJobDao())
+        val job = jobRepo.byId(jobId) ?: return
+        if (job.status == "RUNNING") return // уже в работе — не дублируем
+        jobRepo.requeueForRetry(jobId)
+        WorkManager.getInstance(context).enqueue(toolWorkRequest(jobId))
+    }
+
+    private fun toolWorkRequest(jobId: String) =
+        OneTimeWorkRequestBuilder<ToolJobWorker>()
+            .setInputData(workDataOf(ToolJobWorker.EXTRA_JOB_ID to jobId))
+            .setConstraints(
+                Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build()
+            )
+            .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+            .build()
 
     private fun analysisWorkRequest(jobId: String) =
         OneTimeWorkRequestBuilder<MealAnalysisWorker>()

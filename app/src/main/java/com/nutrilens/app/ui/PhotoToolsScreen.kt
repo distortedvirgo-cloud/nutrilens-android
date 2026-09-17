@@ -2,7 +2,6 @@ package com.nutrilens.app.ui
 
 import android.content.Context
 import android.net.Uri
-import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -25,7 +24,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -41,13 +39,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
-import com.nutrilens.app.ai.GeminiTools
-import com.nutrilens.app.ai.ImagePrep
+import com.nutrilens.app.bg.AnalysisScheduler
+import com.nutrilens.app.bg.ToolJobWorker
 import com.nutrilens.app.data.MealRepository
 import com.nutrilens.app.data.NutriLensDatabase
 import com.nutrilens.app.data.SettingsRepository
+import com.nutrilens.app.data.ToolJobRepository
 import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 import java.time.LocalDate
 import kotlin.math.roundToInt
@@ -77,9 +79,13 @@ private fun PhotoToolScreen(kind: PhotoToolKind, onBack: () -> Unit) {
 
     var photos by remember { mutableStateOf<List<File>>(emptyList()) }
     var useRemaining by remember { mutableStateOf(true) }
-    var loading by remember { mutableStateOf(false) }
-    var result by remember { mutableStateOf<String?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
+
+    // Фоновая задача инструмента: активная/неудавшаяся/последний готовый результат.
+    val jobRepo = remember { ToolJobRepository(NutriLensDatabase.getInstance(context).toolJobDao()) }
+    val kindKey = if (kind == PhotoToolKind.FRIDGE) ToolJobWorker.KIND_FRIDGE else ToolJobWorker.KIND_MENU
+    val activeJobs by jobRepo.observeActive(kindKey).collectAsStateWithLifecycle(initialValue = emptyList())
+    val failedJobs by jobRepo.observeFailed(kindKey).collectAsStateWithLifecycle(initialValue = emptyList())
+    val lastDone by jobRepo.observeLastDone(kindKey).collectAsStateWithLifecycle(initialValue = null)
 
     val pickLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia(maxItems = 4)
@@ -97,42 +103,27 @@ private fun PhotoToolScreen(kind: PhotoToolKind, onBack: () -> Unit) {
     }
     val cta = if (kind == PhotoToolKind.FRIDGE) "Что приготовить?" else "Что заказать?"
 
+    /**
+     * Анализ считается фоновой задачей: экран замораживает фото и параметры
+     * в job.input и ставит ToolJobWorker; результат приходит через lastDone.
+     */
     fun analyze() {
-        if (photos.isEmpty() || loading) return
+        if (photos.isEmpty() || activeJobs.isNotEmpty()) return
         scope.launch {
-            loading = true
-            error = null
-            result = null
-            try {
-                val db = NutriLensDatabase.getInstance(context)
-                val mealRepository = MealRepository(
-                    db.mealDao(), db.waterDao(), db.weightDao(), db.workoutDao()
-                )
-                val settings = SettingsRepository(db.settingsDao()).get()
-                if (settings.apiKey.isBlank() && settings.nanoApiKey.isBlank()) {
-                    error = "Сначала добавьте ключ Gemini в настройках"
-                    loading = false
-                    return@launch
-                }
-                val today = LocalDate.now().toString()
-                val eaten = mealRepository.mealsOn(today).sumOf { it.calories }
-                val remaining = (settings.dailyGoal - eaten).roundToInt().coerceAtLeast(0)
-                val images = photos.map {
-                    Base64.encodeToString(ImagePrep.readBytes(it), Base64.NO_WRAP)
-                }
-                result = if (kind == PhotoToolKind.FRIDGE) {
-                    GeminiTools.analyzeFridge(settings, settings.userContext, settings.dailyGoal,
-                        remaining, useRemaining, images
-                    )
-                } else {
-                    GeminiTools.analyzeMenu(settings, settings.userContext, settings.dailyGoal,
-                        remaining, useRemaining, images
-                    )
-                }
-            } catch (e: Exception) {
-                error = e.message ?: "Не удалось проанализировать фото"
+            val db = NutriLensDatabase.getInstance(context)
+            val mealRepository = MealRepository(
+                db.mealDao(), db.waterDao(), db.weightDao(), db.workoutDao()
+            )
+            val settings = SettingsRepository(db.settingsDao()).get()
+            val today = LocalDate.now().toString()
+            val eaten = mealRepository.mealsOn(today).sumOf { it.calories }
+            val remaining = (settings.dailyGoal - eaten).roundToInt().coerceAtLeast(0)
+            val input = JSONObject().apply {
+                put("photos", JSONArray().apply { photos.forEach { put(it.absolutePath) } })
+                put("remainingCalories", remaining)
+                put("useRemaining", useRemaining)
             }
-            loading = false
+            AnalysisScheduler.enqueueTool(context, kindKey, input.toString())
         }
     }
 
@@ -215,30 +206,30 @@ private fun PhotoToolScreen(kind: PhotoToolKind, onBack: () -> Unit) {
             }
         }
 
+        if (activeJobs.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            ToolJobProcessingCard(title)
+        }
+
+        failedJobs.firstOrNull()?.let { job ->
+            Spacer(Modifier.height(12.dp))
+            ToolJobErrorCard(
+                title = title,
+                error = job.error ?: "Не удалось проанализировать фото",
+                onRetry = { scope.launch { AnalysisScheduler.retryTool(context, job.id) } },
+                onDismiss = { scope.launch { jobRepo.deleteJob(job.id) } }
+            )
+        }
+
         Spacer(Modifier.height(14.dp))
         PillButton(
-            text = if (loading) "Анализируем…" else cta,
+            text = cta,
             onClick = ::analyze,
-            enabled = photos.isNotEmpty() && !loading,
+            enabled = photos.isNotEmpty() && activeJobs.isEmpty(),
             modifier = Modifier.fillMaxWidth()
         )
 
-        error?.let { err ->
-            Spacer(Modifier.height(12.dp))
-            Text(err, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
-        }
-
-        if (loading) {
-            Spacer(Modifier.height(24.dp))
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-            }
-        }
-
-        result?.let { text ->
+        lastDone?.result?.takeIf { it.isNotBlank() }?.let { text ->
             Spacer(Modifier.height(14.dp))
             FreshCard(Modifier.fillMaxWidth()) {
                 MarkdownText(text, Modifier.padding(16.dp))

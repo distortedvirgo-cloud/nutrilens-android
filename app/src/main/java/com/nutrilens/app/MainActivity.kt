@@ -44,13 +44,19 @@ class MainActivity : ComponentActivity() {
                 }
                 NutriLensAppRoot(
                     initialDate = dateExtra?.takeIf { it.isNotBlank() },
-                    navigateTo = navigateTo?.takeIf { it == "settings" || it == "dashboard" || it == "add" }
+                    navigateTo = navigateTo?.takeIf { it in DEEP_LINK_ROUTES }
                 )
             }
         }
 
-        checkForUpdatesInBackground()
-    }
+    checkForUpdatesInBackground()
+}
+
+/** Маршруты, на которые разрешено вести по уведомлениям (dashboard=settings/add + инструменты «Ещё»). */
+private val DEEP_LINK_ROUTES = setOf(
+    "settings", "dashboard", "add",
+    "chat", "ideas", "fridge", "menu", "grocery", "waterTool", "habitTool"
+)
 
     /**
      * Тихая проверка обновлений при старте. Нашли новую версию — push-уведомление

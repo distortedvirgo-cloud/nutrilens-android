@@ -45,6 +45,18 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
     }
 }
 
+/** v6: очередь фоновых задач ИИ-инструментов «Ещё» (идеи, холодильник, меню, покупки, вода, привычки). */
+val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `tool_jobs` (" +
+                "`id` TEXT NOT NULL, `kind` TEXT NOT NULL, `input` TEXT NOT NULL, " +
+                "`status` TEXT NOT NULL, `result` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, " +
+                "`error` TEXT, PRIMARY KEY(`id`))"
+        )
+    }
+}
+
 @Database(
     entities = [
         MealEntity::class,
@@ -57,9 +69,10 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
         HabitLogEntity::class,
         SettingsEntity::class,
         AnalysisJobEntity::class,
-        RefinementJobEntity::class
+        RefinementJobEntity::class,
+        ToolJobEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class NutriLensDatabase : RoomDatabase() {
@@ -72,6 +85,7 @@ abstract class NutriLensDatabase : RoomDatabase() {
     abstract fun settingsDao(): SettingsDao
     abstract fun analysisJobDao(): AnalysisJobDao
     abstract fun refinementJobDao(): RefinementJobDao
+    abstract fun toolJobDao(): ToolJobDao
 
     companion object {
         @Volatile
@@ -84,7 +98,7 @@ abstract class NutriLensDatabase : RoomDatabase() {
                     NutriLensDatabase::class.java,
                     "nutrilens.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .build().also { INSTANCE = it }
             }
         }

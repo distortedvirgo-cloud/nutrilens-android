@@ -14,7 +14,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -32,13 +31,19 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nutrilens.app.ai.GeminiTools
+import com.nutrilens.app.ai.mealJson
+import com.nutrilens.app.bg.AnalysisScheduler
+import com.nutrilens.app.bg.ToolJobWorker
 import com.nutrilens.app.data.GroceryCategoryData
 import com.nutrilens.app.data.GroceryData
 import com.nutrilens.app.data.GroceryStore
 import com.nutrilens.app.data.NutriLensDatabase
 import com.nutrilens.app.data.SettingsRepository
+import com.nutrilens.app.data.ToolJobRepository
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 
 @Composable
 fun GroceryScreen(onBack: () -> Unit) {
@@ -47,45 +52,57 @@ fun GroceryScreen(onBack: () -> Unit) {
 
     var data by remember { mutableStateOf<GroceryData?>(null) }
     var preferences by remember { mutableStateOf("") }
-    var loading by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
+
+    // Фоновая задача генерации плана: активная/неудавшаяся/последний готовый результат.
+    val jobRepo = remember { ToolJobRepository(NutriLensDatabase.getInstance(context).toolJobDao()) }
+    val activeJobs by jobRepo.observeActive(ToolJobWorker.KIND_GROCERY)
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val failedJobs by jobRepo.observeFailed(ToolJobWorker.KIND_GROCERY)
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val lastDone by jobRepo.observeLastDone(ToolJobWorker.KIND_GROCERY)
+        .collectAsStateWithLifecycle(initialValue = null)
 
     LaunchedEffect(Unit) {
         data = GroceryStore.load(context)
     }
 
+    // Готовый результат задачи: если план в GroceryStore отличается от свежего — сохраняем.
+    // Чекбоксы при этом начинаются с нуля (checked=false), как и раньше при генерации.
+    LaunchedEffect(lastDone?.id, lastDone?.result) {
+        val job = lastDone ?: return@LaunchedEffect
+        if (job.result.isBlank()) return@LaunchedEffect
+        val plan = runCatching {
+            mealJson.decodeFromString(GeminiTools.GroceryPlan.serializer(), job.result)
+        }.getOrNull() ?: return@LaunchedEffect
+        val current = data
+        if (current == null || current.plan != plan.plan) {
+            val fresh = GroceryData(
+                plan = plan.plan,
+                categories = plan.categories.map {
+                    GroceryCategoryData(it.category, it.items)
+                },
+                checked = emptyList()
+            )
+            GroceryStore.save(context, fresh)
+            data = fresh
+        }
+    }
+
+    /**
+     * Генерация плана считается фоновой задачей: экран замораживает пожелания
+     * и цель в job.input и ставит ToolJobWorker; результат приходит через lastDone.
+     */
     fun generate() {
-        if (loading) return
+        if (activeJobs.isNotEmpty()) return
         scope.launch {
-            loading = true
-            error = null
-            try {
-                val settings = SettingsRepository(
-                    NutriLensDatabase.getInstance(context).settingsDao()
-                ).get()
-                if (settings.apiKey.isBlank() && settings.nanoApiKey.isBlank()) {
-                    error = "Сначала добавьте ключ Gemini в настройках"
-                    loading = false
-                    return@launch
-                }
-                val plan = GeminiTools.generateGroceryList(settings,
-                    settings.userContext,
-                    settings.dailyGoal,
-                    preferences.trim()
-                )
-                val fresh = GroceryData(
-                    plan = plan.plan,
-                    categories = plan.categories.map {
-                        GroceryCategoryData(it.category, it.items)
-                    },
-                    checked = emptyList()
-                )
-                GroceryStore.save(context, fresh)
-                data = fresh
-            } catch (e: Exception) {
-                error = e.message ?: "Не удалось составить план"
+            val settings = SettingsRepository(
+                NutriLensDatabase.getInstance(context).settingsDao()
+            ).get()
+            val input = JSONObject().apply {
+                put("note", preferences.trim())
+                put("dailyGoal", settings.dailyGoal)
             }
-            loading = false
+            AnalysisScheduler.enqueueTool(context, ToolJobWorker.KIND_GROCERY, input.toString())
         }
     }
 
@@ -115,33 +132,23 @@ fun GroceryScreen(onBack: () -> Unit) {
             )
             Spacer(Modifier.height(12.dp))
             PillButton(
-                text = if (loading) "Составляем план…" else "Составить план на неделю",
+                text = "Составить план на неделю",
                 onClick = ::generate,
-                enabled = !loading,
+                enabled = activeJobs.isEmpty(),
                 modifier = Modifier.fillMaxWidth()
             )
-            error?.let { err ->
+            if (activeJobs.isNotEmpty()) {
                 Spacer(Modifier.height(12.dp))
-                Text(
-                    err,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                ToolJobProcessingCard("Покупки")
             }
-            if (loading) {
-                Spacer(Modifier.height(24.dp))
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "ИИ составляет план питания и список покупок…",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+            failedJobs.firstOrNull()?.let { job ->
+                Spacer(Modifier.height(12.dp))
+                ToolJobErrorCard(
+                    title = "Покупки",
+                    error = job.error ?: "Не удалось составить план",
+                    onRetry = { scope.launch { AnalysisScheduler.retryTool(context, job.id) } },
+                    onDismiss = { scope.launch { jobRepo.deleteJob(job.id) } }
+                )
             }
         } else {
             val current = data ?: return
@@ -157,6 +164,20 @@ fun GroceryScreen(onBack: () -> Unit) {
                 }) {
                     Text("Составить заново", fontWeight = FontWeight.SemiBold)
                 }
+            }
+
+            if (activeJobs.isNotEmpty()) {
+                ToolJobProcessingCard("Покупки")
+                Spacer(Modifier.height(10.dp))
+            }
+            failedJobs.firstOrNull()?.let { job ->
+                ToolJobErrorCard(
+                    title = "Покупки",
+                    error = job.error ?: "Не удалось составить план",
+                    onRetry = { scope.launch { AnalysisScheduler.retryTool(context, job.id) } },
+                    onDismiss = { scope.launch { jobRepo.deleteJob(job.id) } }
+                )
+                Spacer(Modifier.height(10.dp))
             }
 
             if (current.plan.isNotBlank()) {

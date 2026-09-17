@@ -228,3 +228,34 @@ interface RefinementJobDao {
     @Query("DELETE FROM refinement_jobs WHERE id = :id")
     suspend fun deleteById(id: String)
 }
+
+@Dao
+interface ToolJobDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(job: ToolJobEntity)
+
+    @Query("SELECT * FROM tool_jobs WHERE id = :id")
+    suspend fun byId(id: String): ToolJobEntity?
+
+    @Query("SELECT * FROM tool_jobs WHERE kind = :kind AND status IN ('QUEUED','RUNNING') ORDER BY createdAt")
+    fun observeActive(kind: String): Flow<List<ToolJobEntity>>
+
+    @Query("SELECT * FROM tool_jobs WHERE kind = :kind AND status = 'FAILED' ORDER BY createdAt DESC")
+    fun observeFailed(kind: String): Flow<List<ToolJobEntity>>
+
+    /** Последний готовый результат этого инструмента — им живёт экран. */
+    @Query("SELECT * FROM tool_jobs WHERE kind = :kind AND status = 'DONE' ORDER BY createdAt DESC LIMIT 1")
+    fun observeLastDone(kind: String): Flow<ToolJobEntity?>
+
+    // result в схеме NOT NULL: null-аргумент означает «не трогать колонку» (COALESCE),
+    // иначе UPDATE роняет воркер SQLiteConstraintException-ом.
+    @Query("UPDATE tool_jobs SET status = :status, result = COALESCE(:result, result), error = :error WHERE id = :id")
+    suspend fun setStatus(id: String, status: String, result: String?, error: String?)
+
+    /** Готовые/неудавшиеся задачи этого инструмента больше не нужны — новая задача стартует с чистым экраном. */
+    @Query("DELETE FROM tool_jobs WHERE kind = :kind AND status IN ('DONE','FAILED')")
+    suspend fun deleteFinishedByKind(kind: String)
+
+    @Query("DELETE FROM tool_jobs WHERE id = :id")
+    suspend fun deleteById(id: String)
+}

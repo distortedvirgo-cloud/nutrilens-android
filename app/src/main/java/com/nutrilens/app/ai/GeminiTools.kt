@@ -103,7 +103,7 @@ object GeminiTools {
         }.toString()
 
         val responseBody = execute(apiKey, bodyJson)
-        return parseText(responseBody)
+        return responseBody
     }
 
     /**
@@ -150,7 +150,7 @@ object GeminiTools {
         """.trimIndent()
 
         val responseBody = modelText(settings, buildRecommendationsBody(prompt))
-        val jsonText = stripFence(parseText(responseBody))
+        val jsonText = stripFence(responseBody)
         val payload = try {
             mealJson.decodeFromString<RecommendationsPayload>(jsonText)
         } catch (e: Exception) {
@@ -173,7 +173,7 @@ object GeminiTools {
         """.trimIndent()
 
         val responseBody = modelText(settings, buildSchemalessBody(prompt))
-        return parseText(responseBody)
+        return responseBody
     }
 
     /**
@@ -207,11 +207,16 @@ object GeminiTools {
         """.trimIndent()
 
         val responseBody = modelText(settings, buildGroceryBody(prompt))
-        val jsonText = stripFence(parseText(responseBody))
+        val jsonText = stripFence(responseBody)
         return try {
             mealJson.decodeFromString<GroceryPlan>(jsonText)
         } catch (e: Exception) {
-            GroceryPlan("", emptyList())
+            // Пустой план раньше маскировал любые сбои (даже сам ответ модели).
+            // Теперь ошибка всплывает на экран и в уведомление с фрагментом ответа.
+            throw RuntimeException(
+                "Ошибка парсинга списка покупок: ${e.message}. Ответ: ${jsonText.take(300)}",
+                e
+            )
         }
     }
 
@@ -238,7 +243,7 @@ object GeminiTools {
         """.trimIndent()
 
         val responseBody = modelText(settings, buildSchemalessBody(prompt, imagesBase64))
-        return parseText(responseBody)
+        return responseBody
     }
 
     /**
@@ -263,7 +268,7 @@ object GeminiTools {
         """.trimIndent()
 
         val responseBody = modelText(settings, buildSchemalessBody(prompt, imagesBase64))
-        return parseText(responseBody)
+        return responseBody
     }
 
     /**
@@ -283,7 +288,7 @@ object GeminiTools {
         """.trimIndent()
 
         val responseBody = modelText(settings, buildSchemalessBody(prompt))
-        return parseText(responseBody)
+        return responseBody
     }
 
     /**
@@ -307,7 +312,7 @@ object GeminiTools {
         """.trimIndent()
 
         val responseBody = modelText(settings, buildSchemalessBody(prompt))
-        return parseText(responseBody)
+        return responseBody
     }
 
     /**
@@ -324,7 +329,7 @@ object GeminiTools {
         """.trimIndent()
 
         val responseBody = modelText(settings, buildSchemalessBody(prompt))
-        return parseText(responseBody)
+        return responseBody
     }
 
     /**
@@ -568,14 +573,27 @@ object GeminiTools {
         if (messages.isEmpty()) return parseText(execute(settings.apiKey, bodyJson))
         val jsonMode = root.optJSONObject("generationConfig")
             ?.optString("responseMimeType") == "application/json"
-        val model = if (settings.analysisMode == "advanced") {
-            com.nutrilens.app.ai.NANO_MODEL_ADVANCED
-        } else {
-            com.nutrilens.app.ai.NANO_MODEL_SIMPLE
+        // Как в каскаде анализа еды: сначала быстрая модель без reasoning-фазы
+        // (её пустой content и долгие задержки — главные источники «пустых
+        // ответов»), при сбое — откат на glm-каскад. Advanced — как раньше:
+        // качество важнее скорости.
+        if (settings.analysisMode == "advanced") {
+            return NanoGptApi.complete(
+                settings.nanoApiKey, settings.nanoApiEndpoint, NANO_MODEL_ADVANCED, system, messages, jsonMode
+            )
         }
-        return NanoGptApi.complete(
-            settings.nanoApiKey, settings.nanoApiEndpoint, model, system, messages, jsonMode
-        )
+        return try {
+            val fast = NanoGptApi.complete(
+                settings.nanoApiKey, settings.nanoApiEndpoint, NANO_MODEL_FAST, system, messages, jsonMode
+            )
+            if (fast.isNotBlank()) fast else NanoGptApi.complete(
+                settings.nanoApiKey, settings.nanoApiEndpoint, NANO_MODEL_SIMPLE, system, messages, jsonMode
+            )
+        } catch (e: Exception) {
+            NanoGptApi.complete(
+                settings.nanoApiKey, settings.nanoApiEndpoint, NANO_MODEL_SIMPLE, system, messages, jsonMode
+            )
+        }
     }
 
     /** Достаёт текст из candidates[0].content.parts[].text. Пусто — ошибка «Пустой ответ модели». */

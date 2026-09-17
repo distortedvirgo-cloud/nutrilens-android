@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -29,16 +28,22 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.nutrilens.app.ai.GeminiTools
+import com.nutrilens.app.bg.AnalysisScheduler
+import com.nutrilens.app.bg.ToolJobWorker
 import com.nutrilens.app.data.MealRepository
 import com.nutrilens.app.data.NutriLensDatabase
 import com.nutrilens.app.data.SettingsRepository
+import com.nutrilens.app.data.ToolJobEntity
+import com.nutrilens.app.data.ToolJobRepository
 import com.nutrilens.app.data.WaterRepository
 import com.nutrilens.app.insights.waterNormaMl
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 import java.time.LocalDate
 import kotlin.math.roundToInt
 
@@ -53,6 +58,7 @@ class WaterToolViewModel(application: Application) : AndroidViewModel(applicatio
     )
     private val waterRepository = WaterRepository(database.waterDao())
     private val settingsRepository = SettingsRepository(database.settingsDao())
+    private val jobRepository = ToolJobRepository(database.toolJobDao())
 
     private val today = LocalDate.now().toString()
 
@@ -62,14 +68,20 @@ class WaterToolViewModel(application: Application) : AndroidViewModel(applicatio
     private val _normMl = MutableStateFlow(2000)
     val normMl: StateFlow<Int> = _normMl.asStateFlow()
 
-    private val _loadingAdvice = MutableStateFlow(false)
-    val loadingAdvice: StateFlow<Boolean> = _loadingAdvice.asStateFlow()
+    /** Активные задачи совета (QUEUED/RUNNING) — для индикатора «в фоне». */
+    val activeJobs: StateFlow<List<ToolJobEntity>> = jobRepository
+        .observeActive(ToolJobWorker.KIND_WATER)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    private val _advice = MutableStateFlow<String?>(null)
-    val advice: StateFlow<String?> = _advice.asStateFlow()
+    /** Неудавшиеся задачи совета — для карточки сбоя с повтором. */
+    val failedJobs: StateFlow<List<ToolJobEntity>> = jobRepository
+        .observeFailed(ToolJobWorker.KIND_WATER)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    private val _error = MutableStateFlow<String?>(null)
-    val error: StateFlow<String?> = _error.asStateFlow()
+    /** Последний готовый совет — источник текста карточки совета. */
+    val lastDone: StateFlow<ToolJobEntity?> = jobRepository
+        .observeLastDone(ToolJobWorker.KIND_WATER)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     init {
         viewModelScope.launch {
@@ -87,25 +99,31 @@ class WaterToolViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    /**
+     * Совет считается фоновой задачей: экран замораживает вес в job.input и
+     * ставит ToolJobWorker; результат приходит через lastDone.
+     */
     fun loadAdvice() {
-        if (_loadingAdvice.value) return
+        if (activeJobs.value.isNotEmpty()) return
         viewModelScope.launch {
-            val settings = settingsRepository.get()
-            if (settings.apiKey.isBlank() && settings.nanoApiKey.isBlank()) {
-                _error.value = "Сначала добавьте ключ Gemini в настройках"
-                return@launch
+            val input = JSONObject().apply {
+                mealRepository.getLatestWeight()?.let { put("weightKg", it) }
             }
-            _loadingAdvice.value = true
-            _error.value = null
-            try {
-                _advice.value = GeminiTools.waterAdvice(settings,
-                    settings.userContext,
-                    mealRepository.getLatestWeight()
-                )
-            } catch (e: Exception) {
-                _error.value = e.message ?: "Не удалось получить совет"
-            }
-            _loadingAdvice.value = false
+            AnalysisScheduler.enqueueTool(getApplication(), ToolJobWorker.KIND_WATER, input.toString())
+        }
+    }
+
+    /** Повтор неудавшейся задачи совета (кнопка «Повторить»). */
+    fun retryTool(job: ToolJobEntity) {
+        viewModelScope.launch {
+            AnalysisScheduler.retryTool(getApplication(), job.id)
+        }
+    }
+
+    /** Скрыть карточку сбоя. */
+    fun dismiss(job: ToolJobEntity) {
+        viewModelScope.launch {
+            jobRepository.deleteJob(job.id)
         }
     }
 }
@@ -114,9 +132,9 @@ class WaterToolViewModel(application: Application) : AndroidViewModel(applicatio
 fun WaterToolScreen(onBack: () -> Unit, viewModel: WaterToolViewModel = viewModel()) {
     val waterMl by viewModel.waterMl.collectAsStateWithLifecycle()
     val normMl by viewModel.normMl.collectAsStateWithLifecycle()
-    val loadingAdvice by viewModel.loadingAdvice.collectAsStateWithLifecycle()
-    val advice by viewModel.advice.collectAsStateWithLifecycle()
-    val error by viewModel.error.collectAsStateWithLifecycle()
+    val activeJobs by viewModel.activeJobs.collectAsStateWithLifecycle()
+    val failedJobs by viewModel.failedJobs.collectAsStateWithLifecycle()
+    val lastDone by viewModel.lastDone.collectAsStateWithLifecycle()
 
     val progress = if (normMl > 0) (waterMl / normMl.toFloat()).coerceIn(0f, 1f) else 0f
 
@@ -177,28 +195,28 @@ fun WaterToolScreen(onBack: () -> Unit, viewModel: WaterToolViewModel = viewMode
 
         Spacer(Modifier.height(14.dp))
         PillButton(
-            text = if (loadingAdvice) "ИИ думает…" else "Совет от ИИ",
+            text = "Совет от ИИ",
             onClick = viewModel::loadAdvice,
-            enabled = !loadingAdvice,
+            enabled = activeJobs.isEmpty(),
             modifier = Modifier.fillMaxWidth()
         )
 
-        error?.let { err ->
+        if (activeJobs.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))
-            Text(err, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+            ToolJobProcessingCard("Вода")
         }
 
-        if (loadingAdvice) {
-            Spacer(Modifier.height(24.dp))
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-            }
+        failedJobs.firstOrNull()?.let { job ->
+            Spacer(Modifier.height(12.dp))
+            ToolJobErrorCard(
+                title = "Вода",
+                error = job.error ?: "Не удалось получить совет",
+                onRetry = { viewModel.retryTool(job) },
+                onDismiss = { viewModel.dismiss(job) }
+            )
         }
 
-        advice?.let { text ->
+        lastDone?.result?.takeIf { it.isNotBlank() }?.let { text ->
             Spacer(Modifier.height(14.dp))
             FreshCard(Modifier.fillMaxWidth()) {
                 MarkdownText(text, Modifier.padding(16.dp))

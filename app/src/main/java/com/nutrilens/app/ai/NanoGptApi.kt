@@ -124,6 +124,9 @@ object NanoGptApi {
         val text = root["choices"]?.jsonArray?.firstOrNull()
             ?.jsonObject?.get("message")?.jsonObject?.get("content")
             ?.jsonPrimitive?.contentOrNull
+            // Пустая строка — тоже пустой ответ: reasoning-модели могут унести
+            // весь текст в reasoning_content, оставив content пустым.
+            ?.takeIf { it.isNotBlank() }
             ?: throw RuntimeException("Пустой ответ NanoGPT")
         return if (jsonMode) stripJsonFence(text) else text
     }
