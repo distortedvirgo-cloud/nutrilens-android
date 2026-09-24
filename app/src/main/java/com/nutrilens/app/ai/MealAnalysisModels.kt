@@ -112,6 +112,12 @@ data class GeminiPart(
     val text: String? = null
 )
 
+/** Вердикт маршрутизатора сложности (см. AnalysisCascade.estimateComplexity). */
+@Serializable
+data class ComplexityVerdict(
+    val complexity: Int = 5
+)
+
 /**
  * Общий Json для анализа/ответов модели. ignoreUnknownKeys — модель может
  * добавить лишние поля; coerceInputValues — числа как null/пустые строки

@@ -56,7 +56,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nutrilens.app.BuildConfig
 import com.nutrilens.app.ai.GeminiApi
-import com.nutrilens.app.ai.NANO_MODEL_SIMPLE
+import com.nutrilens.app.ai.NANO_MODEL_SENIOR
 import com.nutrilens.app.ai.NanoGptApi
 import com.nutrilens.app.bg.ReminderSync
 import com.nutrilens.app.data.Backup
@@ -218,7 +218,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 NanoGptApi.diagnose(
                     settings.nanoApiKey,
                     settings.nanoApiEndpoint,
-                    NANO_MODEL_SIMPLE
+                    NANO_MODEL_SENIOR
                 )
             } else if (settings.apiKey.isNotBlank()) {
                 // Ключ только от Gemini: проверяем прямой доступ к её API.

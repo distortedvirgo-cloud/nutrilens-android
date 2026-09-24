@@ -573,25 +573,24 @@ object GeminiTools {
         if (messages.isEmpty()) return parseText(execute(settings.apiKey, bodyJson))
         val jsonMode = root.optJSONObject("generationConfig")
             ?.optString("responseMimeType") == "application/json"
-        // Как в каскаде анализа еды: сначала младшая модель (долгие задержки и
-        // пустой content reasoning-моделей — главные источники «пустых ответов»),
-        // при сбое — откат на старшую. Advanced — сразу старшая:
-        // качество важнее скорости.
+        // У текстовых инструментов роутера сложности нет: simple — младшая модель,
+        // при пустом ответе или сбое — откат на старшую; advanced — сразу
+        // старшая, качество важнее скорости.
         if (settings.analysisMode == "advanced") {
             return NanoGptApi.complete(
-                settings.nanoApiKey, settings.nanoApiEndpoint, NANO_MODEL_ADVANCED, system, messages, jsonMode
+                settings.nanoApiKey, settings.nanoApiEndpoint, NANO_MODEL_SENIOR, system, messages, jsonMode
             )
         }
         return try {
             val fast = NanoGptApi.complete(
-                settings.nanoApiKey, settings.nanoApiEndpoint, NANO_MODEL_FAST, system, messages, jsonMode
+                settings.nanoApiKey, settings.nanoApiEndpoint, NANO_MODEL_JUNIOR, system, messages, jsonMode
             )
             if (fast.isNotBlank()) fast else NanoGptApi.complete(
-                settings.nanoApiKey, settings.nanoApiEndpoint, NANO_MODEL_SIMPLE, system, messages, jsonMode
+                settings.nanoApiKey, settings.nanoApiEndpoint, NANO_MODEL_SENIOR, system, messages, jsonMode
             )
         } catch (e: Exception) {
             NanoGptApi.complete(
-                settings.nanoApiKey, settings.nanoApiEndpoint, NANO_MODEL_SIMPLE, system, messages, jsonMode
+                settings.nanoApiKey, settings.nanoApiEndpoint, NANO_MODEL_SENIOR, system, messages, jsonMode
             )
         }
     }
