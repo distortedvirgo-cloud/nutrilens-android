@@ -42,9 +42,9 @@ object NanoGptApi {
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
-        // Reasoning-модели (glm-5.3-flash, qwen thinking) на сложных промптах с фото
-        // могут думать дольше минуты — читаем ответ до 5 минут, иначе клиент обрывает
-        // соединение, пока запрос уже дошёл до провайдера и «висит» там.
+        // Reasoning-модели и тяжёлые промпты с фото могут думать дольше минуты —
+        // читаем ответ до 5 минут, иначе клиент обрывает соединение, пока запрос
+        // уже дошёл до провайдера и «висит» там.
         .readTimeout(300, TimeUnit.SECONDS)
         .build()
 
@@ -63,6 +63,9 @@ object NanoGptApi {
         val base = endpoint.ifBlank { "https://nano-gpt.com" }.trimEnd('/')
         val body = buildJsonObject {
             put("model", model)
+            // Сервисный тир NanoGPT: flex — дешевле за счёт более неторопливой
+            // очереди (gpt-6 и gemini на NanoGPT поддерживают flex/priority).
+            put("service_tier", "flex")
             // Ускорение reasoning-моделей: "low" отключает фазу размышлений
             // (замер: 27 с против 40–70 с на полном промпте с фото).
             reasoningEffort?.let { put("reasoning_effort", it) }
@@ -179,9 +182,9 @@ object NanoGptApi {
         }
 
         // Модель отдала разбор только текстом (без items и итогов). Сначала пробуем
-        // БЫСТРОЕ структурирование без фото — glm с effort=low укладывается в секунды,
-        // тогда как повторный вызов с фото занимает ещё ~30–60 с. Материал для
-        // структурирования — рассуждения и сводка первого ответа.
+        // БЫСТРОЕ структурирование без фото — лёгкий вызов с effort=low укладывается
+        // в секунды, тогда как повторный вызов с фото занимает ещё ~30–60 с. Материал
+        // для структурирования — рассуждения и сводка первого ответа.
         val salvageMaterial = listOf(first.reasoning, first.aiThoughts)
             .filter { it.isNotBlank() }
             .joinToString("\n\n")

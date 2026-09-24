@@ -573,9 +573,9 @@ object GeminiTools {
         if (messages.isEmpty()) return parseText(execute(settings.apiKey, bodyJson))
         val jsonMode = root.optJSONObject("generationConfig")
             ?.optString("responseMimeType") == "application/json"
-        // Как в каскаде анализа еды: сначала быстрая модель без reasoning-фазы
-        // (её пустой content и долгие задержки — главные источники «пустых
-        // ответов»), при сбое — откат на glm-каскад. Advanced — как раньше:
+        // Как в каскаде анализа еды: сначала младшая модель (долгие задержки и
+        // пустой content reasoning-моделей — главные источники «пустых ответов»),
+        // при сбое — откат на старшую. Advanced — сразу старшая:
         // качество важнее скорости.
         if (settings.analysisMode == "advanced") {
             return NanoGptApi.complete(
