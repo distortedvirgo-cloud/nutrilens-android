@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -309,6 +310,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 fun DashboardScreen(
     initialDate: String? = null,
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
+    onOpenLeaderboard: () -> Unit = {},
     viewModel: DashboardViewModel = viewModel()
 ) {
     val scope = rememberCoroutineScope()
@@ -368,7 +370,7 @@ fun DashboardScreen(
                 onWeighIn = { showWeightDialog = true }
             )
         }
-        item { CaloriesHero(meals = meals, settings = settings) }
+        item { CaloriesHero(meals = meals, settings = settings, onLeaderboard = onOpenLeaderboard) }
         if (activeJobs.isNotEmpty()) {
             item {
                 ProcessingCard(
@@ -979,7 +981,7 @@ private fun firstPhotoThumb(photoPathsJson: String): String? {
 }
 
 @Composable
-private fun CaloriesHero(meals: List<MealWithImages>, settings: SettingsEntity) {
+private fun CaloriesHero(meals: List<MealWithImages>, settings: SettingsEntity, onLeaderboard: () -> Unit = {}) {
     val eaten = meals.sumOf { it.meal.calories }
     val goal = settings.dailyGoal
     val isOver = goal > 0 && eaten > goal
@@ -1015,6 +1017,15 @@ private fun CaloriesHero(meals: List<MealWithImages>, settings: SettingsEntity) 
             .shadow(12.dp, shape, ambientColor = Color(0x1A0F172A), spotColor = Color(0x1A0F172A))
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
+            // 🏆 к лидерборду — в углу карточки кольца, как на маркере владельца.
+            Text(
+                text = "🏆",
+                fontSize = 22.sp,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(start = 16.dp, top = 12.dp)
+                    .clickable(onClick = onLeaderboard)
+            )
             Column(
                 modifier = Modifier
                     .fillMaxWidth()

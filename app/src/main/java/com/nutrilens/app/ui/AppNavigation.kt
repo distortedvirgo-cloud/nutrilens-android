@@ -170,7 +170,8 @@ fun NutriLensAppRoot(initialDate: String? = null, navigateTo: String? = null) {
                 composable("dashboard") {
                     DashboardScreen(
                         initialDate = initialDate,
-                        snackbarHostState = snackbarHostState
+                        snackbarHostState = snackbarHostState,
+                        onOpenLeaderboard = { navigate("leaderboard") }
                     )
                 }
                 composable("report") { ReportScreen() }
