@@ -323,6 +323,7 @@ class AddMealViewModel(application: Application) : AndroidViewModel(application)
                 )
                 mealRepository.addMeal(meal, emptyList(), emptyList())
                 com.nutrilens.app.widget.WidgetUpdater.refresh(getApplication())
+                com.nutrilens.app.leaderboard.LeaderboardSync.pushAsync(getApplication())
                 _messages.emit("Сохранено")
                 onDone()
             } catch (e: Exception) {

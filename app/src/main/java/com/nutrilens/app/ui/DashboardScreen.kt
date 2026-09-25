@@ -264,6 +264,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             mealRepository.deleteMeal(meal.meal, meal.images)
             com.nutrilens.app.widget.WidgetUpdater.refresh(getApplication())
+            com.nutrilens.app.leaderboard.LeaderboardSync.pushAsync(getApplication())
         }
     }
 
@@ -272,6 +273,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             mealRepository.addMeal(meal.meal, meal.images, items)
             com.nutrilens.app.widget.WidgetUpdater.refresh(getApplication())
+            com.nutrilens.app.leaderboard.LeaderboardSync.pushAsync(getApplication())
         }
     }
 
@@ -285,6 +287,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             mealRepository.updateMeal(updated)
             com.nutrilens.app.widget.WidgetUpdater.refresh(getApplication())
+            com.nutrilens.app.leaderboard.LeaderboardSync.pushAsync(getApplication())
         }
     }
 

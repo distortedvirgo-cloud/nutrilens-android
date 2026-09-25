@@ -50,12 +50,16 @@ class MainActivity : ComponentActivity() {
         }
 
     checkForUpdatesInBackground()
+
+    // Свой день в лидерборд — один пуш при старте приложения (fire-and-forget).
+    com.nutrilens.app.leaderboard.LeaderboardSync.pushAsync(this)
 }
 
-/** Маршруты, на которые разрешено вести по уведомлениям (dashboard=settings/add + инструменты «Ещё»). */
+/** Маршруты, на которые разрешено вести по уведомлениям (dashboard=settings/add + инструменты «Ещё» + лидерборд). */
 private val DEEP_LINK_ROUTES = setOf(
     "settings", "dashboard", "add",
-    "chat", "ideas", "fridge", "menu", "grocery", "waterTool", "habitTool"
+    "chat", "ideas", "fridge", "menu", "grocery", "waterTool", "habitTool",
+    "leaderboard"
 )
 
     /**

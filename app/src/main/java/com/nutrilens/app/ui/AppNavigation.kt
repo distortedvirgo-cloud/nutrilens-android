@@ -191,6 +191,7 @@ fun NutriLensAppRoot(initialDate: String? = null, navigateTo: String? = null) {
                 composable("menu") { MenuScreen(onBack = { navController.popBackStack() }) }
                 composable("habitTool") { HabitToolScreen(onBack = { navController.popBackStack() }) }
                 composable("waterTool") { WaterToolScreen(onBack = { navController.popBackStack() }) }
+                composable("leaderboard") { LeaderboardScreen(onBack = { navController.popBackStack() }) }
                 composable("grocery") { GroceryScreen(onBack = { navController.popBackStack() }) }
             }
         }

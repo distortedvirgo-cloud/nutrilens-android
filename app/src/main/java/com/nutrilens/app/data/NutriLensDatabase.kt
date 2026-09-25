@@ -57,6 +57,13 @@ val MIGRATION_5_6 = object : Migration(5, 6) {
     }
 }
 
+/** v7: ник участника лидерборда в настройках. */
+val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE settings ADD COLUMN leaderboardNickname TEXT NOT NULL DEFAULT ''")
+    }
+}
+
 @Database(
     entities = [
         MealEntity::class,
@@ -72,7 +79,7 @@ val MIGRATION_5_6 = object : Migration(5, 6) {
         RefinementJobEntity::class,
         ToolJobEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class NutriLensDatabase : RoomDatabase() {
@@ -98,7 +105,10 @@ abstract class NutriLensDatabase : RoomDatabase() {
                     NutriLensDatabase::class.java,
                     "nutrilens.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(
+                        MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
+                        MIGRATION_5_6, MIGRATION_6_7
+                    )
                     .build().also { INSTANCE = it }
             }
         }

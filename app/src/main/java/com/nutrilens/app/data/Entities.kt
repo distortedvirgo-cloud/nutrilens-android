@@ -113,7 +113,9 @@ data class SettingsEntity(
     val nanoApiKey: String = "",
     val nanoApiEndpoint: String = "",
     // free | simple | advanced — каскад провайдеров как в веб-версии.
-    val analysisMode: String = "free"
+    val analysisMode: String = "free",
+    // Ник участника лидерборда (пусто — в лидерборде не участвуем).
+    val leaderboardNickname: String = ""
 )
 
 @Entity(tableName = "analysis_jobs")

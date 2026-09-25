@@ -88,6 +88,7 @@ class MealAnalysisWorker(context: Context, params: WorkerParameters) : Coroutine
 
             val meal = saveMeal(db, settings.dailyGoal, photos, result)
             com.nutrilens.app.widget.WidgetUpdater.refresh(applicationContext)
+            com.nutrilens.app.leaderboard.LeaderboardSync.pushAsync(applicationContext)
             jobRepo.markDone(jobId, meal.id)
             postSuccessNotification(jobId, meal)
             Result.success()

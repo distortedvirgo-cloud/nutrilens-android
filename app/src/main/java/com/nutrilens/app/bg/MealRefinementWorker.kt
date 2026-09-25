@@ -112,6 +112,8 @@ class MealRefinementWorker(
             )
 
             com.nutrilens.app.widget.WidgetUpdater.refresh(applicationContext)
+            // Уточнение пишется напрямую через DAO, минуя репозиторий — пушим здесь.
+            com.nutrilens.app.leaderboard.LeaderboardSync.pushAsync(applicationContext)
             dao.setStatus(jobId, "DONE", null)
             NotificationHelper.post(
                 applicationContext,

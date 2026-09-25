@@ -6,6 +6,23 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+import java.util.Properties
+
+// Лидерборд: репозиторий и токен читаются из корневого leaderboard.properties.
+// Файл в .gitignore и не коммитится; отсутствует — пустые строки, фича выключена.
+// Внутри build.gradle.kts ссылку java.util.Properties нужно через import:
+// иначе компилятор Kotlin DSL разрешает java не как пакет, и util не находится.
+val leaderboardProps = Properties().apply {
+    val f = rootProject.file("leaderboard.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+
+// Значение для buildConfigField: экранируем слеши и кавычки, чтобы строковый
+// литерал собрался при любом содержимом properties.
+fun leaderboardProp(name: String): String =
+    leaderboardProps.getProperty(name, "").trim()
+        .replace("\\", "\\\\").replace("\"", "\\\"")
+
 android {
     namespace = "com.nutrilens.app"
     compileSdk = 35
@@ -14,8 +31,10 @@ android {
         applicationId = "com.nutrilens.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 52
-        versionName = "1.51"
+        versionCode = 53
+        versionName = "1.52"
+        buildConfigField("String", "LEADERBOARD_REPO", "\"${leaderboardProp("LEADERBOARD_REPO")}\"")
+        buildConfigField("String", "LEADERBOARD_TOKEN", "\"${leaderboardProp("LEADERBOARD_TOKEN")}\"")
     }
 
     compileOptions {

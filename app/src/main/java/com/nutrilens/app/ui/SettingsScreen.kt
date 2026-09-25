@@ -133,6 +133,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     // ---- Профиль ----
     fun setUserContext(value: String) = update { it.copy(userContext = value) }
 
+    // ---- Лидерборд ----
+    fun setLeaderboardNickname(value: String) = update { it.copy(leaderboardNickname = value) }
+
     // ---- Напоминания ----
     fun setBreakfastReminderEnabled(value: Boolean) = update { it.copy(breakfastReminderEnabled = value) }
     fun setLunchReminderEnabled(value: Boolean) = update { it.copy(lunchReminderEnabled = value) }
@@ -401,6 +404,16 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                     label = "О вас (контекст для ИИ)",
                     onCommit = viewModel::setUserContext,
                     minLines = 3
+                )
+                SettingsTextField(
+                    initial = settings.leaderboardNickname,
+                    label = "Ник в лидерборде",
+                    onCommit = viewModel::setLeaderboardNickname
+                )
+                Text(
+                    text = "Виден другим участникам в лидерборде",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
