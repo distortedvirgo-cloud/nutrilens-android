@@ -147,19 +147,42 @@ object GeminiTools {
             5. Не повторяй то, что пользователь уже ел сегодня (см. «СЕГОДНЯ УЖЕ СЪЕДЕНО»).
 
             Верни РОВНО 3 идеи в виде JSON-объекта со строгой структурой (см. schema). Поле 'recipePrompt' для каждого блюда — это КРАТКОЕ описание состава и способа приготовления (2-3 предложения), которое позже будет развёрнуто в полный рецепт. 'calories' — итоговая калорийность порции (целое число, не больше остатка).
+            Формат ответа, строго: {"recommendations": [{"id": "строка", "title": "название блюда", "shortDescription": "одно предложение", "calories": 350, "recipePrompt": "краткое описание состава и приготовления"}]}
         """.trimIndent()
 
         val responseBody = modelText(settings, buildRecommendationsBody(prompt))
-        val jsonText = stripFence(responseBody)
-        val payload = try {
-            mealJson.decodeFromString<RecommendationsPayload>(jsonText)
-        } catch (e: Exception) {
-            throw RuntimeException(
-                "Ошибка парсинга: ${e.message}. Ответ: ${jsonText.take(300)}",
-                e
-            )
+        return parseRecommendations(stripFence(responseBody))
+    }
+
+    /**
+     * Толерантный разбор идей. Через NanoGPT responseSchema Gemini не доезжает, и
+     * модели отвечают кто во что горазд: голым массивом без обёртки
+     * {"recommendations": ...}, с текстом до/после JSON. Принимаем объект (с
+     * обрезкой мусора) или голый массив; не вышло — ошибка с фрагментом ответа.
+     */
+    private fun parseRecommendations(jsonText: String): List<Recommendation> {
+        val trimmed = jsonText.trim()
+        val objStart = trimmed.indexOf('{')
+        val objEnd = trimmed.lastIndexOf('}')
+        if (objStart >= 0 && objEnd > objStart) {
+            runCatching {
+                return mealJson.decodeFromString<RecommendationsPayload>(
+                    trimmed.substring(objStart, objEnd + 1)
+                ).recommendations
+            }
         }
-        return payload.recommendations
+        val arrStart = trimmed.indexOf('[')
+        val arrEnd = trimmed.lastIndexOf(']')
+        if (arrStart >= 0 && arrEnd > arrStart) {
+            runCatching {
+                return mealJson.decodeFromString<List<Recommendation>>(
+                    trimmed.substring(arrStart, arrEnd + 1)
+                )
+            }
+        }
+        throw RuntimeException(
+            "Ошибка парсинга идей: не нашли объект recommendations или массив. Ответ: ${trimmed.take(300)}"
+        )
     }
 
     /**
@@ -207,9 +230,13 @@ object GeminiTools {
         """.trimIndent()
 
         val responseBody = modelText(settings, buildGroceryBody(prompt))
-        val jsonText = stripFence(responseBody)
+        val jsonText = stripFence(responseBody).trim()
+        // Модели любят присовокупить текст до/после JSON: режем от первой { до последней }.
+        val objStart = jsonText.indexOf('{')
+        val objEnd = jsonText.lastIndexOf('}')
+        val candidate = if (objStart >= 0 && objEnd > objStart) jsonText.substring(objStart, objEnd + 1) else jsonText
         return try {
-            mealJson.decodeFromString<GroceryPlan>(jsonText)
+            mealJson.decodeFromString<GroceryPlan>(candidate)
         } catch (e: Exception) {
             // Пустой план раньше маскировал любые сбои (даже сам ответ модели).
             // Теперь ошибка всплывает на экран и в уведомление с фрагментом ответа.
