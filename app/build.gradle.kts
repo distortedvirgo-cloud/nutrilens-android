@@ -20,8 +20,27 @@ val leaderboardProps = Properties().apply {
 // Значение для buildConfigField: экранируем слеши и кавычки, чтобы строковый
 // литерал собрался при любом содержимом properties.
 fun leaderboardProp(name: String): String =
-    leaderboardProps.getProperty(name, "").trim()
+    (leaderboardProps.getProperty(name)?.trim()?.takeIf { it.isNotEmpty() }
+        ?: System.getenv(name)?.trim().orEmpty())
         .replace("\\", "\\\\").replace("\"", "\\\"")
+
+// Подпись: один постоянный ключ для всех сборок (локальных, CI, релизов) —
+// иначе Android не ставит новую версию поверх старой. Путь и пароль берутся из
+// keystore.properties в корне (локально, в .gitignore) или из переменных
+// окружения CI (секреты NUTRILENS_KEYSTORE_*). Нет ни того ни другого —
+// сборка подписывается стандартным debug-ключом.
+val signingProps = Properties().apply {
+    val f = rootProject.file("keystore.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+fun signingValue(prop: String, env: String): String? =
+    signingProps.getProperty(prop)?.trim()?.takeIf { it.isNotEmpty() }
+        ?: System.getenv(env)?.trim()?.takeIf { it.isNotEmpty() }
+
+val keystorePath = signingValue("storeFile", "NUTRILENS_KEYSTORE_PATH")
+val keystorePassword = signingValue("storePassword", "NUTRILENS_KEYSTORE_PASSWORD")
+val hasStableSigning = keystorePath != null && keystorePassword != null &&
+    rootProject.file(keystorePath).exists()
 
 android {
     namespace = "com.nutrilens.app"
@@ -35,6 +54,31 @@ android {
         versionName = "2.0"
         buildConfigField("String", "LEADERBOARD_REPO", "\"${leaderboardProp("LEADERBOARD_REPO")}\"")
         buildConfigField("String", "LEADERBOARD_TOKEN", "\"${leaderboardProp("LEADERBOARD_TOKEN")}\"")
+    }
+
+    signingConfigs {
+        if (hasStableSigning) {
+            create("nutrilens") {
+                storeFile = rootProject.file(keystorePath!!)
+                storePassword = keystorePassword
+                keyAlias = signingValue("keyAlias", "NUTRILENS_KEY_ALIAS") ?: "nutrilens"
+                keyPassword = signingValue("keyPassword", "NUTRILENS_KEY_PASSWORD") ?: keystorePassword
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            if (hasStableSigning) signingConfig = signingConfigs.getByName("nutrilens")
+        }
+        release {
+            isMinifyEnabled = false
+            signingConfig = if (hasStableSigning) {
+                signingConfigs.getByName("nutrilens")
+            } else {
+                signingConfigs.getByName("debug")
+            }
+        }
     }
 
     compileOptions {

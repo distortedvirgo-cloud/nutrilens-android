@@ -1,0 +1,52 @@
+name: Prepare Android build
+description: gradle.properties, ключ подписи и конфиг лидерборда из секретов
+inputs:
+  keystore:
+    description: base64 ключа подписи (.jks)
+    required: false
+  keystore-password:
+    description: пароль ключа
+    required: false
+  leaderboard-repo:
+    required: false
+  leaderboard-token:
+    required: false
+  require-keystore:
+    description: 'true — без ключа сборка падает (для релизов)'
+    required: false
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        KEYSTORE_B64: ${{ inputs.keystore }}
+        KEYSTORE_PASSWORD: ${{ inputs.keystore-password }}
+        LB_REPO: ${{ inputs.leaderboard-repo }}
+        LB_TOKEN: ${{ inputs.leaderboard-token }}
+        REQUIRE: ${{ inputs.require-keystore }}
+      run: |
+        # gradle.properties в .gitignore (там локальный путь к JDK) — задаём сами.
+        cat >> gradle.properties <<'PROPS'
+        android.useAndroidX=true
+        android.nonTransitiveRClass=true
+        kotlin.code.style=official
+        org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8
+        PROPS
+        if [ -n "$KEYSTORE_B64" ] && [ -n "$KEYSTORE_PASSWORD" ]; then
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/nutrilens.jks"
+          echo "NUTRILENS_KEYSTORE_PATH=$RUNNER_TEMP/nutrilens.jks" >> "$GITHUB_ENV"
+          echo "NUTRILENS_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "Подпись: постоянный ключ NutriLens"
+        elif [ "$REQUIRE" = "true" ]; then
+          echo "::error::Нет секретов NUTRILENS_KEYSTORE_BASE64 / NUTRILENS_KEYSTORE_PASSWORD — релиз без постоянного ключа не встанет поверх установленного приложения"
+          exit 1
+        else
+          echo "::warning::Секреты ключа не заданы — APK подписан временным ключом и не встанет поверх установленного приложения"
+        fi
+        if [ -n "$LB_REPO" ] && [ -n "$LB_TOKEN" ]; then
+          echo "LEADERBOARD_REPO=$LB_REPO" >> "$GITHUB_ENV"
+          echo "LEADERBOARD_TOKEN=$LB_TOKEN" >> "$GITHUB_ENV"
+        else
+          echo "::warning::Секреты лидерборда не заданы — в этой сборке лидерборд выключен"
+        fi

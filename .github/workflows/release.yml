@@ -1,0 +1,64 @@
+name: Release
+
+# Публикация версии: собирает подписанный APK и создаёт GitHub Release с тегом
+# v<versionName>. Приложение само находит такой релиз (Профиль → Обновления).
+# Запуск: пуш в main с новой versionName, или вручную (Actions → Release).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read version
+        id: version
+        run: |
+          v=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          echo "name=$v" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$v" >/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-java@v4
+        if: steps.version.outputs.exists == 'false'
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+        if: steps.version.outputs.exists == 'false'
+      - name: Prepare build
+        if: steps.version.outputs.exists == 'false'
+        uses: ./.github/actions/prepare
+        with:
+          keystore: ${{ secrets.NUTRILENS_KEYSTORE_BASE64 }}
+          keystore-password: ${{ secrets.NUTRILENS_KEYSTORE_PASSWORD }}
+          leaderboard-repo: ${{ secrets.LEADERBOARD_REPO }}
+          leaderboard-token: ${{ secrets.LEADERBOARD_TOKEN }}
+          require-keystore: 'true'
+      - name: Assemble release APK
+        if: steps.version.outputs.exists == 'false'
+        run: |
+          ./gradlew --no-daemon assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk "NutriLens-${{ steps.version.outputs.name }}.apk"
+      - name: Publish GitHub Release
+        if: steps.version.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ steps.version.outputs.name }}" \
+            "NutriLens-${{ steps.version.outputs.name }}.apk" \
+            --title "NutriLens ${{ steps.version.outputs.name }}" \
+            --notes "$(git log -1 --pretty=%B | head -40)" \
+            --target "${{ github.sha }}"
