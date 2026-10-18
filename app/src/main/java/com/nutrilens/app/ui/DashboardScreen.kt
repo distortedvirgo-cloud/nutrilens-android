@@ -722,39 +722,6 @@ private fun HeaderChip(
     }
 }
 
-/** Короткая дата дня: «24 авг». */
-private fun dayShort(date: LocalDate): String =
-    date.format(DateTimeFormatter.ofPattern("d MMM", java.util.Locale("ru", "RU"))).trimEnd('.')
-
-/** Круглая кнопка дня: 44dp, тональная, упругое нажатие. */
-@Composable
-private fun DayArrow(onClick: () -> Unit, forward: Boolean) {
-    val interaction = remember { MutableInteractionSource() }
-    val haptics = LocalHapticFeedback.current
-    Surface(
-        onClick = {
-            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-            onClick()
-        },
-        interactionSource = interaction,
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = Modifier
-            .size(44.dp)
-            .pressScale(interaction, 0.86f)
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                if (forward) Icons.AutoMirrored.Rounded.KeyboardArrowRight
-                else Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
-                contentDescription = if (forward) "Следующий день" else "Предыдущий день",
-                tint = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(22.dp)
-            )
-        }
-    }
-}
-
 // ---------- Герой-карточка: калорийное кольцо ----------
 
 // ---------- Блюдо в обработке ----------

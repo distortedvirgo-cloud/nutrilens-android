@@ -62,7 +62,7 @@ class MainActivity : ComponentActivity() {
 
 /** Маршруты, на которые разрешено вести по уведомлениям (dashboard=settings/add + инструменты «Ещё» + лидерборд). */
 private val DEEP_LINK_ROUTES = setOf(
-    "settings", "dashboard", "add",
+    "settings", "settings/updates", "dashboard", "add",
     "chat", "ideas", "fridge", "menu", "grocery", "waterTool", "habitTool",
     "leaderboard", "coach", "profile", "report", "add/camera"
 )
@@ -92,9 +92,9 @@ private val DEEP_LINK_ROUTES = setOf(
                     NotificationHelper.CHANNEL_UPDATE,
                     9500,
                     "Доступно обновление NutriLens v${release.version} 🎉",
-                    "Новая версия уже опубликована. Откройте Настройки → Обновления, чтобы скачать.",
+                    "Новая версия уже опубликована. Профиль → Обновления — скачать и установить.",
                     NotificationHelper.mainActivityPendingIntent(
-                        this@MainActivity, 9500, navigate = "settings"
+                        this@MainActivity, 9500, navigate = "settings/updates"
                     )
                 )
             } catch (_: Exception) {
