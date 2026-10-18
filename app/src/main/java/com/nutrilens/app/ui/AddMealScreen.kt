@@ -1,6 +1,7 @@
 package com.nutrilens.app.ui
 
 import android.app.Application
+import androidx.compose.ui.focus.focusRequester
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -374,6 +375,7 @@ private class GrantingTakePicture : ActivityResultContracts.TakePicture() {
 
 @Composable
 fun AddMealScreen(
+    mode: String? = null,
     onDone: () -> Unit,
     onGoSettings: () -> Unit,
     onBack: () -> Unit,
@@ -414,6 +416,27 @@ fun AddMealScreen(
     ) { uris ->
         val remaining = (10 - viewModel.photos.value.size).coerceAtLeast(0)
         uris.take(remaining).forEach { viewModel.addPhoto(context, it) }
+    }
+
+    // Пришли из панели «+» с конкретным действием — сразу открываем камеру,
+    // галерею или поле описания (один раз, не при каждом возврате на экран).
+    var autoLaunched by rememberSaveable { mutableStateOf(false) }
+    val noteFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(mode) {
+        if (autoLaunched) return@LaunchedEffect
+        autoLaunched = true
+        when (mode) {
+            "camera" -> runCatching { launchCamera() }
+            "gallery" -> runCatching {
+                galleryLauncher.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                )
+            }
+            "text" -> {
+                kotlinx.coroutines.delay(350)
+                runCatching { noteFocus.requestFocus() }
+            }
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -487,7 +510,10 @@ when (phase) {
                         focusedContainerColor = MaterialTheme.colorScheme.surface,
                         unfocusedContainerColor = MaterialTheme.colorScheme.surface
                     ),
-                    modifier = Modifier.fillMaxWidth().staggeredIn(3),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(noteFocus)
+                        .staggeredIn(3),
                     minLines = 2
                 )
                 GlowButton(

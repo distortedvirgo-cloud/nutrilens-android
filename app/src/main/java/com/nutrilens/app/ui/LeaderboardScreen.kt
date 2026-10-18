@@ -68,6 +68,7 @@ import kotlin.math.roundToLong
 class LeaderboardViewModel(application: Application) : AndroidViewModel(application) {
 
     private val sync = LeaderboardSync(application)
+    val playerId: String = com.nutrilens.app.leaderboard.PlayerIdentity.id(application)
     private val settingsRepository =
         SettingsRepository(NutriLensDatabase.getInstance(application).settingsDao())
 
@@ -130,7 +131,7 @@ fun LeaderboardScreen(onBack: () -> Unit, viewModel: LeaderboardViewModel = view
 
     // Строки периода считаем локально: при смене периода сеть не трогаем.
     val rows: List<LeaderboardRow> = remember(entries, period, nickname) {
-        entries?.let { LeaderboardMath.rows(it, period, nickname) } ?: emptyList()
+        entries?.let { LeaderboardMath.rows(it, period, viewModel.playerId, nickname) } ?: emptyList()
     }
 
     Column(

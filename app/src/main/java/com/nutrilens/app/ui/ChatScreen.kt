@@ -190,13 +190,27 @@ private fun Context.copyToChatImage(uri: Uri): String? = runCatching {
 }.getOrNull()
 
 @Composable
-fun ChatScreen(onBack: () -> Unit, viewModel: ChatViewModel = viewModel()) {
+fun ChatScreen(
+    onBack: () -> Unit,
+    initialMessage: String? = null,
+    viewModel: ChatViewModel = viewModel()
+) {
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val loading by viewModel.loading.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
 
     var inputText by remember { mutableStateOf("") }
     var attachments by remember { mutableStateOf<List<String>>(emptyList()) }
+
+    // Вопрос, заданный с экрана «Коуч», отправляется сразу (один раз).
+    var initialSent by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(initialMessage) {
+        val q = initialMessage?.trim().orEmpty()
+        if (!initialSent && q.isNotEmpty()) {
+            initialSent = true
+            viewModel.send(q, emptyList())
+        }
+    }
 
     // Отступ под клавиатуру даёт NavHost (imePadding на корне) — здесь не дублируем.
     Column(modifier = Modifier.fillMaxSize()) {

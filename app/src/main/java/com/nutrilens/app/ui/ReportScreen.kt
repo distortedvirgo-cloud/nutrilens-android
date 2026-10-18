@@ -50,6 +50,9 @@ import com.nutrilens.app.data.NutriLensDatabase
 import com.nutrilens.app.data.SettingsRepository
 import com.nutrilens.app.data.WeightEntity
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.EmojiEvents
+import androidx.compose.material3.Icon
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
@@ -275,7 +278,10 @@ class ReportViewModel(application: Application) : AndroidViewModel(application) 
 // ---------- Экран ----------
 
 @Composable
-fun ReportScreen(viewModel: ReportViewModel = androidx.lifecycle.viewmodel.compose.viewModel()) {
+fun ReportScreen(
+    onOpenLeaderboard: () -> Unit = {},
+    viewModel: ReportViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val aiLoading by viewModel.aiLoading.collectAsStateWithLifecycle()
     val aiText by viewModel.aiText.collectAsStateWithLifecycle()
@@ -289,7 +295,7 @@ fun ReportScreen(viewModel: ReportViewModel = androidx.lifecycle.viewmodel.compo
             .padding(horizontal = 20.dp)
             .padding(bottom = 120.dp)
     ) {
-        ScreenHeader(title = "Отчёт", subtitle = "Как прошёл ваш период")
+        ScreenHeader(title = "Прогресс", subtitle = "Как проходит твой период")
 
         // Выбранный период живёт во ViewModel — переключатель не сбрасывается
         // при возврате на вкладку.
@@ -347,6 +353,8 @@ fun ReportScreen(viewModel: ReportViewModel = androidx.lifecycle.viewmodel.compo
                     WeightCard(state.weights)
                     Spacer(Modifier.height(16.dp))
                     WaterCard(state.waterAvgMl, state.waterNormMl)
+                    Spacer(Modifier.height(16.dp))
+                    LeaderboardEntryCard(onClick = onOpenLeaderboard)
                     Spacer(Modifier.height(20.dp))
                     GlowButton(
                         text = if (aiLoading) "ИИ изучает статистику…" else "Оценка от ИИ",
@@ -854,6 +862,31 @@ private fun EmptyReport() {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+/** Вход в лидерборд из «Прогресса»: соревнование — часть прогресса. */
+@Composable
+private fun LeaderboardEntryCard(onClick: () -> Unit) {
+    val c = NutriTheme.colors
+    FreshCard(Modifier.fillMaxWidth(), onClick = onClick) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(16.dp)) {
+            IconBadge(Icons.Rounded.EmojiEvents, c.warnTo, size = 44)
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Лидерборд", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                Text(
+                    "Кто точнее вписывается в план — день, неделя, месяц",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Icon(
+                Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }

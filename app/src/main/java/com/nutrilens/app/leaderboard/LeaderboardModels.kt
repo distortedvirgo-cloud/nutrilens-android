@@ -15,9 +15,15 @@ data class LeaderboardDay(
     val goal: Double = 0.0
 )
 
-/** Файл участника data/<ник>.json: дни по ключу «yyyy-MM-dd». */
+/**
+ * Файл участника: дни по ключу «yyyy-MM-dd». Новые файлы называются по
+ * постоянному id игрока (data/p_<id>.json), ник — просто поле, поэтому смена
+ * ника не плодит дубликатов. Старые файлы data/<ник>.json (id пустой)
+ * сливаются в файл с id при первом пуше обновлённого приложения.
+ */
 @Serializable
 data class LeaderboardEntry(
+    val id: String = "",
     val nickname: String = "",
     val days: Map<String, LeaderboardDay> = emptyMap(),
     val updatedAt: Long = 0L
@@ -28,6 +34,7 @@ enum class LeaderboardPeriod { DAY, WEEK, MONTH }
 
 /** Строка таблицы лидерборда, готовая к показу на экране. */
 data class LeaderboardRow(
+    val id: String,
     val nickname: String,
     val score: Int,
     val percent: Int,
@@ -58,6 +65,7 @@ object LeaderboardMath {
     fun rows(
         entries: List<LeaderboardEntry>,
         period: LeaderboardPeriod,
+        selfId: String,
         selfNickname: String
     ): List<LeaderboardRow> {
         val today = LocalDate.now()
@@ -80,6 +88,7 @@ object LeaderboardMath {
                     val calories = day?.calories ?: 0.0
                     val goal = day?.goal ?: 0.0
                     LeaderboardRow(
+                        id = entry.id,
                         nickname = entry.nickname,
                         score = dayScore(calories, goal) ?: 0,
                         percent = percentOf(calories, goal),
@@ -87,7 +96,7 @@ object LeaderboardMath {
                         goal = goal,
                         daysCounted = if (goal > 0.0) 1 else 0,
                         isOver = calories > goal,
-                        isSelf = entry.nickname == selfNickname
+                        isSelf = isSelf(entry, selfId, selfNickname)
                     )
                 }
                 LeaderboardPeriod.WEEK, LeaderboardPeriod.MONTH -> {
@@ -102,6 +111,7 @@ object LeaderboardMath {
                             .let { floor(it).toInt() }
                     }
                     LeaderboardRow(
+                        id = entry.id,
                         nickname = entry.nickname,
                         score = score,
                         percent = percentOf(calories, goal),
@@ -109,7 +119,7 @@ object LeaderboardMath {
                         goal = goal,
                         daysCounted = counted.size,
                         isOver = calories > goal,
-                        isSelf = entry.nickname == selfNickname
+                        isSelf = isSelf(entry, selfId, selfNickname)
                     )
                 }
             }
@@ -118,6 +128,27 @@ object LeaderboardMath {
                 .thenByDescending { it.daysCounted }
                 .thenBy { it.nickname }
         )
+    }
+
+    /** Свой ли участник: по id, а у старых файлов без id — по нику. */
+    private fun isSelf(entry: LeaderboardEntry, selfId: String, selfNickname: String): Boolean =
+        if (entry.id.isNotEmpty()) entry.id == selfId else entry.nickname == selfNickname
+
+    /**
+     * Убирает дубликаты: по каждому id остаётся самая свежая запись; старый
+     * файл без id скрывается, если есть запись с id и тем же ником (игрок уже
+     * обновил приложение, а старый файл ещё не удалён).
+     */
+    fun dedupe(entries: List<LeaderboardEntry>): List<LeaderboardEntry> {
+        val withId = entries.filter { it.id.isNotEmpty() }
+            .groupBy { it.id }
+            .map { (_, list) -> list.maxBy { it.updatedAt } }
+        val knownNames = withId.map { it.nickname.trim().lowercase() }.toSet()
+        val legacy = entries.filter { it.id.isEmpty() }
+            .filter { it.nickname.trim().lowercase() !in knownNames }
+            .groupBy { it.nickname.trim().lowercase() }
+            .map { (_, list) -> list.maxBy { it.updatedAt } }
+        return withId + legacy
     }
 
     /** Процент выполнения плана, округлённый до целого; цель <= 0 — ноль. */

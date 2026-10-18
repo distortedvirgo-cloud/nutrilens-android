@@ -262,7 +262,23 @@ enum class ReminderKind { BREAKFAST, LUNCH, DINNER }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(onBack: (() -> Unit)? = null, viewModel: SettingsViewModel = viewModel()) {
+fun SettingsScreen(
+    onBack: (() -> Unit)? = null,
+    section: String? = null,
+    viewModel: SettingsViewModel = viewModel()
+) {
+    // Профиль открывает настройки по разделам; без раздела — всё сразу.
+    fun show(key: String) = section == null || section == key
+    val title = when (section) {
+        "ai" -> "Нейросеть"
+        "goals" -> "Цели и макросы"
+        "profile" -> "Профиль и ник"
+        "reminders" -> "Напоминания"
+        "updates" -> "Обновления"
+        "data" -> "Данные"
+        "background" -> "Фон и диагностика"
+        else -> "Настройки"
+    }
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val updateState by viewModel.updateState.collectAsStateWithLifecycle()
     val dataMessage by viewModel.dataMessage.collectAsStateWithLifecycle()
@@ -314,8 +330,9 @@ fun SettingsScreen(onBack: (() -> Unit)? = null, viewModel: SettingsViewModel = 
             .padding(bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        ScreenHeader(title = "Настройки", onBack = onBack)
+        ScreenHeader(title = title, onBack = onBack)
 
+        if (show("ai")) {
         // ---- ИИ ----
         FreshCard(modifier = Modifier.fillMaxWidth().staggeredIn(0)) {
             Column(
@@ -367,7 +384,9 @@ fun SettingsScreen(onBack: (() -> Unit)? = null, viewModel: SettingsViewModel = 
                 )
             }
         }
+        }
 
+        if (show("goals")) {
         // ---- Цели ----
         FreshCard(modifier = Modifier.fillMaxWidth().staggeredIn(1)) {
             Column(
@@ -403,7 +422,9 @@ fun SettingsScreen(onBack: (() -> Unit)? = null, viewModel: SettingsViewModel = 
                 )
             }
         }
+        }
 
+        if (show("profile")) {
         // ---- Профиль ----
         FreshCard(modifier = Modifier.fillMaxWidth().staggeredIn(2)) {
             Column(
@@ -431,7 +452,9 @@ fun SettingsScreen(onBack: (() -> Unit)? = null, viewModel: SettingsViewModel = 
                 )
             }
         }
+        }
 
+        if (show("reminders")) {
         // ---- Напоминания ----
         FreshCard(modifier = Modifier.fillMaxWidth().staggeredIn(3)) {
             Column(
@@ -506,7 +529,9 @@ fun SettingsScreen(onBack: (() -> Unit)? = null, viewModel: SettingsViewModel = 
                 }
             }
         }
+        }
 
+        if (show("updates")) {
         FreshCard(modifier = Modifier.fillMaxWidth().staggeredIn(4)) {
             Column(Modifier.padding(16.dp)) {
                 SettingsSectionTitle(Icons.Rounded.SystemUpdate, "Обновления", MaterialTheme.colorScheme.primary)
@@ -586,7 +611,9 @@ fun SettingsScreen(onBack: (() -> Unit)? = null, viewModel: SettingsViewModel = 
                 )
             }
         }
+        }
 
+        if (show("data")) {
         // ---- Данные ----
         FreshCard(modifier = Modifier.fillMaxWidth().staggeredIn(5)) {
             Column(
@@ -622,7 +649,9 @@ fun SettingsScreen(onBack: (() -> Unit)? = null, viewModel: SettingsViewModel = 
                 }
             }
         }
+        }
 
+        if (show("background")) {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             SoftButton(
                 text = "Тест уведомления",
@@ -704,6 +733,7 @@ fun SettingsScreen(onBack: (() -> Unit)? = null, viewModel: SettingsViewModel = 
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+        }
         }
 
         Spacer(Modifier.height(24.dp))

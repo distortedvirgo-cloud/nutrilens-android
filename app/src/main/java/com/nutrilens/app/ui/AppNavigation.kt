@@ -49,6 +49,10 @@ import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Insights
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.GridView
@@ -70,6 +74,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -103,13 +109,13 @@ private data class DockTab(
 )
 
 private val leftTabs = listOf(
-    DockTab("dashboard", "Дневник", Icons.Outlined.Home, Icons.Rounded.Home),
-    DockTab("report", "Отчёт", Icons.Outlined.Insights, Icons.Rounded.Insights)
+    DockTab("dashboard", "Сегодня", Icons.Outlined.Home, Icons.Rounded.Home),
+    DockTab("report", "Прогресс", Icons.Outlined.Insights, Icons.Rounded.Insights)
 )
 
 private val rightTabs = listOf(
-    DockTab("assistant", "Ассистент", Icons.Outlined.AutoAwesome, Icons.Rounded.AutoAwesome),
-    DockTab("hub", "Ещё", Icons.Outlined.GridView, Icons.Rounded.GridView)
+    DockTab("coach", "Коуч", Icons.Outlined.AutoAwesome, Icons.Rounded.AutoAwesome),
+    DockTab("profile", "Профиль", Icons.Outlined.Person, Icons.Rounded.Person)
 )
 
 /** Маршруты верхнего уровня: на них виден док, между ними — «fade through». */
@@ -125,7 +131,7 @@ private fun AnimatedContentTransitionScope<NavBackStackEntry>.enter(): EnterTran
     val from = tabIndex(initialState)
     val to = tabIndex(targetState)
     return when {
-        targetState.destination.route == "add" ->
+        targetState.destination.route?.startsWith("add") == true ->
             slideInVertically(tween(Motion.Long, easing = Motion.Emphasized)) { it / 6 } +
                 fadeIn(tween(Motion.Medium))
         from >= 0 && to >= 0 -> {
@@ -158,7 +164,7 @@ private fun AnimatedContentTransitionScope<NavBackStackEntry>.popEnter(): EnterT
         fadeIn(tween(Motion.Medium))
 
 private fun AnimatedContentTransitionScope<NavBackStackEntry>.popExit(): ExitTransition =
-    if (initialState.destination.route == "add") {
+    if (initialState.destination.route?.startsWith("add") == true) {
         slideOutVertically(tween(Motion.Medium, easing = Motion.Exit)) { it / 6 } +
             fadeOut(tween(Motion.Short))
     } else {
@@ -212,6 +218,8 @@ fun NutriLensAppRoot(initialDate: String? = null, navigateTo: String? = null) {
     }
 
     val showDock = currentRoute == null || currentRoute in TAB_ROUTES
+    var showAddSheet by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     NutriGlowBackground {
         Box(Modifier.fillMaxSize()) {
@@ -231,22 +239,39 @@ fun NutriLensAppRoot(initialDate: String? = null, navigateTo: String? = null) {
                     DashboardScreen(
                         initialDate = initialDate,
                         snackbarHostState = snackbarHostState,
-                        onOpenLeaderboard = { navigate("leaderboard") }
+                        onOpenLeaderboard = { navigate("leaderboard") },
+                        onOpenCoach = { navigate("coach") },
+                        onAddMeal = { navigate("add/camera") }
                     )
                 }
-                composable("report") { ReportScreen() }
-                composable("assistant") { AssistantScreen(onNavigate = navigate) }
-                composable("hub") { HubScreen(onNavigate = navigate) }
+                composable("report") { ReportScreen(onOpenLeaderboard = { navigate("leaderboard") }) }
+                composable("coach") { CoachScreen(onNavigate = navigate) }
+                composable("profile") { ProfileScreen(onNavigate = navigate) }
                 composable("add") {
                     AddMealScreen(
                         snackbarHostState = snackbarHostState,
                         onDone = { navigate("dashboard") },
-                        onGoSettings = { navigate("settings") },
+                        onGoSettings = { navigate("settings/ai") },
+                        onBack = back
+                    )
+                }
+                composable("add/{mode}") { entry ->
+                    AddMealScreen(
+                        mode = entry.arguments?.getString("mode"),
+                        snackbarHostState = snackbarHostState,
+                        onDone = { navigate("dashboard") },
+                        onGoSettings = { navigate("settings/ai") },
                         onBack = back
                     )
                 }
                 composable("settings") { SettingsScreen(onBack = back) }
+                composable("settings/{section}") { entry ->
+                    SettingsScreen(onBack = back, section = entry.arguments?.getString("section"))
+                }
                 composable("chat") { ChatScreen(onBack = back) }
+                composable("chat?q={q}") { entry ->
+                    ChatScreen(onBack = back, initialMessage = entry.arguments?.getString("q"))
+                }
                 composable("ideas") { IdeasScreen(onBack = back) }
                 composable("fridge") { FridgeScreen(onBack = back) }
                 composable("menu") { MenuScreen(onBack = back) }
@@ -256,14 +281,24 @@ fun NutriLensAppRoot(initialDate: String? = null, navigateTo: String? = null) {
                 composable("grocery") { GroceryScreen(onBack = back) }
             }
 
+            if (showAddSheet) {
+                QuickAddSheet(
+                    onDismiss = { showAddSheet = false },
+                    onNavigate = navigate,
+                    onMessage = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } }
+                )
+            }
+
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .navigationBarsPadding()
             ) {
-                SnackbarHost(snackbarHostState)
+                SnackbarHost(
+                    snackbarHostState,
+                    modifier = if (showDock) Modifier else Modifier.navigationBarsPadding()
+                )
                 AnimatedVisibility(
                     visible = showDock,
                     enter = slideInVertically(tween(Motion.Long, easing = Motion.Emphasized)) { it } +
@@ -276,7 +311,7 @@ fun NutriLensAppRoot(initialDate: String? = null, navigateTo: String? = null) {
                         shouldPulseFab = !hasMealsToday,
                         failedJobCount = failedJobCount,
                         onTab = navigate,
-                        onAdd = { navigate("add") }
+                        onAdd = { showAddSheet = true }
                     )
                 }
             }
@@ -299,26 +334,44 @@ private fun FloatingDock(
 ) {
     val allTabs = leftTabs + rightTabs
     val selectedIndex = allTabs.indexOfFirst { it.route == currentRoute }
-    val dockShape = RoundedCornerShape(30.dp)
+    // Сплошная панель во всю ширину (контент не просвечивает) с мягким
+    // затуханием над ней; FAB «+» приподнят над центром.
+    val dockShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
     val c = NutriTheme.colors
+    val bg = MaterialTheme.colorScheme.background
 
     Box(
         modifier = Modifier
-            .padding(horizontal = 18.dp)
-            .padding(top = 4.dp, bottom = 12.dp)
+            .fillMaxWidth()
+            .drawBehind {
+                // Затухание контента над панелью: рисуется выше собственных границ.
+                val fade = 56.dp.toPx()
+                val top = 22.dp.toPx()
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        listOf(bg.copy(alpha = 0f), bg.copy(alpha = 0.92f)),
+                        startY = top - fade,
+                        endY = top + 8.dp.toPx()
+                    ),
+                    topLeft = androidx.compose.ui.geometry.Offset(0f, top - fade),
+                    size = androidx.compose.ui.geometry.Size(size.width, fade + 8.dp.toPx())
+                )
+            }
     ) {
         Surface(
             shape = dockShape,
-            color = c.glass,
-            border = BorderStroke(1.dp, c.glassBorder),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            border = BorderStroke(1.dp, c.hairline),
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(top = 14.dp)
-                .softShadow(dockShape, 22)
+                .fillMaxWidth()
+                .padding(top = 22.dp)
+                .softShadow(dockShape, 16)
         ) {
             BoxWithConstraints(
                 modifier = Modifier
-                    .padding(6.dp)
+                    .navigationBarsPadding()
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
                     .height(60.dp)
             ) {
                 val spacer = 76.dp
@@ -366,7 +419,9 @@ private fun FloatingDock(
             shouldPulse = shouldPulseFab,
             failedCount = failedJobCount,
             onClick = onAdd,
-            modifier = Modifier.align(Alignment.TopCenter)
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 0.dp)
         )
     }
 }
