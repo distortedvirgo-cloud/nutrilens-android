@@ -31,6 +31,20 @@ jobs:
           kotlin.code.style=official
           org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8
           PROPS
+      # Подпись тем же debug-ключом, что и локальные сборки: иначе Android
+      # не ставит APK поверх уже установленного приложения. Ключ лежит в
+      # секрете DEBUG_KEYSTORE_BASE64 (base64 от ~/.android/debug.keystore).
+      - name: Debug keystore
+        env:
+          DEBUG_KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$DEBUG_KEYSTORE_BASE64" ]; then
+            mkdir -p ~/.android
+            echo "$DEBUG_KEYSTORE_BASE64" | base64 -d > ~/.android/debug.keystore
+            echo "Используется debug-ключ из секрета"
+          else
+            echo "::warning::Секрет DEBUG_KEYSTORE_BASE64 не задан — APK подписан случайным ключом и не встанет поверх локальной сборки"
+          fi
       - name: Assemble debug
         run: ./gradlew --no-daemon assembleDebug
       - uses: actions/upload-artifact@v4
