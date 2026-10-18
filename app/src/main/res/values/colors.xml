@@ -1,4 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="nutri_background">#FFF5F6F2</color>
+    <!-- Виджеты (светлая тема) -->
+    <color name="widget_surface">#FFFFFFFF</color>
+    <color name="widget_stroke">#FFE2E7E0</color>
+    <color name="widget_text">#FF0D1411</color>
+    <color name="widget_muted">#FF667169</color>
+    <color name="widget_accent">#FF0A7F5A</color>
+    <color name="widget_track">#1A0D1411</color>
+    <color name="widget_chip">#FFEEF1EC</color>
+    <color name="widget_protein">#FF2F6FD0</color>
+    <color name="widget_fat">#FFD9620F</color>
+    <color name="widget_carbs">#FF7D5FD6</color>
+    <color name="widget_water">#FF1F6FAF</color>
 </resources>

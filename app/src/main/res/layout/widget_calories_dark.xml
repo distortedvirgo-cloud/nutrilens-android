@@ -59,7 +59,7 @@
                         android:gravity="center"
                         android:maxLines="1"
                         android:text="2100"
-                        android:textColor="#F8FAFC"
+                        android:textColor="#ECF2EE"
                         android:textSize="16sp" />
 
                     <TextView
@@ -70,7 +70,7 @@
                         android:gravity="center"
                         android:maxLines="1"
                         android:text="ккал"
-                        android:textColor="#94A3B8"
+                        android:textColor="#A3B0A9"
                         android:textSize="7sp" />
                 </LinearLayout>
             </FrameLayout>
@@ -81,7 +81,7 @@
                 android:layout_height="40dp"
                 android:layout_marginStart="4dp"
                 android:layout_marginEnd="4dp"
-                android:background="#263243" />
+                android:background="#26302B" />
 
             <LinearLayout
                 android:layout_width="wrap_content"
@@ -110,7 +110,7 @@
                         android:fontFamily="sans-serif-black"
                         android:maxLines="1"
                         android:text="0"
-                        android:textColor="#F8FAFC"
+                        android:textColor="#ECF2EE"
                         android:textSize="14sp" />
 
                     <TextView
@@ -120,7 +120,7 @@
                         android:fontFamily="sans-serif"
                         android:maxLines="1"
                         android:text="Б"
-                        android:textColor="#94A3B8"
+                        android:textColor="#A3B0A9"
                         android:textSize="8sp" />
                 </LinearLayout>
 
@@ -146,7 +146,7 @@
                         android:fontFamily="sans-serif-black"
                         android:maxLines="1"
                         android:text="0"
-                        android:textColor="#F8FAFC"
+                        android:textColor="#ECF2EE"
                         android:textSize="14sp" />
 
                     <TextView
@@ -156,7 +156,7 @@
                         android:fontFamily="sans-serif"
                         android:maxLines="1"
                         android:text="Ж"
-                        android:textColor="#94A3B8"
+                        android:textColor="#A3B0A9"
                         android:textSize="8sp" />
                 </LinearLayout>
 
@@ -182,7 +182,7 @@
                         android:fontFamily="sans-serif-black"
                         android:maxLines="1"
                         android:text="0"
-                        android:textColor="#F8FAFC"
+                        android:textColor="#ECF2EE"
                         android:textSize="14sp" />
 
                     <TextView
@@ -192,7 +192,7 @@
                         android:fontFamily="sans-serif"
                         android:maxLines="1"
                         android:text="У"
-                        android:textColor="#94A3B8"
+                        android:textColor="#A3B0A9"
                         android:textSize="8sp" />
                 </LinearLayout>
             </LinearLayout>

@@ -1,4 +1,7 @@
 <resources>
     <string name="app_name">NutriLens</string>
     <string name="widget_calories_description">Осталось калорий и БЖУ на сегодня</string>
+    <string name="widget_today_description">Сегодня: калории, БЖУ, вода и быстрые кнопки</string>
+    <string name="widget_water_description">Вода: выпито за день и +250 мл одним тапом</string>
+    <string name="widget_quick_description">Камера: сфотографировать еду одним тапом</string>
 </resources>

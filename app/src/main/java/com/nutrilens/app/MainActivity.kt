@@ -64,7 +64,7 @@ class MainActivity : ComponentActivity() {
 private val DEEP_LINK_ROUTES = setOf(
     "settings", "dashboard", "add",
     "chat", "ideas", "fridge", "menu", "grocery", "waterTool", "habitTool",
-    "leaderboard", "coach", "profile", "report"
+    "leaderboard", "coach", "profile", "report", "add/camera"
 )
 
     /**
