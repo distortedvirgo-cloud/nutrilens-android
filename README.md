@@ -35,6 +35,12 @@ APK: `app/build/outputs/apk/debug/app-debug.apk`.
 Ключ Gemini вводится в приложении: Настройки → Нейросеть. Без ключа анализ
 недоступен, остальные функции работают офлайн.
 
+## Дизайн
+
+Дизайн-система описана в `design-system/nutrilens/MASTER.md` (палитра «Ivory &
+Emerald» / «Emerald Night», шрифт Manrope, токены движения). Для доработки UI
+в репозитории подключён скилл Claude Code `ui-ux-pro-max` (`.claude/skills/`).
+
 ## Стек
 
 Kotlin, Jetpack Compose (Material 3), Room, WorkManager, OkHttp,

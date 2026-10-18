@@ -31,8 +31,8 @@ android {
         applicationId = "com.nutrilens.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 55
-        versionName = "1.54"
+        versionCode = 56
+        versionName = "2.0"
         buildConfigField("String", "LEADERBOARD_REPO", "\"${leaderboardProp("LEADERBOARD_REPO")}\"")
         buildConfigField("String", "LEADERBOARD_TOKEN", "\"${leaderboardProp("LEADERBOARD_TOKEN")}\"")
     }

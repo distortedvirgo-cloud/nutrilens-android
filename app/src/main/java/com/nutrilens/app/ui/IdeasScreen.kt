@@ -1,5 +1,11 @@
 package com.nutrilens.app.ui
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
+
 import android.app.Application
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -194,7 +200,7 @@ fun IdeasScreen(onBack: () -> Unit, viewModel: IdeasViewModel = viewModel()) {
             .padding(bottom = 32.dp)
     ) {
         ScreenHeader(
-            title = "💡 Что съесть?",
+            title = "Что съесть?",
             subtitle = "Идеи в рамках вашей цели",
             onBack = onBack
         )
@@ -254,7 +260,7 @@ fun IdeasScreen(onBack: () -> Unit, viewModel: IdeasViewModel = viewModel()) {
                             modifier = Modifier.weight(1f)
                         )
                         Surface(
-                            shape = MaterialTheme.shapes.small,
+                            shape = RoundedCornerShape(999.dp),
                             color = MaterialTheme.colorScheme.primaryContainer
                         ) {
                             Text(
@@ -272,10 +278,13 @@ fun IdeasScreen(onBack: () -> Unit, viewModel: IdeasViewModel = viewModel()) {
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(Modifier.height(6.dp))
-                    TextButton(onClick = { viewModel.openRecipe(rec) }) {
-                        Text("Смотреть рецепт →", fontWeight = FontWeight.Bold)
-                    }
+                    Spacer(Modifier.height(12.dp))
+                    SoftButton(
+                        text = "Смотреть рецепт",
+                        onClick = { viewModel.openRecipe(rec) },
+                        height = 46,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
         }
@@ -292,27 +301,45 @@ fun IdeasScreen(onBack: () -> Unit, viewModel: IdeasViewModel = viewModel()) {
     }
 
     if (recipeTitle != null) {
-        AlertDialog(
-            onDismissRequest = viewModel::closeRecipe,
-            title = {
-                Text(recipeTitle ?: "", fontWeight = FontWeight.Bold)
-            },
-            text = {
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    if (recipeLoading) {
-                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                    } else {
-                        MarkdownText(recipeText ?: "")
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = viewModel::closeRecipe) { Text("Закрыть") }
-            }
+        RecipeSheet(
+            title = recipeTitle ?: "",
+            loading = recipeLoading,
+            text = recipeText,
+            onClose = viewModel::closeRecipe
         )
+    }
+}
+
+/** Рецепт — нижний лист: тянется жестом, длинный текст удобно листать. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RecipeSheet(title: String, loading: Boolean, text: String?, onClose: () -> Unit) {
+    ModalBottomSheet(
+        onDismissRequest = onClose,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 28.dp)
+        ) {
+            Text(
+                title,
+                style = MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(Modifier.height(14.dp))
+            if (loading) {
+                Box(Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                }
+            } else {
+                MarkdownText(text ?: "")
+            }
+        }
     }
 }

@@ -1,5 +1,18 @@
 package com.nutrilens.app.ui
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.BatteryChargingFull
+import androidx.compose.material.icons.rounded.SystemUpdate
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material.icons.rounded.NotificationsActive
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.Storage
+import androidx.compose.material.icons.rounded.TrackChanges
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.nutrilens.app.ui.theme.NutriTheme
+import com.nutrilens.app.ui.theme.macroPalette
+
 import android.app.Application
 import android.content.Context
 import android.content.Intent
@@ -249,7 +262,7 @@ enum class ReminderKind { BREAKFAST, LUNCH, DINNER }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
+fun SettingsScreen(onBack: (() -> Unit)? = null, viewModel: SettingsViewModel = viewModel()) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val updateState by viewModel.updateState.collectAsStateWithLifecycle()
     val dataMessage by viewModel.dataMessage.collectAsStateWithLifecycle()
@@ -297,10 +310,11 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .padding(horizontal = 20.dp)
+            .padding(bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        ScreenHeader(title = "Настройки")
+        ScreenHeader(title = "Настройки", onBack = onBack)
 
         // ---- ИИ ----
         FreshCard(modifier = Modifier.fillMaxWidth().staggeredIn(0)) {
@@ -310,7 +324,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("ИИ", style = MaterialTheme.typography.titleMedium)
+                SettingsSectionTitle(Icons.Rounded.AutoAwesome, "ИИ", MaterialTheme.colorScheme.primary)
                 SettingsTextField(
                     initial = settings.apiKey,
                     label = "Ключ Gemini",
@@ -362,7 +376,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("Цели", style = MaterialTheme.typography.titleMedium)
+                SettingsSectionTitle(Icons.Rounded.TrackChanges, "Цели", MaterialTheme.colorScheme.secondary)
                 SettingsNumberField(
                     initial = formatNumber(settings.dailyGoal),
                     label = "Дневная норма калорий, ккал",
@@ -398,7 +412,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("Профиль", style = MaterialTheme.typography.titleMedium)
+                SettingsSectionTitle(Icons.Rounded.Person, "Профиль", macroPalette().protein)
                 SettingsTextField(
                     initial = settings.userContext,
                     label = "О вас (контекст для ИИ)",
@@ -426,7 +440,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Text("Напоминания", style = MaterialTheme.typography.titleMedium)
+                SettingsSectionTitle(Icons.Rounded.NotificationsActive, "Напоминания", NutriTheme.colors.warnTo)
 
                 ReminderTimeRow(
                     label = "Завтрак",
@@ -495,11 +509,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
 
         FreshCard(modifier = Modifier.fillMaxWidth().staggeredIn(4)) {
             Column(Modifier.padding(16.dp)) {
-                Text(
-                    "Обновления",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
+                SettingsSectionTitle(Icons.Rounded.SystemUpdate, "Обновления", MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.height(4.dp))
                 Text(
                     "Приложение само скачивает новые версии с GitHub",
@@ -585,7 +595,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("Данные", style = MaterialTheme.typography.titleMedium)
+                SettingsSectionTitle(Icons.Rounded.Storage, "Данные", macroPalette().carbs)
                 Text(
                     "Резервная копия в JSON: дневник, вес, вода, настройки, избранное",
                     style = MaterialTheme.typography.bodySmall,
@@ -613,15 +623,17 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
             }
         }
 
-        Button(onClick = viewModel::testNotification, modifier = Modifier.fillMaxWidth()) {
-            Text("🔔 Тестовое уведомление")
-        }
-
-        OutlinedButton(
-            onClick = viewModel::runDiagnostics,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("🩺 Проверить соединение с ИИ")
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            SoftButton(
+                text = "Тест уведомления",
+                onClick = viewModel::testNotification,
+                modifier = Modifier.weight(1f)
+            )
+            SoftButton(
+                text = "Проверить ИИ",
+                onClick = viewModel::runDiagnostics,
+                modifier = Modifier.weight(1f)
+            )
         }
         diagnostics?.let { message ->
             Text(
@@ -646,17 +658,13 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
         }
         FreshCard(modifier = Modifier.fillMaxWidth().staggeredIn(5)) {
             Column(Modifier.padding(16.dp)) {
-                Text(
-                    "Фоновая работа",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
+                SettingsSectionTitle(Icons.Rounded.BatteryChargingFull, "Фоновая работа", NutriTheme.colors.success)
                 Spacer(Modifier.height(4.dp))
                 Text(
                     if (batteryExempt) {
-                        "✅ Освобождено от оптимизации батареи — фоновый анализ работает без ограничений"
+                        "Освобождено от оптимизации батареи — фоновый анализ работает без ограничений"
                     } else {
-                        "⚠️ Телефон может ограничивать сеть и CPU в фоне — анализ еды тогда не доходит " +
+                        "Телефон может ограничивать сеть и CPU в фоне — анализ еды тогда не доходит " +
                             "(«DNS не решается»). Разрешите работу без ограничений:"
                     },
                     style = MaterialTheme.typography.bodySmall,
@@ -685,7 +693,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("🔋 Разрешить работу в фоне")
+                        Text("Разрешить работу в фоне")
                     }
                 }
                 Spacer(Modifier.height(4.dp))
@@ -779,6 +787,7 @@ private fun SettingsTextField(
             .fillMaxWidth()
             .onFocusEvent { focused = it.isFocused },
         label = { Text(label) },
+        shape = MaterialTheme.shapes.small,
         visualTransformation = visualTransformation,
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
         minLines = minLines
@@ -821,6 +830,7 @@ private fun SettingsNumberField(
         },
         modifier = modifier,
         label = label?.let { { Text(it) } },
+        shape = MaterialTheme.shapes.small,
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
     )
@@ -831,23 +841,31 @@ private fun formatNumber(value: Double): String =
 /** Переключатель режима анализа: три варианта, как в веб-версии. */
 @Composable
 private fun SettingsModeRow(selected: String, onSelect: (String) -> Unit) {
-    val modes = listOf(
-        "free" to "Бесплатно",
-        "simple" to "Простой",
-        "advanced" to "Продвинутый"
+    SegmentedSwitcher(
+        options = listOf(
+            "free" to "Бесплатно",
+            "simple" to "Простой",
+            "advanced" to "Продвинутый"
+        ),
+        selected = selected,
+        onSelect = onSelect,
+        modifier = Modifier.fillMaxWidth()
     )
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        modes.forEach { (key, label) ->
-            val isSelected = selected == key
-            if (isSelected) {
-                Button(onClick = { onSelect(key) }, modifier = Modifier.weight(1f)) {
-                    Text(label)
-                }
-            } else {
-                OutlinedButton(onClick = { onSelect(key) }, modifier = Modifier.weight(1f)) {
-                    Text(label)
-                }
-            }
-        }
+}
+
+/** Заголовок секции настроек: тонированная иконка + название. */
+@Composable
+private fun SettingsSectionTitle(icon: ImageVector, title: String, tint: Color) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(bottom = 4.dp)
+    ) {
+        IconBadge(icon = icon, tint = tint, size = 34)
+        Spacer(Modifier.width(12.dp))
+        Text(
+            title,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
     }
 }

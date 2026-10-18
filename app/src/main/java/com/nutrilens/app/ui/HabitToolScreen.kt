@@ -68,7 +68,7 @@ fun HabitToolScreen(onBack: () -> Unit) {
             .padding(bottom = 32.dp)
     ) {
         ScreenHeader(
-            title = "🧠 Разбор привычки",
+            title = "Разбор привычки",
             subtitle = "Опишите привычку — ИИ поможет её понять и изменить",
             onBack = onBack
         )

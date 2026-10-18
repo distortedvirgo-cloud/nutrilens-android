@@ -2,5 +2,7 @@
 <!-- Та же тема, но тёмная: иначе при ночном режиме до отрисовки Compose
      видна белая вспышка стартового фона. -->
 <resources>
-    <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar" />
+    <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/nutri_background</item>
+    </style>
 </resources>
