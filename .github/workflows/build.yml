@@ -30,6 +30,8 @@ jobs:
           keystore-password: ${{ secrets.NUTRILENS_KEYSTORE_PASSWORD }}
           leaderboard-repo: ${{ secrets.LEADERBOARD_REPO }}
           leaderboard-token: ${{ secrets.LEADERBOARD_TOKEN }}
+      - name: Unit tests
+        run: ./gradlew --no-daemon testReleaseUnitTest
       - name: Assemble release APK
         run: ./gradlew --no-daemon assembleRelease
       - uses: actions/upload-artifact@v4
