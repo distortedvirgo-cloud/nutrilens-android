@@ -386,9 +386,7 @@ fun ReportScreen(
                     ) {
                         Column {
                             Spacer(Modifier.height(12.dp))
-                            FreshCard(Modifier.fillMaxWidth()) {
-                                MarkdownText(aiText.orEmpty(), Modifier.padding(18.dp))
-                            }
+                            AiResultCard(aiText.orEmpty(), title = "Оценка от ИИ")
                         }
                     }
                 }
@@ -429,21 +427,7 @@ private fun NarrativeCard(state: ReportState) {
                 )
             }
             Spacer(Modifier.height(8.dp))
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(8.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            ) {
-                Box(
-                    Modifier
-                        .fillMaxWidth(adherence)
-                        .height(8.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(NutriTheme.colors.brandGradient)
-                )
-            }
+            ProgressTrack(fraction = adherence)
             if (state.overDays > 0) {
                 Spacer(Modifier.height(10.dp))
                 Text(
@@ -519,14 +503,18 @@ private fun SummaryCard(
     accent: Color,
     modifier: Modifier = Modifier
 ) {
-    FreshCard(modifier, radius = 24) {
+    Surface(
+        shape = RoundedCornerShape(Radius.Tile),
+        color = accent.copy(alpha = tintAlpha()),
+        modifier = modifier
+    ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            IconBadge(icon = icon, tint = accent, size = 36)
-            Spacer(Modifier.height(12.dp))
+            Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.height(10.dp))
             Text(
                 text = value,
                 style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onSurface
+                color = accent
             )
             Text(
                 text = label,
@@ -805,7 +793,7 @@ private fun WaterCard(avgMl: Int, normMl: Int) {
     )
     FreshCard(Modifier.fillMaxWidth()) {
         Row(modifier = Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconBadge(Icons.Rounded.WaterDrop, c.water, size = 44)
+            IconBadge(Icons.Rounded.WaterDrop, c.water, size = 40)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(
@@ -814,21 +802,11 @@ private fun WaterCard(avgMl: Int, normMl: Int) {
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(Modifier.height(8.dp))
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(10.dp)
-                        .clip(RoundedCornerShape(5.dp))
-                        .background(c.water.copy(alpha = if (c.isDark) 0.2f else 0.14f))
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(fraction)
-                            .height(10.dp)
-                            .clip(RoundedCornerShape(5.dp))
-                            .background(c.waterGradient)
-                    )
-                }
+                ProgressTrack(
+                    fraction = fraction,
+                    brush = c.waterGradient,
+                    track = c.water.copy(alpha = tintAlpha() + 0.06f)
+                )
                 Spacer(Modifier.height(6.dp))
                 Text(
                     "В среднем $avgMl мл из ~$normMl мл в день",
@@ -872,8 +850,8 @@ private fun EmptyReport() {
 private fun LeaderboardEntryCard(onClick: () -> Unit) {
     val c = NutriTheme.colors
     FreshCard(Modifier.fillMaxWidth(), onClick = onClick) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(16.dp)) {
-            IconBadge(Icons.Rounded.EmojiEvents, c.warnTo, size = 44)
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(Space.Card)) {
+            IconBadge(Icons.Rounded.EmojiEvents, c.warnTo, size = 40)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text("Лидерборд", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
