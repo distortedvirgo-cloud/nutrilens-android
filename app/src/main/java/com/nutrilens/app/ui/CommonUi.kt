@@ -96,7 +96,7 @@ fun Modifier.softShadow(shape: androidx.compose.ui.graphics.Shape, elevation: In
 fun FreshCard(
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.surface,
-    radius: Int = 26,
+    radius: Int = 24,
     borderAlpha: Float = 1f,
     onClick: (() -> Unit)? = null,
     content: @Composable () -> Unit
@@ -135,7 +135,7 @@ fun GlowButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    height: Int = 54,
+    height: Int = 52,
     icon: ImageVector? = null
 ) {
     val interaction = remember { MutableInteractionSource() }
@@ -201,7 +201,7 @@ fun PillButton(
 ) {
     if (containerColor == MaterialTheme.colorScheme.primary) {
         // Стандартный акцент — градиентная кнопка с glow.
-        GlowButton(text = text, onClick = onClick, modifier = modifier, enabled = enabled, height = 50)
+        GlowButton(text = text, onClick = onClick, modifier = modifier, enabled = enabled)
     } else {
         val interaction = remember { MutableInteractionSource() }
         Surface(
@@ -211,7 +211,7 @@ fun PillButton(
             shape = RoundedCornerShape(18.dp),
             color = containerColor,
             modifier = modifier
-                .height(50.dp)
+                .height(52.dp)
                 .pressScale(interaction)
         ) {
             Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth()) {
@@ -228,7 +228,8 @@ fun SoftButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    height: Int = 52
+    height: Int = 52,
+    icon: ImageVector? = null
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
@@ -249,11 +250,21 @@ fun SoftButton(
             .height(height.dp)
             .pressScale(interaction)
     ) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth()) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp)
+        ) {
+            if (icon != null) {
+                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+            }
             Text(
                 text = text,
                 style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
