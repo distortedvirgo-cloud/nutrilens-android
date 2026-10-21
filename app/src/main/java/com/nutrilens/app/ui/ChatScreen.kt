@@ -196,8 +196,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         val end = LocalDate.parse(today).minusDays(1)
         val start = end.minusDays(2)
         val meals = database.mealDao().mealsBetween(start.toString(), end.toString())
-        return meals.groupBy { it.date }.toSortedMap().entries.joinToString("
-") { (date, list) ->
+        return meals.groupBy { it.date }.toSortedMap().entries.joinToString("\n") { (date, list) ->
             "$date: ${list.sumOf { it.calories }.roundToInt()} ккал " +
                 "(Б ${list.sumOf { it.protein }.roundToInt()} Ж ${list.sumOf { it.fat }.roundToInt()} " +
                 "У ${list.sumOf { it.carbs }.roundToInt()}) — ${list.joinToString(", ") { it.name }.take(160)}"
