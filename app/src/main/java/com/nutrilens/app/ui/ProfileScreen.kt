@@ -82,7 +82,8 @@ private data class ProfileRow(
     val icon: ImageVector,
     val label: String,
     val value: String,
-    val route: String
+    val route: String,
+    val tint: Color
 )
 
 /**
@@ -106,33 +107,30 @@ fun ProfileScreen(onNavigate: (String) -> Unit, viewModel: ProfileViewModel = vi
         else -> "Бесплатно"
     }
 
+    // Цвет иконки — по смыслу раздела (те же, что у его экрана настроек), а не по кругу.
+    val primary = MaterialTheme.colorScheme.primary
     val groups = listOf(
         "Питание" to listOf(
-            ProfileRow(Icons.Rounded.TrackChanges, "Цели и макросы", "${settings.dailyGoal.roundToInt()} ккал", "settings/goals"),
-            ProfileRow(Icons.Rounded.NotificationsActive, "Напоминания", "", "settings/reminders"),
-            ProfileRow(Icons.Rounded.EmojiEvents, "Лидерборд", nickname.ifEmpty { "нет ника" }, "leaderboard")
+            ProfileRow(Icons.Rounded.TrackChanges, "Цели и макросы", "${settings.dailyGoal.roundToInt()} ккал", "settings/goals", MaterialTheme.colorScheme.secondary),
+            ProfileRow(Icons.Rounded.NotificationsActive, "Напоминания", "", "settings/reminders", c.warnTo),
+            ProfileRow(Icons.Rounded.EmojiEvents, "Лидерборд", nickname.ifEmpty { "нет ника" }, "leaderboard", c.warnTo)
         ),
         "ИИ и данные" to listOf(
-            ProfileRow(Icons.Rounded.AutoAwesome, "Нейросеть", modeLabel, "settings/ai"),
-            ProfileRow(Icons.Rounded.Person, "О себе и ник", "", "settings/profile"),
-            ProfileRow(Icons.Rounded.Storage, "Экспорт и импорт", "", "settings/data")
+            ProfileRow(Icons.Rounded.AutoAwesome, "Нейросеть", modeLabel, "settings/ai", primary),
+            ProfileRow(Icons.Rounded.Person, "О себе и ник", "", "settings/profile", palette.protein),
+            ProfileRow(Icons.Rounded.Storage, "Экспорт и импорт", "", "settings/data", palette.carbs)
         ),
         "Приложение" to listOf(
-            ProfileRow(Icons.Rounded.SystemUpdate, "Обновления", "v${BuildConfig.VERSION_NAME}", "settings/updates"),
-            ProfileRow(Icons.Rounded.BatteryChargingFull, "Фон и диагностика", "", "settings/background")
+            ProfileRow(Icons.Rounded.SystemUpdate, "Обновления", "v${BuildConfig.VERSION_NAME}", "settings/updates", primary),
+            ProfileRow(Icons.Rounded.BatteryChargingFull, "Фон и диагностика", "", "settings/background", c.success)
         )
-    )
-    val tints = listOf(
-        MaterialTheme.colorScheme.primary, c.warnTo, Color(0xFFF2B53A),
-        MaterialTheme.colorScheme.secondary, palette.protein, palette.carbs,
-        MaterialTheme.colorScheme.primary, c.success
     )
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = Space.Screen)
             .padding(bottom = 120.dp)
     ) {
         FreshCard(
@@ -176,21 +174,20 @@ fun ProfileScreen(onNavigate: (String) -> Unit, viewModel: ProfileViewModel = vi
         }
 
         Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.staggeredIn(1)) {
-            GoalTile("Белки", goals.protein, palette.protein, Modifier.weight(1f)) { onNavigate("settings/goals") }
-            GoalTile("Жиры", goals.fat, palette.fat, Modifier.weight(1f)) { onNavigate("settings/goals") }
-            GoalTile("Углеводы", goals.carbs, palette.carbs, Modifier.weight(1f)) { onNavigate("settings/goals") }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.staggeredIn(1)) {
+            val toGoals = { onNavigate("settings/goals") }
+            TonalTile("${goals.protein.roundToInt()} г", "белки", palette.protein, Modifier.weight(1f), onClick = toGoals)
+            TonalTile("${goals.fat.roundToInt()} г", "жиры", palette.fat, Modifier.weight(1f), onClick = toGoals)
+            TonalTile("${goals.carbs.roundToInt()} г", "углеводы", palette.carbs, Modifier.weight(1f), onClick = toGoals)
         }
 
-        var tintIndex = 0
         groups.forEachIndexed { gi, (title, rows) ->
-            Spacer(Modifier.height(22.dp))
-            TinyLabel(title, Modifier.padding(start = 4.dp, bottom = 8.dp))
-            FreshCard(Modifier.fillMaxWidth().staggeredIn(2 + gi), radius = 24) {
+            Spacer(Modifier.height(Space.Section))
+            GroupLabel(title)
+            FreshCard(Modifier.fillMaxWidth().staggeredIn(2 + gi)) {
                 Column {
                     rows.forEachIndexed { i, row ->
-                        val tint = tints[tintIndex++ % tints.size]
-                        SettingsRowItem(row, tint, showDivider = i < rows.lastIndex) { onNavigate(row.route) }
+                        SettingsRowItem(row, showDivider = i < rows.lastIndex) { onNavigate(row.route) }
                     }
                 }
             }
@@ -199,22 +196,7 @@ fun ProfileScreen(onNavigate: (String) -> Unit, viewModel: ProfileViewModel = vi
 }
 
 @Composable
-private fun GoalTile(label: String, grams: Double, color: Color, modifier: Modifier, onClick: () -> Unit) {
-    FreshCard(modifier, radius = 22, onClick = onClick) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 14.dp)
-        ) {
-            Text("${grams.roundToInt()} г", style = MaterialTheme.typography.titleLarge, color = color)
-            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
-@Composable
-private fun SettingsRowItem(row: ProfileRow, tint: Color, showDivider: Boolean, onClick: () -> Unit) {
+private fun SettingsRowItem(row: ProfileRow, showDivider: Boolean, onClick: () -> Unit) {
     Column(Modifier.clickableRow(onClick)) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -223,7 +205,7 @@ private fun SettingsRowItem(row: ProfileRow, tint: Color, showDivider: Boolean, 
                 .heightIn(min = 60.dp)
                 .padding(horizontal = 14.dp)
         ) {
-            IconBadge(row.icon, tint, size = 36)
+            IconBadge(row.icon, row.tint, size = 36)
             Spacer(Modifier.width(14.dp))
             Text(
                 row.label,
@@ -247,15 +229,7 @@ private fun SettingsRowItem(row: ProfileRow, tint: Color, showDivider: Boolean, 
                 modifier = Modifier.size(20.dp)
             )
         }
-        if (showDivider) {
-            Box(
-                Modifier
-                    .padding(start = 64.dp)
-                    .fillMaxWidth()
-                    .height(1.dp)
-                    .background(NutriTheme.colors.hairline)
-            )
-        }
+        if (showDivider) Hairline(inset = 64.dp)
     }
 }
 

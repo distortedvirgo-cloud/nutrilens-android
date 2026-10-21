@@ -46,6 +46,12 @@ storePassword=...
 `versionName` автоматически публикует GitHub Release с APK — приложение само
 предлагает обновиться (Профиль → Обновления).
 
+### «Что нового»
+
+После обновления приложение один раз показывает лист «Что нового». Тексты —
+в `app/src/main/java/com/nutrilens/app/update/Changelog.kt`: поднимая
+`versionCode`/`versionName`, добавь сверху запись с тем же `versionCode`.
+
 ## Сборка
 
 Требуются JDK 21 и Android SDK (API 35).

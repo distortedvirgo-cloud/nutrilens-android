@@ -28,6 +28,7 @@ import androidx.compose.material.icons.rounded.LocalFireDepartment
 import androidx.compose.material.icons.rounded.MonitorWeight
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.RestaurantMenu
+import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarOutline
 import androidx.compose.material.icons.rounded.Today
 import androidx.compose.material.icons.rounded.TrackChanges
@@ -524,14 +525,11 @@ fun DashboardScreen(
             items(slotMeals, key = { it.meal.id }) { meal ->
                 MealCard(
                     meal = meal,
-                    showFavorite = !isFavorite(meal.meal),
                     refining = meal.meal.id in refiningMealIds,
-                    onFavorite = { viewModel.addFavorite(meal.meal) },
                     onClick = {
                         detailsMealId = meal.meal.id
                         detailItems = emptyList()
                     },
-                    onDelete = { deleteTarget = meal },
                     modifier = Modifier.animateItem()
                 )
             }
@@ -553,6 +551,12 @@ fun DashboardScreen(
             meal = meal,
             items = detailItems,
             refining = meal.meal.id in refiningMealIds,
+            isFavorite = isFavorite(meal.meal),
+            onFavorite = { viewModel.addFavorite(meal.meal) },
+            onDelete = {
+                deleteTarget = meal
+                detailsMealId = null
+            },
             onClose = { detailsMealId = null },
             onEdit = {
                 editTarget = meal
@@ -597,32 +601,25 @@ fun DashboardScreen(
     }
 
     deleteTarget?.let { meal ->
-        AlertDialog(
-            onDismissRequest = { deleteTarget = null },
-            title = { Text("Удалить запись?") },
-            text = { Text("«${meal.meal.name}» будет удалён вместе с фотографиями.") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        deleteTarget = null
-                        scope.launch {
-                            val items = viewModel.itemsForMeal(meal.meal.id)
-                            viewModel.deleteMeal(meal)
-                            val result = snackbarHostState.showSnackbar(
-                                message = "Запись удалена",
-                                actionLabel = "Вернуть"
-                            )
-                            if (result == SnackbarResult.ActionPerformed) {
-                                viewModel.restoreMeal(meal, items)
-                            }
-                        }
+        NutriDialog(
+            onDismiss = { deleteTarget = null },
+            title = "Удалить запись?",
+            subtitle = "«${meal.meal.name}» будет удалён вместе с фотографиями.",
+            confirmText = "Удалить",
+            destructive = true,
+            onConfirm = {
+                deleteTarget = null
+                scope.launch {
+                    val items = viewModel.itemsForMeal(meal.meal.id)
+                    viewModel.deleteMeal(meal)
+                    val result = snackbarHostState.showSnackbar(
+                        message = "Запись удалена",
+                        actionLabel = "Вернуть"
+                    )
+                    if (result == SnackbarResult.ActionPerformed) {
+                        viewModel.restoreMeal(meal, items)
                     }
-                ) {
-                    Text("Удалить", color = MaterialTheme.colorScheme.error)
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { deleteTarget = null }) { Text("Отмена") }
             }
         )
     }
@@ -759,7 +756,7 @@ private fun ProcessingCard(job: AnalysisJobEntity, extraCount: Int) {
             Box(
                 Modifier
                     .size(56.dp)
-                    .clip(RoundedCornerShape(16.dp))
+                    .clip(RoundedCornerShape(Radius.Tile))
                     .background(MaterialTheme.colorScheme.surfaceVariant)
             ) {
                 if (thumbPath != null) {
@@ -856,7 +853,7 @@ private fun RefinementProcessingCard(job: RefinementJobEntity, extraCount: Int) 
             Box(
                 Modifier
                     .size(56.dp)
-                    .clip(RoundedCornerShape(16.dp))
+                    .clip(RoundedCornerShape(Radius.Tile))
                     .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)),
                 contentAlignment = Alignment.Center
             ) {
@@ -922,7 +919,7 @@ private fun FailedRefinementsSection(
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .padding(12.dp),
+                        .padding(start = 14.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconBadge(
@@ -945,8 +942,8 @@ private fun FailedRefinementsSection(
                             overflow = TextOverflow.Ellipsis
                         )
                     }
-                    TextButton(onClick = { onRetry(job) }) { Text("Повторить") }
-                    TextButton(onClick = { onDismiss(job) }) { Text("Скрыть") }
+                    TextAction("Повторить", onClick = { onRetry(job) })
+                    TextAction("Скрыть", onClick = { onDismiss(job) }, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -985,19 +982,16 @@ private fun firstPhotoThumb(photoPathsJson: String): String? {
 @Composable
 private fun MealCard(
     meal: MealWithImages,
-    showFavorite: Boolean,
-    onFavorite: () -> Unit,
     onClick: () -> Unit,
-    onDelete: () -> Unit,
     modifier: Modifier = Modifier,
     refining: Boolean = false
 ) {
     val palette = macroPalette()
-    FreshCard(modifier = modifier.fillMaxWidth(), radius = 24, onClick = onClick) {
+    FreshCard(modifier = modifier.fillMaxWidth(), onClick = onClick) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 12.dp, top = 12.dp, bottom = 12.dp, end = 2.dp),
+                .padding(start = 12.dp, top = 12.dp, bottom = 12.dp, end = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             MealThumbnail(meal)
@@ -1047,6 +1041,7 @@ private fun MealCard(
                     }
                 }
             }
+            Spacer(Modifier.width(8.dp))
             Column(horizontalAlignment = Alignment.End) {
                 Text(
                     text = "${meal.meal.calories.roundToInt()}",
@@ -1058,26 +1053,6 @@ private fun MealCard(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            }
-            Column {
-                if (showFavorite) {
-                    IconButton(onClick = onFavorite) {
-                        Icon(
-                            imageVector = Icons.Rounded.StarOutline,
-                            contentDescription = "В избранное",
-                            tint = NutriTheme.colors.warnTo,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                }
-                IconButton(onClick = onDelete) {
-                    Icon(
-                        imageVector = Icons.Outlined.DeleteOutline,
-                        contentDescription = "Удалить",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
             }
         }
     }
@@ -1213,12 +1188,8 @@ private fun HealthBadge(score: Int) {
 @Composable
 private fun MealHealthSection(score: Int, note: String?) {
     val color = healthBandColor(score)
-    Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = color.copy(alpha = if (NutriTheme.colors.isDark) 0.16f else 0.09f),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(Modifier.padding(14.dp)) {
+    TonalSection(color = color) {
+        run {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = "$score",
@@ -1261,6 +1232,9 @@ private fun MealDetailsDialog(
     meal: MealWithImages,
     items: List<MealItemEntity>,
     refining: Boolean,
+    isFavorite: Boolean,
+    onFavorite: () -> Unit,
+    onDelete: () -> Unit,
     onClose: () -> Unit,
     onEdit: () -> Unit,
     onCorrect: () -> Unit
@@ -1273,21 +1247,10 @@ private fun MealDetailsDialog(
         m.date == LocalDate.now().minusDays(1).toString()) && !refining
     val photo = meal.images.firstOrNull { it.kind == "FULL" }
         ?: meal.images.firstOrNull { it.kind == "THUMB" }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var favoriteAdded by remember(m.id) { mutableStateOf(isFavorite) }
 
-    ModalBottomSheet(
-        onDismissRequest = onClose,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)
-    ) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 24.dp)
-        ) {
+    NutriSheet(onDismiss = onClose) {
+        run {
             if (photo != null) {
                 AsyncImage(
                     model = File(photo.path),
@@ -1296,7 +1259,7 @@ private fun MealDetailsDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(220.dp)
-                        .clip(RoundedCornerShape(24.dp))
+                        .clip(RoundedCornerShape(Radius.Card))
                         .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                 )
                 Spacer(Modifier.height(16.dp))
@@ -1307,17 +1270,31 @@ private fun MealDetailsDialog(
                 color = MaterialTheme.colorScheme.onSurface
             )
             Spacer(Modifier.height(4.dp))
-            Text(
-                text = m.time,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = m.time,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+                NutriChip(
+                    text = if (favoriteAdded) "В избранном" else "В избранное",
+                    icon = if (favoriteAdded) Icons.Rounded.Star else Icons.Rounded.StarOutline,
+                    selected = false,
+                    primary = favoriteAdded,
+                    enabled = !favoriteAdded,
+                    onClick = {
+                        onFavorite()
+                        favoriteAdded = true
+                    }
+                )
+            }
             Spacer(Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                NutrientTile("ккал", m.calories, MaterialTheme.colorScheme.primary, Modifier.weight(1.2f))
-                NutrientTile("белки", m.protein, palette.protein, Modifier.weight(1f))
-                NutrientTile("жиры", m.fat, palette.fat, Modifier.weight(1f))
-                NutrientTile("углев.", m.carbs, palette.carbs, Modifier.weight(1f))
+                TonalTile("${m.calories.roundToInt()}", "ккал", MaterialTheme.colorScheme.primary, Modifier.weight(1.2f))
+                TonalTile("${m.protein.roundToInt()}", "белки", palette.protein, Modifier.weight(1f))
+                TonalTile("${m.fat.roundToInt()}", "жиры", palette.fat, Modifier.weight(1f))
+                TonalTile("${m.carbs.roundToInt()}", "углев.", palette.carbs, Modifier.weight(1f))
             }
             Spacer(Modifier.height(12.dp))
             MealHealthSection(score = healthScoreOf(m), note = m.healthNote)
@@ -1325,15 +1302,7 @@ private fun MealDetailsDialog(
                 Spacer(Modifier.height(20.dp))
                 SectionTitle("Продукты")
                 items.forEachIndexed { i, item ->
-                    if (i > 0) {
-                        Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 10.dp)
-                                .height(1.dp)
-                                .background(NutriTheme.colors.hairline)
-                        )
-                    }
+                    if (i > 0) Hairline(Modifier.padding(vertical = 10.dp))
                     Row(verticalAlignment = Alignment.Top) {
                         Column(Modifier.weight(1f)) {
                             Text(
@@ -1408,30 +1377,11 @@ private fun MealDetailsDialog(
                     else -> Unit
                 }
             }
+            Spacer(Modifier.height(8.dp))
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                TextAction("Удалить запись", onClick = onDelete, color = MaterialTheme.colorScheme.error)
+            }
         }
-    }
-}
-
-/** Плашка нутриента в листе деталей: крупное число, подпись, цветной акцент. */
-@Composable
-private fun NutrientTile(label: String, value: Double, color: Color, modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(18.dp))
-            .background(color.copy(alpha = if (NutriTheme.colors.isDark) 0.16f else 0.09f))
-            .padding(vertical = 12.dp, horizontal = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text = "${value.roundToInt()}",
-            style = MaterialTheme.typography.titleLarge,
-            color = color
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
 }
 
@@ -1448,37 +1398,22 @@ private fun MealCorrectionDialog(
     onDismiss: () -> Unit
 ) {
     var text by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Поправить блюдо") },
-        text = {
-            Column {
-                Text(
-                    text = "«${meal.name}» — напишите, что исправить. " +
-                        "ИИ пересмотрит фото и пересчитает КБЖУ.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    placeholder = { Text("Например: вес не 170 г, а 125 г") },
-                    minLines = 2,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onSubmit(text.trim()) },
-                enabled = text.isNotBlank()
-            ) { Text("Отправить") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Отмена") }
-        }
-    )
+    NutriDialog(
+        onDismiss = onDismiss,
+        title = "Поправить блюдо",
+        subtitle = "«${meal.name}» — напишите, что исправить. ИИ пересмотрит фото и пересчитает КБЖУ.",
+        confirmText = "Отправить",
+        confirmEnabled = text.isNotBlank(),
+        onConfirm = { onSubmit(text.trim()) }
+    ) {
+        NutriTextField(
+            value = text,
+            onValueChange = { text = it },
+            placeholder = "Например: вес не 170 г, а 125 г",
+            minLines = 3,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
 }
 
 // ---------- Диалог правки приёма пищи ----------
@@ -1505,81 +1440,52 @@ private fun MealEditDialog(
     val canSave = name.isNotBlank() && caloriesValue != null &&
         proteinValue != null && fatValue != null && carbsValue != null
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Изменить запись") },
-        text = {
-            Column(
-                Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+    NutriDialog(
+        onDismiss = onDismiss,
+        title = "Изменить запись",
+        confirmText = "Сохранить",
+        confirmEnabled = canSave,
+        onConfirm = {
+            if (caloriesValue != null && proteinValue != null &&
+                fatValue != null && carbsValue != null
             ) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Название") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                onSave(
+                    meal.copy(
+                        name = name.trim(),
+                        calories = caloriesValue,
+                        protein = proteinValue,
+                        fat = fatValue,
+                        carbs = carbsValue
+                    )
                 )
-                OutlinedTextField(
-                    value = calories,
-                    onValueChange = { calories = it },
-                    label = { Text("Калории, ккал") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = protein,
-                        onValueChange = { protein = it },
-                        label = { Text("Б") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedTextField(
-                        value = fat,
-                        onValueChange = { fat = it },
-                        label = { Text("Ж") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedTextField(
-                        value = carbs,
-                        onValueChange = { carbs = it },
-                        label = { Text("У") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        modifier = Modifier.weight(1f)
-                    )
-                }
             }
-        },
-        confirmButton = {
-            TextButton(
-                enabled = canSave,
-                onClick = {
-                    if (caloriesValue != null && proteinValue != null &&
-                        fatValue != null && carbsValue != null
-                    ) {
-                        onSave(
-                            meal.copy(
-                                name = name.trim(),
-                                calories = caloriesValue,
-                                protein = proteinValue,
-                                fat = fatValue,
-                                carbs = carbsValue
-                            )
-                        )
-                    }
-                }
-            ) { Text("Сохранить") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Отмена") }
         }
-    )
+    ) {
+        val decimal = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            NutriTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = "Название",
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            NutriTextField(
+                value = calories,
+                onValueChange = { calories = it },
+                label = "Калории",
+                suffix = "ккал",
+                singleLine = true,
+                keyboardOptions = decimal,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                NutriTextField(protein, { protein = it }, Modifier.weight(1f), label = "Белки", suffix = "г", singleLine = true, keyboardOptions = decimal)
+                NutriTextField(fat, { fat = it }, Modifier.weight(1f), label = "Жиры", suffix = "г", singleLine = true, keyboardOptions = decimal)
+                NutriTextField(carbs, { carbs = it }, Modifier.weight(1f), label = "Углев.", suffix = "г", singleLine = true, keyboardOptions = decimal)
+            }
+        }
+    }
 }
 
 // ---------- Диалог веса ----------
@@ -1588,31 +1494,26 @@ private fun MealEditDialog(
 private fun WeightDialog(onConfirm: (Double) -> Unit, onDismiss: () -> Unit) {
     var input by remember { mutableStateOf("") }
     val parsed = input.trim().replace(",", ".").toDoubleOrNull()
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Записать вес") },
-        text = {
-            OutlinedTextField(
-                value = input,
-                onValueChange = { input = it },
-                label = { Text("Вес, кг") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
-            )
-        },
-        confirmButton = {
-            TextButton(
-                enabled = parsed != null,
-                onClick = {
-                    parsed?.let(onConfirm)
-                    onDismiss()
-                }
-            ) { Text("Сохранить") }
-            },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Отмена") }
+    NutriDialog(
+        onDismiss = onDismiss,
+        title = "Записать вес",
+        confirmText = "Сохранить",
+        confirmEnabled = parsed != null,
+        onConfirm = {
+            parsed?.let(onConfirm)
+            onDismiss()
         }
-    )
+    ) {
+        NutriTextField(
+            value = input,
+            onValueChange = { input = it },
+            label = "Вес",
+            suffix = "кг",
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
 }
 
 // ---------- Заглушка пустого дня ----------
@@ -1820,7 +1721,7 @@ private fun HeroSummary(
     val arcTo = if (isOver) c.warnTo else c.brandTo
     val track = MaterialTheme.colorScheme.surfaceContainerHigh
 
-    FreshCard(Modifier.fillMaxWidth(), radius = 28) {
+    FreshCard(Modifier.fillMaxWidth()) {
         Box(Modifier.fillMaxWidth()) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -1903,11 +1804,6 @@ private fun HeroSummary(
 /** Полоса макроса: подпись, «съедено / цель», заполнение с пружинкой. */
 @Composable
 private fun MacroBar(label: String, value: Double, goal: Double, color: Color) {
-    val fraction by animateFloatAsState(
-        if (goal > 0) (value / goal).toFloat().coerceIn(0f, 1f) else 0f,
-        tween(Motion.ExtraLong, easing = Motion.Emphasized),
-        label = "macroBar"
-    )
     Column(
         Modifier.semantics(mergeDescendants = true) {
             contentDescription = "$label: ${value.roundToInt()} из ${goal.roundToInt()} грамм"
@@ -1928,21 +1824,12 @@ private fun MacroBar(label: String, value: Double, goal: Double, color: Color) {
             )
         }
         Spacer(Modifier.height(4.dp))
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(6.dp)
-                .clip(RoundedCornerShape(3.dp))
-                .background(color.copy(alpha = if (NutriTheme.colors.isDark) 0.2f else 0.15f))
-        ) {
-            Box(
-                Modifier
-                    .fillMaxWidth(fraction)
-                    .fillMaxHeight()
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(color)
-            )
-        }
+        ProgressTrack(
+            fraction = if (goal > 0) (value / goal).toFloat() else 0f,
+            brush = SolidColor(color),
+            track = color.copy(alpha = tintAlpha() + 0.06f),
+            height = 6.dp
+        )
     }
 }
 
@@ -1950,13 +1837,12 @@ private fun MacroBar(label: String, value: Double, goal: Double, color: Color) {
 @Composable
 private fun CoachTip(text: String, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
-    val shape = RoundedCornerShape(20.dp)
+    val shape = RoundedCornerShape(Radius.Tile)
     Surface(
         onClick = onClick,
         interactionSource = interaction,
         shape = shape,
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = if (NutriTheme.colors.isDark) 0.55f else 0.8f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
+        color = MaterialTheme.colorScheme.primary.copy(alpha = tintAlpha()),
         modifier = Modifier
             .fillMaxWidth()
             .pressScale(interaction, 0.98f)
@@ -2000,12 +1886,7 @@ private fun VitalsRow(
 ) {
     val c = NutriTheme.colors
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-        val waterFraction by animateFloatAsState(
-            if (waterNormMl > 0) (waterMl.toFloat() / waterNormMl).coerceIn(0f, 1f) else 0f,
-            Motion.settle(),
-            label = "waterFill"
-        )
-        FreshCard(Modifier.weight(1f), radius = 24, onClick = onAddWater) {
+        FreshCard(Modifier.weight(1f), onClick = onAddWater) {
             Column(Modifier.padding(14.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconBadge(Icons.Rounded.WaterDrop, c.water, size = 34)
@@ -2032,25 +1913,16 @@ private fun VitalsRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(8.dp))
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(6.dp)
-                        .clip(RoundedCornerShape(3.dp))
-                        .background(c.water.copy(alpha = 0.18f))
-                ) {
-                    Box(
-                        Modifier
-                            .fillMaxWidth(waterFraction)
-                            .fillMaxHeight()
-                            .clip(RoundedCornerShape(3.dp))
-                            .background(c.waterGradient)
-                    )
-                }
+                ProgressTrack(
+                    fraction = if (waterNormMl > 0) waterMl.toFloat() / waterNormMl else 0f,
+                    brush = c.waterGradient,
+                    track = c.water.copy(alpha = tintAlpha() + 0.06f),
+                    height = 6.dp
+                )
             }
         }
         val overdue = daysSinceWeight == null || daysSinceWeight >= 7
-        FreshCard(Modifier.weight(1f), radius = 24, onClick = onWeigh) {
+        FreshCard(Modifier.weight(1f), onClick = onWeigh) {
             Column(Modifier.padding(14.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconBadge(Icons.Rounded.MonitorWeight, if (overdue) c.warnTo else MaterialTheme.colorScheme.secondary, size = 34)
@@ -2151,7 +2023,7 @@ private fun SlotHeader(slot: MealSlot, kcal: Double, modifier: Modifier = Modifi
 @Composable
 private fun EmptySlotCta(slot: MealSlot, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val interaction = remember { MutableInteractionSource() }
-    val shape = RoundedCornerShape(22.dp)
+    val shape = RoundedCornerShape(Radius.Card)
     Surface(
         onClick = onClick,
         interactionSource = interaction,
@@ -2167,7 +2039,7 @@ private fun EmptySlotCta(slot: MealSlot, onClick: () -> Unit, modifier: Modifier
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .size(56.dp)
-                    .clip(RoundedCornerShape(16.dp))
+                    .clip(RoundedCornerShape(Radius.Tile))
                     .background(MaterialTheme.colorScheme.primaryContainer)
             ) {
                 Icon(
@@ -2204,7 +2076,7 @@ private fun EmptyState(today: Boolean, onAdd: () -> Unit, modifier: Modifier = M
             Box(
                 modifier = Modifier
                     .size(64.dp)
-                    .clip(RoundedCornerShape(22.dp))
+                    .clip(RoundedCornerShape(Radius.Card))
                     .background(if (today) NutriTheme.colors.brandGradient else SolidColor(MaterialTheme.colorScheme.surfaceContainerHigh)),
                 contentAlignment = Alignment.Center
             ) {

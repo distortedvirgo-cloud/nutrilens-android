@@ -110,7 +110,7 @@ fun GroceryScreen(onBack: () -> Unit) {
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = Space.Screen)
             .padding(bottom = 32.dp)
     ) {
         ScreenHeader(
@@ -120,15 +120,13 @@ fun GroceryScreen(onBack: () -> Unit) {
         )
 
         if (data == null) {
-            OutlinedTextField(
+            NutriTextField(
                 value = preferences,
                 onValueChange = { preferences = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(110.dp),
-                placeholder = { Text("Пожелания: бюджет, нелюбимые продукты, время на готовку…") },
-                shape = RoundedCornerShape(20.dp),
-                maxLines = 4
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = "Пожелания: бюджет, нелюбимые продукты, время на готовку…",
+                minLines = 3,
+                maxLines = 5
             )
             Spacer(Modifier.height(12.dp))
             PillButton(
@@ -156,19 +154,17 @@ fun GroceryScreen(onBack: () -> Unit) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End
             ) {
-                TextButton(onClick = {
+                TextAction("Составить заново", onClick = {
                     scope.launch {
                         GroceryStore.clear(context)
                         data = null
                     }
-                }) {
-                    Text("Составить заново", fontWeight = FontWeight.SemiBold)
-                }
+                })
             }
 
             if (activeJobs.isNotEmpty()) {
                 ToolJobProcessingCard("Покупки")
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(Space.Gap))
             }
             failedJobs.firstOrNull()?.let { job ->
                 ToolJobErrorCard(
@@ -181,43 +177,33 @@ fun GroceryScreen(onBack: () -> Unit) {
             }
 
             if (current.plan.isNotBlank()) {
-                FreshCard(Modifier.fillMaxWidth()) {
-                    MarkdownText(current.plan, Modifier.padding(16.dp))
-                }
-                Spacer(Modifier.height(10.dp))
+                AiResultCard(current.plan, title = "План на неделю")
+                Spacer(Modifier.height(Space.Gap))
             }
 
             current.categories.forEach { category ->
                 FreshCard(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp)) {
-                        Text(
-                            category.category,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
+                    Column(Modifier.padding(Space.Card)) {
+                        val done = category.items.count { it in current.checked }
+                        CardHeader(
+                            title = category.category,
+                            trailing = {
+                                Text(
+                                    "$done/${category.items.size}",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
                         )
-                        Spacer(Modifier.height(4.dp))
+                        Spacer(Modifier.height(6.dp))
                         category.items.forEach { item ->
                             val checked = item in current.checked
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        scope.launch {
-                                            data = GroceryStore.toggleItem(context, item)
-                                        }
-                                    }
-                                    .padding(vertical = 2.dp)
-                            ) {
-                                Checkbox(
-                                    checked = checked,
-                                    onCheckedChange = {
-                                        scope.launch {
-                                            data = GroceryStore.toggleItem(context, item)
-                                        }
-                                    }
-                                )
+                            CheckRow(checked = checked, onToggle = {
+                                scope.launch {
+                                    data = GroceryStore.toggleItem(context, item)
+                                }
+                            }) {
                                 Text(
                                     item,
                                     style = MaterialTheme.typography.bodyMedium,
@@ -236,7 +222,7 @@ fun GroceryScreen(onBack: () -> Unit) {
                         }
                     }
                 }
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(Space.Gap))
             }
         }
     }

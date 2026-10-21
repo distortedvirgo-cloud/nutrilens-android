@@ -1,5 +1,9 @@
 package com.nutrilens.app.ui
 
+import androidx.compose.material.icons.rounded.DinnerDining
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.EggAlt
+import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
@@ -328,8 +332,8 @@ fun CoachScreen(
                 }
                 Spacer(Modifier.height(14.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ChipButton("Идеи еды", primary = true) { onNavigate("ideas") }
-                    ChipButton("Что в холодильнике?", primary = false) { onNavigate("fridge") }
+                    NutriChip("Идеи еды", onClick = { onNavigate("ideas") }, primary = true)
+                    NutriChip("Что в холодильнике?", onClick = { onNavigate("fridge") })
                 }
             }
         }
@@ -394,7 +398,7 @@ fun CoachScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Switch(checked = workoutDone, onCheckedChange = { viewModel.toggleWorkout() })
+                NutriSwitch(checked = workoutDone, onCheckedChange = { viewModel.toggleWorkout() })
             }
         }
 
@@ -403,26 +407,6 @@ fun CoachScreen(
             view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
             viewModel.toggleHabit(id)
         })
-    }
-}
-
-/** Пилюля-кнопка внутри карточки плана. */
-@Composable
-private fun ChipButton(text: String, primary: Boolean, onClick: () -> Unit) {
-    val interaction = remember { MutableInteractionSource() }
-    Surface(
-        onClick = onClick,
-        interactionSource = interaction,
-        shape = RoundedCornerShape(999.dp),
-        color = if (primary) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = Modifier.pressScale(interaction)
-    ) {
-        Text(
-            text,
-            style = MaterialTheme.typography.labelLarge,
-            color = if (primary) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-        )
     }
 }
 
@@ -439,7 +423,7 @@ private fun ToolTile(tool: CoachTool, onClick: () -> Unit) {
         4 -> palette.protein
         else -> c.water
     }
-    FreshCard(Modifier.width(112.dp), radius = 22, onClick = onClick) {
+    FreshCard(Modifier.width(112.dp), onClick = onClick) {
         Column(Modifier.padding(14.dp)) {
             IconBadge(tool.icon, tint, size = 40)
             Spacer(Modifier.height(12.dp))
@@ -494,7 +478,7 @@ private fun ChatEntryCard(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier
                                 .widthIn(max = 260.dp)
-                                .clip(RoundedCornerShape(16.dp))
+                                .clip(RoundedCornerShape(Radius.Small))
                                 .background(
                                     if (user) c.brandGradient
                                     else SolidColor(MaterialTheme.colorScheme.surfaceContainerHigh)
@@ -568,20 +552,13 @@ private fun InsightCard(
         "water-low" -> "+250 мл" to waterLowAction
         else -> null
     }
-    FreshCard(modifier.fillMaxWidth(), radius = 22) {
+    val (icon, tint) = insightVisual(insight.id)
+    FreshCard(modifier.fillMaxWidth()) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(start = 14.dp, top = 10.dp, bottom = 10.dp, end = 8.dp)
+            modifier = Modifier.padding(start = 14.dp, top = 12.dp, bottom = 12.dp, end = 12.dp)
         ) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            ) {
-                Text(insight.emoji, fontSize = 18.sp)
-            }
+            IconBadge(icon, tint, size = 40)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f).padding(vertical = 4.dp)) {
                 Text(
@@ -597,21 +574,29 @@ private fun InsightCard(
                 )
             }
             if (action != null) {
-                Spacer(Modifier.width(6.dp))
-                Surface(
-                    onClick = action.second,
-                    shape = RoundedCornerShape(999.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer
-                ) {
-                    Text(
-                        action.first,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
-                    )
-                }
+                Spacer(Modifier.width(8.dp))
+                NutriChip(action.first, onClick = action.second, primary = true)
             }
         }
+    }
+}
+
+/** Иконка и цвет подсказки — те же семантические цвета, что во всём приложении. */
+@Composable
+private fun insightVisual(id: String): Pair<ImageVector, Color> {
+    val c = NutriTheme.colors
+    val palette = macroPalette()
+    return when (id) {
+        "empty" -> Icons.Rounded.AddAPhoto to MaterialTheme.colorScheme.primary
+        "over" -> Icons.Rounded.WarningAmber to MaterialTheme.colorScheme.tertiary
+        "protein-low", "protein-ok" -> Icons.Rounded.EggAlt to palette.protein
+        "water-low", "water-ok" -> Icons.Rounded.WaterDrop to c.water
+        "gap" -> Icons.Rounded.Schedule to c.warnTo
+        "evening" -> Icons.Rounded.DinnerDining to palette.carbs
+        "nearly" -> Icons.Rounded.TrackChanges to MaterialTheme.colorScheme.primary
+        "workout" -> Icons.Rounded.FitnessCenter to MaterialTheme.colorScheme.secondary
+        "streak" -> Icons.Rounded.LocalFireDepartment to c.warnTo
+        else -> Icons.Rounded.Lightbulb to MaterialTheme.colorScheme.primary
     }
 }
 
@@ -638,66 +623,11 @@ private fun HabitsCard(habitIds: Set<String>, onToggle: (String) -> Unit) {
                 )
             }
             Spacer(Modifier.height(10.dp))
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(8.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            ) {
-                Box(
-                    Modifier
-                        .fillMaxWidth(progress)
-                        .fillMaxHeight()
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(NutriTheme.colors.brandGradient)
-                )
-            }
+            ProgressTrack(fraction = progress)
             Spacer(Modifier.height(8.dp))
             HABITS.forEach { (id, label) ->
                 val checked = id in habitIds
-                val fill by animateColorAsState(
-                    if (checked) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.surfaceContainerHigh,
-                    tween(Motion.Medium),
-                    label = "habitFill"
-                )
-                val checkScale by animateFloatAsState(
-                    if (checked) 1f else 0f, Motion.press(), label = "habitCheck"
-                )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 48.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .toggleable(
-                            value = checked,
-                            role = Role.Checkbox,
-                            onValueChange = { onToggle(id) }
-                        )
-                        .padding(horizontal = 4.dp)
-                ) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .size(26.dp)
-                            .clip(CircleShape)
-                            .background(fill)
-                    ) {
-                        Icon(
-                            Icons.Rounded.Check,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier
-                                .size(16.dp)
-                                .graphicsLayer {
-                                    scaleX = checkScale
-                                    scaleY = checkScale
-                                }
-                        )
-                    }
-                    Spacer(Modifier.width(12.dp))
+                CheckRow(checked = checked, onToggle = { onToggle(id) }) {
                     Text(
                         label,
                         style = MaterialTheme.typography.bodyMedium,

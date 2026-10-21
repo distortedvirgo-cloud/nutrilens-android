@@ -499,17 +499,10 @@ when (phase) {
                 if (photos.isNotEmpty()) {
                     PhotoPreviewRow(photos = photos, onRemove = viewModel::removePhoto)
                 }
-                OutlinedTextField(
+                NutriTextField(
                     value = note,
                     onValueChange = viewModel::setNote,
-                    label = { Text("Что ели? Например: борщ со сметаной") },
-                    shape = RoundedCornerShape(20.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = NutriTheme.colors.hairline,
-                        focusedContainerColor = MaterialTheme.colorScheme.surface,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surface
-                    ),
+                    placeholder = "Что ели? Например: борщ со сметаной",
                     modifier = Modifier
                         .fillMaxWidth()
                         .focusRequester(noteFocus)
@@ -668,12 +661,8 @@ private fun FailedJobsSection(
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             jobs.forEach { job ->
                 Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        MaterialTheme.colorScheme.error.copy(alpha = 0.25f)
-                    )
+                    shape = RoundedCornerShape(Radius.Tile),
+                    color = MaterialTheme.colorScheme.error.copy(alpha = tintAlpha())
                 ) {
                     Row(
                         modifier = Modifier
@@ -701,15 +690,12 @@ private fun FailedJobsSection(
                             }
                         }
                         Spacer(Modifier.width(8.dp))
-                        OutlinedButton(onClick = { onRetry(job) }) {
-                            Text("Повторить")
-                        }
-                        Spacer(Modifier.width(6.dp))
+                        NutriChip("Повторить", onClick = { onRetry(job) }, primary = true)
+                        Spacer(Modifier.width(4.dp))
                         Box(
                             modifier = Modifier
-                                .size(24.dp)
+                                .size(40.dp)
                                 .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
                                 .clickable { onDismiss(job) },
                             contentAlignment = Alignment.Center
                         ) {
@@ -744,7 +730,7 @@ private fun ErrorBlock(message: String, onGoSettings: () -> Unit) {
             color = MaterialTheme.colorScheme.error
         )
         if (message == "Укажите ключ Gemini в настройках") {
-            TextButton(onClick = onGoSettings) { Text("Перейти в настройки") }
+            TextAction("Перейти в настройки", onClick = onGoSettings)
         }
     }
 }
@@ -764,7 +750,7 @@ private fun PhotoSourceTile(
 ) {
     val c = NutriTheme.colors
     val interaction = remember { MutableInteractionSource() }
-    val shape = RoundedCornerShape(28.dp)
+    val shape = RoundedCornerShape(Radius.Card)
     val content = if (primary) c.onBrand else MaterialTheme.colorScheme.onSurface
     Surface(
         onClick = onClick,
@@ -795,7 +781,7 @@ private fun PhotoSourceTile(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .size(48.dp)
-                    .clip(RoundedCornerShape(16.dp))
+                    .clip(RoundedCornerShape(Radius.Tile))
                     .background(
                         if (primary) Color.White.copy(alpha = 0.2f)
                         else MaterialTheme.colorScheme.primaryContainer
@@ -1026,7 +1012,7 @@ private fun ScanFrame() {
 private fun PhotoPreviewRow(photos: List<Uri>, onRemove: (Uri) -> Unit) {
     LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         items(photos, key = { it.toString() }) { uri ->
-            val thumbShape = RoundedCornerShape(20.dp)
+            val thumbShape = RoundedCornerShape(Radius.Tile)
             Box(Modifier.animateItem()) {
                 AsyncImage(
                     model = uri,

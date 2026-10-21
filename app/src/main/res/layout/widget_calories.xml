@@ -69,9 +69,9 @@
                         android:fontFamily="sans-serif"
                         android:gravity="center"
                         android:maxLines="1"
-                        android:text="ккал"
+                        android:text="из 2100"
                         android:textColor="#667169"
-                        android:textSize="7sp" />
+                        android:textSize="9sp" />
                 </LinearLayout>
             </FrameLayout>
 
@@ -111,7 +111,7 @@
                         android:maxLines="1"
                         android:text="0"
                         android:textColor="#0D1411"
-                        android:textSize="14sp" />
+                        android:textSize="15sp" />
 
                     <TextView
                         android:layout_width="wrap_content"
@@ -121,7 +121,7 @@
                         android:maxLines="1"
                         android:text="Б"
                         android:textColor="#667169"
-                        android:textSize="8sp" />
+                        android:textSize="10sp" />
                 </LinearLayout>
 
                 <LinearLayout
@@ -147,7 +147,7 @@
                         android:maxLines="1"
                         android:text="0"
                         android:textColor="#0D1411"
-                        android:textSize="14sp" />
+                        android:textSize="15sp" />
 
                     <TextView
                         android:layout_width="wrap_content"
@@ -157,7 +157,7 @@
                         android:maxLines="1"
                         android:text="Ж"
                         android:textColor="#667169"
-                        android:textSize="8sp" />
+                        android:textSize="10sp" />
                 </LinearLayout>
 
                 <LinearLayout
@@ -183,7 +183,7 @@
                         android:maxLines="1"
                         android:text="0"
                         android:textColor="#0D1411"
-                        android:textSize="14sp" />
+                        android:textSize="15sp" />
 
                     <TextView
                         android:layout_width="wrap_content"
@@ -193,7 +193,7 @@
                         android:maxLines="1"
                         android:text="У"
                         android:textColor="#667169"
-                        android:textSize="8sp" />
+                        android:textSize="10sp" />
                 </LinearLayout>
             </LinearLayout>
         </LinearLayout>

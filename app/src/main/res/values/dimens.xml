@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Скругление виджетов: как у карточек приложения (Radius.Card). На Android 12+
+         берётся системный радиус лаунчера (values-v31), чтобы виджет совпадал с соседями. -->
+    <dimen name="widget_radius">24dp</dimen>
+</resources>

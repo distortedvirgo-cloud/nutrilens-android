@@ -265,7 +265,7 @@ fun ChatScreen(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = Space.Screen),
             verticalArrangement = Arrangement.spacedBy(10.dp),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 12.dp)
         ) {
@@ -303,7 +303,7 @@ fun ChatScreen(
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
                                 .size(60.dp)
-                                .clip(RoundedCornerShape(16.dp))
+                                .clip(RoundedCornerShape(Radius.Small))
                         )
                         IconButton(
                             onClick = { attachments = attachments - path },

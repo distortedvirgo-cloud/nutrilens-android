@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Монохромный слой для тематических иконок Android 13+: тот же знак,
+     прожилка вырезана из листа (evenOdd), цвет задаёт система. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4.5"
+        android:pathData="M54,27.5 a26.5,26.5 0 1,1 0,53 a26.5,26.5 0 1,1 0,-53" />
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeAlpha="0.55"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:pathData="M37.5,48 A18,18 0 0,1 48,36.8" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M40.5,68.5 C39,51 51,39.5 68.5,39.5 C69.5,57 57.5,69.5 40.5,68.5 Z M43.2,64.24 L62.2,44.24 L63.8,45.76 L44.8,65.76 Z" />
+</vector>

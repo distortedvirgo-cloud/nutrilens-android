@@ -112,13 +112,14 @@ private val EmeraldNight = darkColorScheme(
     scrim = Color(0xFF000000)
 )
 
-// Скругления: крупные «мягкие» карточки 28, вложенные 22, кнопки 18, поля 14.
+// Скругления — те же ступени, что Radius в DesignKit: мелкое 14, плашки/кнопки/поля 18,
+// карточки 24, листы 32.
 private val NutriShapes = Shapes(
     extraSmall = RoundedCornerShape(10.dp),
     small = RoundedCornerShape(14.dp),
     medium = RoundedCornerShape(18.dp),
-    large = RoundedCornerShape(22.dp),
-    extraLarge = RoundedCornerShape(28.dp)
+    large = RoundedCornerShape(24.dp),
+    extraLarge = RoundedCornerShape(32.dp)
 )
 
 private fun style(
