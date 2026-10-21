@@ -1,6 +1,26 @@
 package com.nutrilens.app.ui
 
 import android.app.Application
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.rounded.AddPhotoAlternate
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.style.TextAlign
+import com.nutrilens.app.ui.theme.Motion
+import com.nutrilens.app.ui.theme.NutriTheme
 import android.content.Context
 import android.net.Uri
 import android.util.Base64
@@ -170,7 +190,11 @@ private fun Context.copyToChatImage(uri: Uri): String? = runCatching {
 }.getOrNull()
 
 @Composable
-fun ChatScreen(onBack: () -> Unit, viewModel: ChatViewModel = viewModel()) {
+fun ChatScreen(
+    onBack: () -> Unit,
+    initialMessage: String? = null,
+    viewModel: ChatViewModel = viewModel()
+) {
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val loading by viewModel.loading.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
@@ -178,40 +202,58 @@ fun ChatScreen(onBack: () -> Unit, viewModel: ChatViewModel = viewModel()) {
     var inputText by remember { mutableStateOf("") }
     var attachments by remember { mutableStateOf<List<String>>(emptyList()) }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .imePadding()
-    ) {
+    // Вопрос, заданный с экрана «Коуч», отправляется сразу (один раз).
+    var initialSent by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(initialMessage) {
+        val q = initialMessage?.trim().orEmpty()
+        if (!initialSent && q.isNotEmpty()) {
+            initialSent = true
+            viewModel.send(q, emptyList())
+        }
+    }
+
+    // Отступ под клавиатуру даёт NavHost (imePadding на корне) — здесь не дублируем.
+    Column(modifier = Modifier.fillMaxSize()) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 12.dp, end = 8.dp, top = 8.dp)
+                .padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 8.dp)
         ) {
-            IconButton(onClick = onBack) {
+            BackPill(onClick = onBack)
+            Spacer(Modifier.width(14.dp))
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(NutriTheme.colors.brandGradient)
+            ) {
                 Icon(
-                    Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Назад",
-                    tint = MaterialTheme.colorScheme.onSurface
+                    Icons.Rounded.AutoAwesome,
+                    contentDescription = null,
+                    tint = NutriTheme.colors.onBrand,
+                    modifier = Modifier.size(20.dp)
                 )
             }
+            Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    "💬 Диетолог",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.ExtraBold,
+                    "Диетолог",
+                    style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onBackground
                 )
                 Text(
-                    "ИИ-консультант, знает ваш дневник",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    if (loading) "печатает…" else "ИИ-консультант, знает ваш дневник",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (loading) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
                 )
             }
             IconButton(onClick = viewModel::clearChat) {
                 Icon(
-                    Icons.Default.Delete,
+                    Icons.Outlined.DeleteOutline,
                     contentDescription = "Очистить чат",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -224,24 +266,18 @@ fun ChatScreen(onBack: () -> Unit, viewModel: ChatViewModel = viewModel()) {
                 .weight(1f)
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 10.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 12.dp)
         ) {
             if (loading) {
-                item {
-                    FreshCard {
-                        CircularProgressIndicator(
-                            modifier = Modifier
-                                .size(18.dp)
-                                .padding(0.dp),
-                            strokeWidth = 3.dp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
+                item(key = "typing") { TypingBubble(Modifier.animateItem()) }
             }
-            items(messages.reversed()) { msg ->
-                ChatBubble(msg)
+            val reversed = messages.asReversed()
+            items(reversed.size, key = { messages.size - 1 - it }) { i ->
+                ChatBubble(reversed[i], Modifier.animateItem())
+            }
+            if (messages.isEmpty() && !loading) {
+                item(key = "empty") { ChatEmptyHint() }
             }
         }
 
@@ -256,7 +292,7 @@ fun ChatScreen(onBack: () -> Unit, viewModel: ChatViewModel = viewModel()) {
 
         if (attachments.isNotEmpty()) {
             Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 attachments.forEach { path ->
@@ -266,19 +302,20 @@ fun ChatScreen(onBack: () -> Unit, viewModel: ChatViewModel = viewModel()) {
                             contentDescription = null,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
-                                .size(56.dp)
-                                .clip(RoundedCornerShape(12.dp))
+                                .size(60.dp)
+                                .clip(RoundedCornerShape(16.dp))
                         )
                         IconButton(
                             onClick = { attachments = attachments - path },
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
-                                .size(20.dp)
-                                .background(MaterialTheme.colorScheme.surface, CircleShape)
+                                .size(24.dp)
+                                .background(Color.Black.copy(alpha = 0.55f), CircleShape)
                         ) {
                             Icon(
                                 Icons.Default.Close,
                                 contentDescription = "Убрать",
+                                tint = Color.White,
                                 modifier = Modifier.size(14.dp)
                             )
                         }
@@ -291,6 +328,7 @@ fun ChatScreen(onBack: () -> Unit, viewModel: ChatViewModel = viewModel()) {
             text = inputText,
             onTextChange = { inputText = it },
             loading = loading,
+            canSend = inputText.isNotBlank() || attachments.isNotEmpty(),
             onAttach = { paths -> attachments = attachments + paths },
             onSend = {
                 viewModel.send(inputText.trim(), attachments)
@@ -301,28 +339,97 @@ fun ChatScreen(onBack: () -> Unit, viewModel: ChatViewModel = viewModel()) {
     }
 }
 
+/** Пустой чат: короткая подсказка, о чём можно спросить. */
 @Composable
-private fun ChatBubble(msg: ChatMessage) {
+private fun ChatEmptyHint() {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 48.dp, horizontal = 24.dp)
+    ) {
+        IconBadge(Icons.Rounded.AutoAwesome, MaterialTheme.colorScheme.primary, size = 64)
+        Spacer(Modifier.height(16.dp))
+        Text(
+            "Спросите что угодно о питании",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "Например: «чем добрать белок сегодня?» или пришлите фото блюда",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+/** «Печатает…»: три точки по очереди подпрыгивают. */
+@Composable
+private fun TypingBubble(modifier: Modifier = Modifier) {
+    val t = rememberInfiniteTransition(label = "typing")
+    Row(modifier.fillMaxWidth()) {
+        Surface(
+            shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp, bottomEnd = 22.dp, bottomStart = 8.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, NutriTheme.colors.hairline)
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)
+            ) {
+                repeat(3) { i ->
+                    val y by t.animateFloat(
+                        initialValue = 0f,
+                        targetValue = 0f,
+                        animationSpec = infiniteRepeatable(
+                            keyframes {
+                                durationMillis = 1100
+                                0f at (i * 140)
+                                -5f at (i * 140 + 220)
+                                0f at (i * 140 + 440)
+                            }
+                        ),
+                        label = "dot$i"
+                    )
+                    Box(
+                        Modifier
+                            .size(8.dp)
+                            .graphicsLayer { translationY = y.dp.toPx() }
+                            .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), CircleShape)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChatBubble(msg: ChatMessage, modifier: Modifier = Modifier) {
     val isUser = msg.role == "user"
+    val c = NutriTheme.colors
+    val shape = RoundedCornerShape(
+        topStart = 22.dp,
+        topEnd = 22.dp,
+        bottomStart = if (isUser) 22.dp else 8.dp,
+        bottomEnd = if (isUser) 8.dp else 22.dp
+    )
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
     ) {
         Surface(
-            shape = RoundedCornerShape(
-                topStart = 20.dp,
-                topEnd = 20.dp,
-                bottomStart = if (isUser) 20.dp else 6.dp,
-                bottomEnd = if (isUser) 6.dp else 20.dp
-            ),
-            color = if (isUser) {
-                MaterialTheme.colorScheme.primaryContainer
-            } else {
-                MaterialTheme.colorScheme.surface
-            },
+            shape = shape,
+            color = if (isUser) Color.Transparent else MaterialTheme.colorScheme.surface,
+            border = if (isUser) null else BorderStroke(1.dp, c.hairline),
             modifier = Modifier.widthIn(max = 320.dp)
         ) {
-            Column(Modifier.padding(12.dp)) {
+            Column(
+                Modifier
+                    .then(if (isUser) Modifier.background(c.brandGradient) else Modifier)
+                    .padding(horizontal = 14.dp, vertical = 11.dp)
+            ) {
                 if (msg.imagePaths.isNotEmpty()) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         msg.imagePaths.take(3).forEach { path ->
@@ -331,19 +438,19 @@ private fun ChatBubble(msg: ChatMessage) {
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier
-                                    .size(72.dp)
-                                    .clip(RoundedCornerShape(10.dp))
+                                    .size(76.dp)
+                                    .clip(RoundedCornerShape(14.dp))
                             )
                         }
                     }
-                    if (msg.text.isNotBlank()) Spacer(Modifier.height(6.dp))
+                    if (msg.text.isNotBlank()) Spacer(Modifier.height(8.dp))
                 }
                 if (msg.text.isNotBlank()) {
                     if (isUser) {
                         Text(
                             msg.text,
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            color = c.onBrand
                         )
                     } else {
                         MarkdownText(msg.text)
@@ -359,10 +466,12 @@ private fun ChatInputBar(
     text: String,
     onTextChange: (String) -> Unit,
     loading: Boolean,
+    canSend: Boolean,
     onAttach: (List<String>) -> Unit,
     onSend: () -> Unit
 ) {
     val context = LocalContext.current
+    val c = NutriTheme.colors
     val pickLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
@@ -371,54 +480,78 @@ private fun ChatInputBar(
             if (path != null) onAttach(listOf(path))
         }
     }
-    Row(
-        verticalAlignment = Alignment.Bottom,
+    val barShape = RoundedCornerShape(28.dp)
+    Surface(
+        shape = barShape,
+        color = c.glass,
+        border = BorderStroke(1.dp, c.glassBorder),
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .softShadow(barShape, 12)
     ) {
-        IconButton(onClick = {
-            pickLauncher.launch(
-                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-            )
-        }) {
-            Icon(
-                Icons.Default.AddPhotoAlternate,
-                contentDescription = "Прикрепить фото",
-                tint = MaterialTheme.colorScheme.primary
-            )
-        }
-        OutlinedTextField(
-            value = text,
-            onValueChange = onTextChange,
-            modifier = Modifier.weight(1f),
-            placeholder = { Text("Спросите о питании…") },
-            shape = RoundedCornerShape(24.dp),
-            maxLines = 4
-        )
-        Surface(
-            shape = CircleShape,
-            color = if (loading) {
-                MaterialTheme.colorScheme.surfaceVariant
-            } else {
-                MaterialTheme.colorScheme.primary
-            },
-            modifier = Modifier.size(48.dp)
+        Row(
+            verticalAlignment = Alignment.Bottom,
+            modifier = Modifier.padding(6.dp)
         ) {
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                if (loading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 3.dp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                } else {
-                    IconButton(onClick = onSend, modifier = Modifier.fillMaxSize()) {
+            IconButton(onClick = {
+                pickLauncher.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                )
+            }) {
+                Icon(
+                    Icons.Rounded.AddPhotoAlternate,
+                    contentDescription = "Прикрепить фото",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+            TextField(
+                value = text,
+                onValueChange = onTextChange,
+                modifier = Modifier.weight(1f),
+                placeholder = { Text("Спросите о питании…") },
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                    disabledContainerColor = Color.Transparent,
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                    disabledIndicatorColor = Color.Transparent
+                ),
+                maxLines = 4
+            )
+            val enabled = canSend && !loading
+            val sendInteraction = remember { MutableInteractionSource() }
+            val sendAlpha by animateFloatAsState(if (enabled) 1f else 0.4f, tween(Motion.Medium), label = "sendAlpha")
+            Surface(
+                onClick = onSend,
+                enabled = enabled,
+                interactionSource = sendInteraction,
+                shape = CircleShape,
+                color = Color.Transparent,
+                modifier = Modifier
+                    .size(48.dp)
+                    .pressScale(sendInteraction, 0.88f)
+                    .graphicsLayer { alpha = sendAlpha }
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(c.brandGradient)
+                ) {
+                    if (loading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.5.dp,
+                            color = c.onBrand
+                        )
+                    } else {
                         Icon(
-                            Icons.Default.Send,
+                            Icons.AutoMirrored.Rounded.Send,
                             contentDescription = "Отправить",
-                            tint = MaterialTheme.colorScheme.onPrimary
+                            tint = c.onBrand,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }

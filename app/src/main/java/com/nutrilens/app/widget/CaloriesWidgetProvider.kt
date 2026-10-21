@@ -155,18 +155,18 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
             }
         }
 
-        private const val COLOR_GREEN = 0xFF059669.toInt()
+        private const val COLOR_GREEN = 0xFF12A174.toInt()
         private const val COLOR_BLUE = 0xFF2F6FD0.toInt()
         private const val COLOR_PURPLE = 0xFF7D5FD6.toInt()
-        private const val COLOR_ORANGE = 0xFFEA580C.toInt()
-        private const val COLOR_INK = 0xFF0F172A.toInt()
-        private const val COLOR_WHITE = 0xFFF8FAFC.toInt()
+        private const val COLOR_ORANGE = 0xFFD9620F.toInt()
+        private const val COLOR_INK = 0xFF0D1411.toInt()
+        private const val COLOR_WHITE = 0xFFECF2EE.toInt()
 
         // Светлая/тёмная палитра макро.
-        private const val COLOR_GREEN_DARK = 0xFF10B981.toInt()
-        private const val COLOR_BLUE_DARK = 0xFF6BA3F2.toInt()
-        private const val COLOR_PURPLE_DARK = 0xFFA98FF0.toInt()
-        private const val COLOR_ORANGE_DARK = 0xFFFB923C.toInt()
+        private const val COLOR_GREEN_DARK = 0xFF3DDC97.toInt()
+        private const val COLOR_BLUE_DARK = 0xFF7FB0F5.toInt()
+        private const val COLOR_PURPLE_DARK = 0xFFB9A3F5.toInt()
+        private const val COLOR_ORANGE_DARK = 0xFFFDBA74.toInt()
 
         /**
          * Кольцо прогресса: внешнее — калории (зелёное, при переборе
@@ -267,7 +267,10 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
 
 /** Точки вызова обновления виджета (из воркера и экранов). */
 object WidgetUpdater {
+    /** Перерисовать все виджеты приложения после изменения дневника. */
     fun refresh(context: Context) {
         CaloriesWidgetProvider.requestUpdate(context)
+        TodayWidgetProvider.requestUpdate(context)
+        WaterWidgetProvider.requestUpdate(context)
     }
 }

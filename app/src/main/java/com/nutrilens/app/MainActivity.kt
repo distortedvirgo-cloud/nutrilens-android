@@ -8,6 +8,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -30,6 +31,10 @@ import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Edge-to-edge на всех версиях (на Android 15 при targetSdk 35 он и так
+        // принудительный): фон-«аврора» уходит под системные бары, отступы
+        // считаются в Compose через WindowInsets.
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
         // "navigate" = "dashboard" — дашборд, который и так является стартовой
@@ -57,9 +62,9 @@ class MainActivity : ComponentActivity() {
 
 /** Маршруты, на которые разрешено вести по уведомлениям (dashboard=settings/add + инструменты «Ещё» + лидерборд). */
 private val DEEP_LINK_ROUTES = setOf(
-    "settings", "dashboard", "add",
+    "settings", "settings/updates", "dashboard", "add",
     "chat", "ideas", "fridge", "menu", "grocery", "waterTool", "habitTool",
-    "leaderboard"
+    "leaderboard", "coach", "profile", "report", "add/camera"
 )
 
     /**
@@ -87,9 +92,9 @@ private val DEEP_LINK_ROUTES = setOf(
                     NotificationHelper.CHANNEL_UPDATE,
                     9500,
                     "Доступно обновление NutriLens v${release.version} 🎉",
-                    "Новая версия уже опубликована. Откройте Настройки → Обновления, чтобы скачать.",
+                    "Новая версия уже опубликована. Профиль → Обновления — скачать и установить.",
                     NotificationHelper.mainActivityPendingIntent(
-                        this@MainActivity, 9500, navigate = "settings"
+                        this@MainActivity, 9500, navigate = "settings/updates"
                     )
                 )
             } catch (_: Exception) {

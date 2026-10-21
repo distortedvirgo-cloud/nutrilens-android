@@ -95,7 +95,7 @@ private fun PhotoToolScreen(kind: PhotoToolKind, onBack: () -> Unit) {
         photos = (photos + copied).takeLast(4)
     }
 
-    val title = if (kind == PhotoToolKind.FRIDGE) "🧊 Холодильник" else "🍽️ Ресторан"
+    val title = if (kind == PhotoToolKind.FRIDGE) "Холодильник" else "Ресторан"
     val subtitle = if (kind == PhotoToolKind.FRIDGE) {
         "Сфотографируйте продукты — ИИ предложит блюда"
     } else {

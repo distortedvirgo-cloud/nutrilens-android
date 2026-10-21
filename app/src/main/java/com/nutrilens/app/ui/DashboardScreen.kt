@@ -1,6 +1,49 @@
 package com.nutrilens.app.ui
 
 import android.app.Application
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.AutoFixHigh
+import androidx.compose.material.icons.rounded.EmojiEvents
+import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.LocalFireDepartment
+import androidx.compose.material.icons.rounded.MonitorWeight
+import androidx.compose.material.icons.rounded.PhotoCamera
+import androidx.compose.material.icons.rounded.RestaurantMenu
+import androidx.compose.material.icons.rounded.StarOutline
+import androidx.compose.material.icons.rounded.Today
+import androidx.compose.material.icons.rounded.TrackChanges
+import androidx.compose.material.icons.rounded.WaterDrop
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.nutrilens.app.ui.theme.LocalReducedMotion
+import com.nutrilens.app.ui.theme.Motion
+import com.nutrilens.app.ui.theme.NutriTheme
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.CubicBezierEasing
@@ -113,8 +156,6 @@ import com.nutrilens.app.insights.getDayTotals
 import com.nutrilens.app.insights.greeting
 import com.nutrilens.app.insights.nextMealFocus
 import com.nutrilens.app.insights.waterNormaMl
-import com.nutrilens.app.ui.theme.WaterBlue
-import com.nutrilens.app.ui.theme.WaterDeep
 import com.nutrilens.app.ui.theme.macroPalette
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -211,18 +252,41 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private val _hasAnyMeals = MutableStateFlow(false)
     val hasAnyMeals: StateFlow<Boolean> = _hasAnyMeals.asStateFlow()
 
+    /** Калории по дням недели выбранной даты (Пн–Вс) — для полосы недели. */
+    private val _weekKcal = MutableStateFlow<Map<LocalDate, Double>>(emptyMap())
+    val weekKcal: StateFlow<Map<LocalDate, Double>> = _weekKcal.asStateFlow()
+
+    private suspend fun reloadSnapshot(date: LocalDate) {
+        val day = date.toString()
+        _waterMl.value = mealRepository.getWaterMl(day)
+        _workoutDone.value = mealRepository.getWorkoutDone(day)
+        _lastWeight.value = mealRepository.getLatestWeight()
+        _daysSinceLastWeight.value = weightRepository.daysSinceLastWeight()
+        val dates = mealRepository.allMealDates().toSet()
+        _streak.value = calcStreak(dates, date)
+        _hasAnyMeals.value = dates.isNotEmpty()
+        reloadWeek(date)
+    }
+
+    private suspend fun reloadWeek(date: LocalDate) {
+        val monday = date.with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY))
+        val sunday = monday.plusDays(6)
+        val meals = database.mealDao().mealsBetween(monday.toString(), sunday.toString())
+        _weekKcal.value = meals.groupBy { LocalDate.parse(it.date) }
+            .mapValues { (_, list) -> list.sumOf { it.calories } }
+    }
+
     init {
         viewModelScope.launch {
-            _selectedDate.collectLatest { date ->
-                val day = date.toString()
-                _waterMl.value = mealRepository.getWaterMl(day)
-                _workoutDone.value = mealRepository.getWorkoutDone(day)
-                _lastWeight.value = mealRepository.getLatestWeight()
-                _daysSinceLastWeight.value = weightRepository.daysSinceLastWeight()
-                val dates = mealRepository.allMealDates().toSet()
-                _streak.value = calcStreak(dates, date)
-                _hasAnyMeals.value = dates.isNotEmpty()
-            }
+            _selectedDate.collectLatest { date -> reloadSnapshot(date) }
+        }
+        // Вода/вес/тренировка из панели «+» или виджета — перечитываем снимок.
+        viewModelScope.launch {
+            com.nutrilens.app.data.DataEvents.changed.collect { reloadSnapshot(_selectedDate.value) }
+        }
+        // Блюда дня поменялись (анализ, удаление) — пересчитываем неделю.
+        viewModelScope.launch {
+            meals.collect { reloadWeek(_selectedDate.value) }
         }
     }
 
@@ -311,6 +375,8 @@ fun DashboardScreen(
     initialDate: String? = null,
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     onOpenLeaderboard: () -> Unit = {},
+    onOpenCoach: () -> Unit = {},
+    onAddMeal: () -> Unit = {},
     viewModel: DashboardViewModel = viewModel()
 ) {
     val scope = rememberCoroutineScope()
@@ -326,7 +392,7 @@ fun DashboardScreen(
     val daysSince by viewModel.daysSinceLastWeight.collectAsStateWithLifecycle()
     val workoutDone by viewModel.workoutDone.collectAsStateWithLifecycle()
     val streak by viewModel.streak.collectAsStateWithLifecycle()
-    val hasAnyMeals by viewModel.hasAnyMeals.collectAsStateWithLifecycle()
+    val weekKcal by viewModel.weekKcal.collectAsStateWithLifecycle()
     val view = LocalView.current
 
     LaunchedEffect(Unit) {
@@ -353,24 +419,48 @@ fun DashboardScreen(
         detailsMeal?.let { detailItems = viewModel.itemsForMeal(it.meal.id) }
     }
 
+    // Первое появление экрана — «лесенкой»; при прокрутке назад карточки
+    // уже не анимируются заново.
+    var introDone by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(900)
+        introDone = true
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 112.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp)
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 120.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
-            // Верх страницы — только дата: без логотипа, названия и приветствия.
-            DaySelectorRow(
-                selected = selectedDate,
-                streak = streak,
-                lastWeight = lastWeight,
-                daysSince = daysSince,
-                onShift = viewModel::shiftDay,
-                onToday = viewModel::goToday,
-                onWeighIn = { showWeightDialog = true }
-            )
+            Box(Modifier.introIn(0, introDone)) {
+                TodayHeader(
+                    selected = selectedDate,
+                    streak = streak,
+                    onToday = viewModel::goToday
+                )
+            }
         }
-        item { CaloriesHero(meals = meals, settings = settings, onLeaderboard = onOpenLeaderboard) }
+        item {
+            Box(Modifier.introIn(1, introDone)) {
+                WeekStrip(
+                    selected = selectedDate,
+                    weekKcal = weekKcal,
+                    goal = settings.dailyGoal,
+                    onSelect = viewModel::selectDay
+                )
+            }
+        }
+        item {
+            Box(Modifier.introIn(2, introDone)) {
+                HeroSummary(
+                    meals = meals,
+                    settings = settings,
+                    lastWeight = lastWeight,
+                    onLeaderboard = onOpenLeaderboard
+                )
+            }
+        }
         if (activeJobs.isNotEmpty()) {
             item {
                 ProcessingCard(
@@ -391,35 +481,47 @@ fun DashboardScreen(
                 )
             }
         }
-        item { MacrosRow(meals = meals, settings = settings, lastWeight = lastWeight) }
-        item {
-            WaterCard(
-                waterMl = waterMl,
-                lastWeight = lastWeight,
-                workoutDone = workoutDone,
-                onAddWater = {
-                    view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-                    viewModel.addWater()
-                }
-            )
+        val isToday = selectedDate == LocalDate.now()
+        if (isToday) {
+            val focus = nextMealFocus(
+                getDayTotals(meals.map { it.meal }),
+                effectiveMacroGoals(
+                    settings.proteinGoal, settings.fatGoal, settings.carbsGoal,
+                    settings.dailyGoal, lastWeight
+                )
+            ).substringBefore("\n").trim()
+            if (focus.isNotBlank()) {
+                item { Box(Modifier.introIn(3, introDone)) { CoachTip(text = focus, onClick = onOpenCoach) } }
+            }
         }
         item {
-            InsightsPanel(
-                meals = meals,
-                settings = settings,
-                waterMl = waterMl,
-                lastWeight = lastWeight,
-                workoutDone = workoutDone,
-                streak = streak,
-                hasAnyMeals = hasAnyMeals
-            )
+            Box(Modifier.introIn(4, introDone)) {
+                VitalsRow(
+                    waterMl = waterMl,
+                    waterNormMl = waterNormaMl(lastWeight, workoutDone),
+                    lastWeight = lastWeight,
+                    daysSinceWeight = daysSince,
+                    onAddWater = {
+                        view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                        viewModel.addWater()
+                    },
+                    onWeigh = { showWeightDialog = true }
+                )
+            }
         }
 
-        if (meals.isEmpty()) {
-            item { EmptyState() }
-        } else {
-            item { MealsHeader(count = meals.size) }
-            items(meals, key = { it.meal.id }) { meal ->
+        item {
+            MealsHeader(count = meals.size, kcal = meals.sumOf { it.meal.calories })
+        }
+        if (meals.isEmpty() && !isToday) {
+            item { EmptyState(today = false, onAdd = onAddMeal) }
+        }
+        val grouped = meals.groupBy { slotOf(it.meal.time) }.toSortedMap()
+        grouped.forEach { (slot, slotMeals) ->
+            item(key = "slot-${slot.name}") {
+                SlotHeader(slot = slot, kcal = slotMeals.sumOf { it.meal.calories }, modifier = Modifier.animateItem())
+            }
+            items(slotMeals, key = { it.meal.id }) { meal ->
                 MealCard(
                     meal = meal,
                     showFavorite = !isFavorite(meal.meal),
@@ -432,6 +534,16 @@ fun DashboardScreen(
                     onDelete = { deleteTarget = meal },
                     modifier = Modifier.animateItem()
                 )
+            }
+        }
+        if (isToday) {
+            val suggest = suggestedSlot(java.time.LocalTime.now(), grouped.keys)
+            if (meals.isEmpty()) {
+                item(key = "empty") { EmptyState(today = true, onAdd = onAddMeal, modifier = Modifier.animateItem()) }
+            } else if (suggest != null) {
+                item(key = "cta-${suggest.name}") {
+                    EmptySlotCta(slot = suggest, onClick = onAddMeal, modifier = Modifier.animateItem())
+                }
             }
         }
     }
@@ -461,7 +573,7 @@ fun DashboardScreen(
                 scope.launch {
                     try {
                         viewModel.correctMeal(target.meal, correction)
-                        snackbarHostState.showSnackbar("✏️ Уточнение отправлено — придёт уведомление")
+                        snackbarHostState.showSnackbar("Уточнение отправлено — придёт уведомление")
                     } catch (e: Exception) {
                         snackbarHostState.showSnackbar(
                             e.message ?: "Не удалось отправить уточнение"
@@ -539,210 +651,78 @@ private fun dateLabelRu(date: LocalDate): String {
     }
 }
 
+private fun daysWord(n: Int): String {
+    val mod100 = n % 100
+    val mod10 = n % 10
+    return when {
+        mod100 in 11..14 -> "дней"
+        mod10 == 1 -> "день"
+        mod10 in 2..4 -> "дня"
+        else -> "дней"
+    }
+}
+
+/** Компактный чип шапки: иконка + текст, 36dp высотой, нажимаемый по желанию. */
 @Composable
-private fun DaySelectorRow(
-    selected: LocalDate,
-    streak: Int,
-    lastWeight: Double?,
-    daysSince: Int?,
-    onShift: (Long) -> Unit,
-    onToday: () -> Unit,
-    onWeighIn: () -> Unit
+private fun HeaderChip(
+    icon: ImageVector,
+    iconTint: Color,
+    text: String,
+    modifier: Modifier = Modifier,
+    container: Color = MaterialTheme.colorScheme.surface,
+    textColor: Color = MaterialTheme.colorScheme.onSurface,
+    contentDescription: String? = null,
+    onClick: (() -> Unit)? = null
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = dateLabelRu(selected).replaceFirstChar { it.uppercase() },
-                style = MaterialTheme.typography.displaySmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Spacer(Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (streak > 0) {
-                    Surface(
-                        shape = RoundedCornerShape(999.dp),
-                        color = MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-                        modifier = Modifier.shadow(
-                            5.dp, RoundedCornerShape(999.dp),
-                            ambientColor = Color(0x120F172A), spotColor = Color(0x120F172A)
-                        )
-                    ) {
-                        Text(
-                            text = "🔥 $streak",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onBackground,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                        )
-                    }
-                    Spacer(Modifier.width(8.dp))
-                }
-                if (selected != LocalDate.now()) {
-                    Surface(
-                        onClick = onToday,
-                        shape = RoundedCornerShape(999.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer
-                    ) {
-                        Text(
-                            text = "Сегодня",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
-                        )
-                    }
-                }
-                Spacer(Modifier.width(8.dp))
-                // Кнопка веса всегда на виду; мигает, если 7+ дней без записи.
-                WeightChip(
-                    lastWeight = lastWeight,
-                    daysSince = daysSince,
-                    onClick = onWeighIn
-                )
-            }
-        }
-        Spacer(Modifier.width(8.dp))
-        DayPill(selected = selected, onShift = onShift)
-    }
-}
-
-/** Переключатель дня как в вебе: круглая пилюля ← дата →. */
-@Composable
-private fun DayPill(selected: LocalDate, onShift: (Long) -> Unit) {
-    val pillShape = RoundedCornerShape(999.dp)
-    Surface(
-        shape = pillShape,
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-        modifier = Modifier.shadow(
-            6.dp, pillShape,
-            ambientColor = Color(0x120F172A), spotColor = Color(0x120F172A)
-        )
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(4.dp)) {
-            DayArrow(onClick = { onShift(-1) }, contentDescription = "Предыдущий день")
-            Text(
-                text = dayShort(selected),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.padding(horizontal = 4.dp),
-                textAlign = TextAlign.Center
-            )
-            DayArrow(onClick = { onShift(1) }, contentDescription = "Следующий день")
-        }
-    }
-}
-
-/** Короткая дата дня: «24 авг». */
-private fun dayShort(date: LocalDate): String =
-    date.format(DateTimeFormatter.ofPattern("d MMM", java.util.Locale("ru", "RU")))
-
-/** Круглая кнопка дня как в вебе: bg-surface, border line/40, soft-тень. */
-@Composable
-private fun DayArrow(onClick: () -> Unit, contentDescription: String) {
-    val iconShape = CircleShape
-    Surface(
-        onClick = onClick,
-        shape = iconShape,
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-        modifier = Modifier
-            .size(40.dp)
-            .shadow(4.dp, iconShape, ambientColor = Color(0x120F172A), spotColor = Color(0x120F172A))
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                Icons.AutoMirrored.Filled.KeyboardArrowLeft.takeIf { contentDescription == "Предыдущий день" }
-                    ?: Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = contentDescription,
-                tint = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(20.dp)
-            )
-        }
-    }
-}
-
-/** Кнопка веса (всегда на виду): мигает, когда 7+ дней без записи. */
-@Composable
-private fun WeightChip(
-    lastWeight: Double?,
-    daysSince: Int?,
-    onClick: () -> Unit
-) {
-    val overdue = daysSince != null && daysSince >= 7
-    val needsWeighIn = daysSince == null || overdue
-    val label = when {
-        daysSince == null -> "⚖️ Взвеситься"
-        lastWeight != null -> "⚖️ " + "%.1f".format(lastWeight) + " кг"
-        else -> "⚖️ Взвеситься"
-    }
-    if (needsWeighIn) {
-        // Мигание: лёгкое дыхание альфой и масштабом оранжевой пилюли.
-        val t = rememberInfiniteTransition(label = "wgtPulse")
-        val alpha by t.animateFloat(
-            initialValue = 0.45f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(tween(650), RepeatMode.Reverse),
-            label = "wgtAlpha"
-        )
-        val scale by t.animateFloat(
-            initialValue = 0.97f,
-            targetValue = 1.04f,
-            animationSpec = infiniteRepeatable(tween(650), RepeatMode.Reverse),
-            label = "wgtScale"
-        )
-        val shape = RoundedCornerShape(999.dp)
-        Surface(
-            onClick = onClick,
-            shape = shape,
-            color = MaterialTheme.colorScheme.tertiary,
+    val shape = RoundedCornerShape(999.dp)
+    val content: @Composable () -> Unit = {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
-                .scale(scale)
-                .shadow(6.dp, shape, ambientColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.3f), spotColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.3f))
+                .height(36.dp)
+                .padding(start = 10.dp, end = 14.dp)
         ) {
+            Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
             Text(
-                text = label,
+                text = text,
                 style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onTertiary,
-                modifier = Modifier
-                    .padding(horizontal = 12.dp, vertical = 5.dp)
-                    .graphicsLayer { this.alpha = alpha }
+                color = textColor,
+                maxLines = 1
             )
         }
-    } else {
-        val shape = RoundedCornerShape(999.dp)
+    }
+    val semanticsModifier = if (contentDescription != null) {
+        Modifier.semantics(mergeDescendants = true) { this.contentDescription = contentDescription }
+    } else Modifier
+    if (onClick != null) {
+        val interaction = remember { MutableInteractionSource() }
         Surface(
             onClick = onClick,
+            interactionSource = interaction,
             shape = shape,
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-            modifier = Modifier.shadow(
-                5.dp, shape,
-                ambientColor = Color(0x120F172A), spotColor = Color(0x120F172A)
-            )
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
-            )
-        }
+            color = container,
+            border = BorderStroke(1.dp, NutriTheme.colors.hairline),
+            modifier = modifier
+                .then(semanticsModifier)
+                .pressScale(interaction, 0.94f)
+                .softShadow(shape, 4),
+            content = content
+        )
+    } else {
+        Surface(
+            shape = shape,
+            color = container,
+            border = BorderStroke(1.dp, NutriTheme.colors.hairline),
+            modifier = modifier
+                .then(semanticsModifier)
+                .softShadow(shape, 4),
+            content = content
+        )
     }
 }
 
 // ---------- Герой-карточка: калорийное кольцо ----------
-
-/** Кривая героя (decelerate), как в вебе. */
-private val HeroEasing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
-
-/** Градиентные пары hero (дизайн-система): изумруд; перебор — тёплый. */
-private val HeroOk = listOf(Color(0xFF059669), Color(0xFF047857))
-private val HeroWarn = listOf(Color(0xFFFB923C), Color(0xFFEA580C))
 
 // ---------- Блюдо в обработке ----------
 
@@ -758,7 +738,7 @@ private fun ProcessingCard(job: AnalysisJobEntity, extraCount: Int) {
     val dotScale by pulse.animateFloat(
         initialValue = 1f,
         targetValue = 1.35f,
-        animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
+        animationSpec = infiniteRepeatable(tween(900, easing = Motion.Standard), RepeatMode.Reverse),
         label = "dotScale"
     )
     val sweepY by pulse.animateFloat(
@@ -790,7 +770,12 @@ private fun ProcessingCard(job: AnalysisJobEntity, extraCount: Int) {
                         modifier = Modifier.fillMaxSize()
                     )
                 } else {
-                    Text("🍽️", fontSize = 24.sp, modifier = Modifier.align(Alignment.Center))
+                    Icon(
+                        Icons.Rounded.RestaurantMenu,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.align(Alignment.Center).size(24.dp)
+                    )
                 }
                 // «Лента сканирования» — бегущая полоса поверх фото.
                 Box(
@@ -800,7 +785,7 @@ private fun ProcessingCard(job: AnalysisJobEntity, extraCount: Int) {
                         .graphicsLayer { translationY = sweepY }
                         .background(
                             Brush.verticalGradient(
-                                listOf(Color.Transparent, Color(0x8010B981), Color.Transparent)
+                                listOf(Color.Transparent, NutriTheme.colors.brandFrom.copy(alpha = 0.5f), Color.Transparent)
                             )
                         )
                 )
@@ -857,7 +842,7 @@ private fun RefinementProcessingCard(job: RefinementJobEntity, extraCount: Int) 
     val dotScale by pulse.animateFloat(
         initialValue = 1f,
         targetValue = 1.35f,
-        animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
+        animationSpec = infiniteRepeatable(tween(900, easing = Motion.Standard), RepeatMode.Reverse),
         label = "dotScale"
     )
     val status = if (job.status == "RUNNING") "в обработке" else "в очереди"
@@ -875,7 +860,12 @@ private fun RefinementProcessingCard(job: RefinementJobEntity, extraCount: Int) 
                     .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)),
                 contentAlignment = Alignment.Center
             ) {
-                Text("✏️", fontSize = 24.sp)
+                Icon(
+                    Icons.Rounded.AutoFixHigh,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(24.dp)
+                )
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
@@ -935,7 +925,11 @@ private fun FailedRefinementsSection(
                         .padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("😔", fontSize = 20.sp)
+                    IconBadge(
+                        icon = Icons.Rounded.ErrorOutline,
+                        tint = MaterialTheme.colorScheme.error,
+                        size = 36
+                    )
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
                         Text(
@@ -980,421 +974,13 @@ private fun firstPhotoThumb(photoPathsJson: String): String? {
     }
 }
 
-@Composable
-private fun CaloriesHero(meals: List<MealWithImages>, settings: SettingsEntity, onLeaderboard: () -> Unit = {}) {
-    val eaten = meals.sumOf { it.meal.calories }
-    val goal = settings.dailyGoal
-    val isOver = goal > 0 && eaten > goal
-    val fraction by animateFloatAsState(
-        targetValue = if (goal > 0) (eaten / goal).toFloat().coerceIn(0f, 1f) else 0f,
-        animationSpec = tween(900, easing = HeroEasing),
-        label = "ring"
-    )
-    // Тап по карточке переключает центр кольца: съедено ↔ остаток/перебор.
-    var showRemaining by remember { mutableStateOf(false) }
-
-    // «Дыхание» кольца при достижении цели (ring-breathe из веба).
-    val infinite = rememberInfiniteTransition(label = "breathe")
-    val arcAlpha by infinite.animateFloat(
-        initialValue = 0.55f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(1600), RepeatMode.Reverse),
-        label = "arcAlpha"
-    )
-    val arcColor = if (isOver) MaterialTheme.colorScheme.tertiary
-    else MaterialTheme.colorScheme.primary
-    val trackColor = MaterialTheme.colorScheme.primaryContainer
-
-    val shape = MaterialTheme.shapes.extraLarge
-    Surface(
-        onClick = { showRemaining = !showRemaining },
-        shape = shape,
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-        modifier = Modifier
-            .fillMaxWidth()
-            .shadow(1.dp, shape, ambientColor = Color(0x1A0F172A), spotColor = Color(0x1A0F172A))
-            .shadow(12.dp, shape, ambientColor = Color(0x1A0F172A), spotColor = Color(0x1A0F172A))
-    ) {
-        Box(modifier = Modifier.fillMaxWidth()) {
-            // 🏆 к лидерборду — в углу карточки кольца, как на маркере владельца.
-            Text(
-                text = "🏆",
-                fontSize = 22.sp,
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(start = 16.dp, top = 12.dp)
-                    .clickable(onClick = onLeaderboard)
-            )
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 26.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Canvas(modifier = Modifier.size(180.dp)) {
-                        val stroke = 14.dp.toPx()
-                        val radius = (size.minDimension - stroke) / 2f
-                        val topLeft = Offset(
-                            (size.width - radius * 2) / 2f,
-                            (size.height - radius * 2) / 2f
-                        )
-                        val arcSize = Size(radius * 2, radius * 2)
-                        drawArc(
-                            color = trackColor,
-                            startAngle = 0f,
-                            sweepAngle = 360f,
-                            useCenter = false,
-                            topLeft = topLeft,
-                            size = arcSize,
-                            style = Stroke(width = stroke, cap = StrokeCap.Round)
-                        )
-                        if (fraction > 0f) {
-                            val done = fraction >= 0.999f && !isOver
-                            drawArc(
-                                color = arcColor.copy(alpha = if (done) arcAlpha else 1f),
-                                startAngle = -90f,
-                                sweepAngle = 360f * fraction,
-                                useCenter = false,
-                                topLeft = topLeft,
-                                size = arcSize,
-                                style = Stroke(width = stroke, cap = StrokeCap.Round)
-                            )
-                        }
-                    }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        if (showRemaining) {
-                            val delta = (goal - eaten).roundToInt()
-                            DisplayNumber(
-                                text = "${kotlin.math.abs(delta)}",
-                                size = 44,
-                                color = if (delta < 0) MaterialTheme.colorScheme.tertiary
-                                else MaterialTheme.colorScheme.primary
-                            )
-                            Text(
-                                text = if (isOver) "перебор ккал" else "осталось ккал",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.outline
-                            )
-                        } else {
-                            DisplayNumber(text = "${eaten.roundToInt()}", size = 44, color = MaterialTheme.colorScheme.onSurface)
-                            Text(
-                                text = "из ${goal.roundToInt()} ккал",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.outline
-                            )
-                        }
-                    }
-                }
-                Spacer(Modifier.height(14.dp))
-                Text(
-                    text = if (isOver) {
-                        "Перебор на ${(eaten - goal).roundToInt()} ккал — ничего страшного 🌿"
-                    } else {
-                        "Осталось ${(goal - eaten).roundToInt()} ккал"
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-    }
-}
-
 // ---------- Макросы ----------
-
-@Composable
-private fun MacrosRow(
-    meals: List<MealWithImages>,
-    settings: SettingsEntity,
-    lastWeight: Double?
-) {
-    val protein = meals.sumOf { it.meal.protein }
-    val fat = meals.sumOf { it.meal.fat }
-    val carbs = meals.sumOf { it.meal.carbs }
-
-    // Цели как в веб-версии: свои из настроек или расчёт от веса/калорий.
-    val goals = effectiveMacroGoals(
-        settings.proteinGoal, settings.fatGoal, settings.carbsGoal,
-        settings.dailyGoal, lastWeight
-    )
-    val palette = macroPalette()
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        MacroCard(
-            label = "Белки",
-            eaten = protein,
-            goal = goals.protein,
-            color = palette.protein,
-            modifier = Modifier.weight(1f)
-        )
-        MacroCard(
-            label = "Жиры",
-            eaten = fat,
-            goal = goals.fat,
-            color = palette.fat,
-            modifier = Modifier.weight(1f)
-        )
-        MacroCard(
-            label = "Углев.",
-            eaten = carbs,
-            goal = goals.carbs,
-            color = palette.carbs,
-            modifier = Modifier.weight(1f)
-        )
-    }
-}
-
-@Composable
-private fun MacroCard(
-    label: String,
-    eaten: Double,
-    goal: Double,
-    color: Color,
-    modifier: Modifier = Modifier
-) {
-    val fraction = if (goal > 0) (eaten / goal).toFloat().coerceIn(0f, 1f) else 0f
-    val shape = RoundedCornerShape(22.dp)
-    Surface(
-        shape = shape,
-        color = color.copy(alpha = 0.12f),
-        modifier = modifier
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = "${eaten.roundToInt()} г",
-                fontSize = 20.sp,
-                fontFamily = MaterialTheme.typography.displayLarge.fontFamily,
-                fontWeight = FontWeight.ExtraBold,
-                letterSpacing = MaterialTheme.typography.displayLarge.letterSpacing,
-                color = color
-            )
-            Spacer(Modifier.height(8.dp))
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(6.dp)
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(color.copy(alpha = 0.15f))
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(fraction)
-                        .fillMaxHeight()
-                        .clip(RoundedCornerShape(3.dp))
-                        .background(color)
-                )
-            }
-            Spacer(Modifier.height(5.dp))
-            Text(
-                text = "цель ${goal.roundToInt()} г",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.outline
-            )
-        }
-    }
-}
 
 // ---------- Вода ----------
 
-@Composable
-private fun WaterCard(
-    waterMl: Int,
-    lastWeight: Double?,
-    workoutDone: Boolean,
-    onAddWater: () -> Unit
-) {
-    val normMl = waterNormaMl(lastWeight, workoutDone)
-    val fraction = if (normMl > 0) (waterMl.toFloat() / normMl).coerceIn(0f, 1f) else 0f
-    val waterGradient = Brush.horizontalGradient(listOf(WaterBlue, WaterDeep))
-    Surface(
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surface
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Вода 💧",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Spacer(Modifier.height(6.dp))
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(12.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(WaterBlue.copy(alpha = 0.15f))
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(fraction)
-                            .height(12.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(waterGradient)
-                    )
-                }
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = "$waterMl мл из ~$normMl мл",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.outline
-                )
-            }
-            Spacer(Modifier.width(12.dp))
-            val waterInteraction = remember { MutableInteractionSource() }
-            val waterPressed by waterInteraction.collectIsPressedAsState()
-            val waterScale by animateFloatAsState(if (waterPressed) 0.94f else 1f, label = "waterPress")
-            Surface(
-                onClick = onAddWater,
-                interactionSource = waterInteraction,
-                shape = RoundedCornerShape(999.dp),
-                color = Color.Transparent,
-                modifier = Modifier
-                    .scale(waterScale)
-                    .shadow(
-                        8.dp, RoundedCornerShape(999.dp),
-                        ambientColor = WaterBlue.copy(alpha = 0.35f),
-                        spotColor = WaterBlue.copy(alpha = 0.35f)
-                    )
-            ) {
-                Box(
-                    modifier = Modifier
-                        .background(waterGradient, RoundedCornerShape(999.dp))
-                        .padding(horizontal = 16.dp, vertical = 10.dp)
-                ) {
-                    Text(
-                        text = "+250 мл",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                }
-            }
-        }
-    }
-}
-
 // ---------- Панель инсайтов (порт веб-«Ассистента») ----------
 
-@Composable
-private fun InsightsPanel(
-    meals: List<MealWithImages>,
-    settings: SettingsEntity,
-    waterMl: Int,
-    lastWeight: Double?,
-    workoutDone: Boolean,
-    streak: Int,
-    hasAnyMeals: Boolean
-) {
-    val totals = getDayTotals(meals.map { it.meal })
-    val goals = effectiveMacroGoals(
-        settings.proteinGoal, settings.fatGoal, settings.carbsGoal,
-        settings.dailyGoal, lastWeight
-    )
-    val insights = buildInsights(
-        InsightContext(
-            hour = LocalTime.now().hour,
-            totals = totals,
-            dailyGoal = settings.dailyGoal,
-            macroGoals = goals,
-            waterMl = waterMl,
-            waterNormMl = waterNormaMl(lastWeight, workoutDone),
-            streak = streak,
-            workoutDone = workoutDone,
-            hasAnyMealsEver = hasAnyMeals
-        )
-    ).take(3)
-    if (insights.isEmpty()) return
-
-    Surface(
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surface
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = "Ассистент ✨",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(Modifier.height(10.dp))
-            insights.forEach { insight ->
-                Row(modifier = Modifier.padding(vertical = 5.dp)) {
-                    Text(
-                        text = insight.emoji,
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(end = 10.dp)
-                    )
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = insight.title,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = insight.text,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-            val focus = nextMealFocus(totals, goals)
-            if (focus.isNotBlank()) {
-                Spacer(Modifier.height(6.dp))
-                val (focusTitle, focusText) = focus.split("\n", limit = 2)
-                    .let { it[0] to it.getOrElse(1) { "" } }
-                Text(
-                    text = "🎯 $focusTitle",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                if (focusText.isNotBlank()) {
-                    Text(
-                        text = focusText,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
-    }
-}
-
 // ---------- Список приёмов пищи ----------
-
-@Composable
-private fun MealsHeader(count: Int) {
-    Column(modifier = Modifier.padding(top = 4.dp)) {
-        Text(
-            text = "Приёмы пищи",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold
-        )
-        Text(
-            text = "Записей: $count",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
 
 @Composable
 private fun MealCard(
@@ -1406,91 +992,90 @@ private fun MealCard(
     modifier: Modifier = Modifier,
     refining: Boolean = false
 ) {
-    Surface(
-        onClick = onClick,
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-        modifier = modifier
-            .shadow(1.dp, MaterialTheme.shapes.large, ambientColor = Color(0x120F172A), spotColor = Color(0x120F172A))
-            .shadow(8.dp, MaterialTheme.shapes.large, ambientColor = Color(0x120F172A), spotColor = Color(0x120F172A))
-    ) {
+    val palette = macroPalette()
+    FreshCard(modifier = modifier.fillMaxWidth(), radius = 24, onClick = onClick) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 12.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
+                .padding(start = 12.dp, top = 12.dp, bottom = 12.dp, end = 2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             MealThumbnail(meal)
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = meal.meal.name,
                     style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Text(
-                    text = meal.meal.time,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.outline
-                )
                 Spacer(Modifier.height(2.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = meal.meal.time,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    HealthBadge(score = healthScoreOf(meal.meal))
+                }
+                Spacer(Modifier.height(6.dp))
                 if (refining) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(11.dp),
+                            modifier = Modifier.size(12.dp),
                             strokeWidth = 1.5.dp,
                             color = MaterialTheme.colorScheme.primary
                         )
-                        Spacer(Modifier.width(5.dp))
+                        Spacer(Modifier.width(6.dp))
                         Text(
                             text = "Уточняем правку…",
                             style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.Medium,
+                            fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.primary
                         )
                     }
                 } else {
-                    Text(
-                        text = "Б ${meal.meal.protein.roundToInt()} · Ж ${meal.meal.fat.roundToInt()} · " +
-                            "У ${meal.meal.carbs.roundToInt()}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.outline
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        MacroDot("Б", meal.meal.protein, palette.protein)
+                        Spacer(Modifier.width(10.dp))
+                        MacroDot("Ж", meal.meal.fat, palette.fat)
+                        Spacer(Modifier.width(10.dp))
+                        MacroDot("У", meal.meal.carbs, palette.carbs)
+                    }
                 }
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text(
                     text = "${meal.meal.calories.roundToInt()}",
                     style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
                     text = "ккал",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.outline
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                HealthBadge(score = healthScoreOf(meal.meal))
             }
-            Spacer(Modifier.width(4.dp))
             Column {
                 if (showFavorite) {
                     IconButton(onClick = onFavorite) {
                         Icon(
-                            imageVector = Icons.Filled.StarBorder,
+                            imageVector = Icons.Rounded.StarOutline,
                             contentDescription = "В избранное",
-                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f)
+                            tint = NutriTheme.colors.warnTo,
+                            modifier = Modifier.size(22.dp)
                         )
                     }
                 }
                 IconButton(onClick = onDelete) {
                     Icon(
-                        imageVector = Icons.Filled.Delete,
+                        imageVector = Icons.Outlined.DeleteOutline,
                         contentDescription = "Удалить",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(22.dp)
                     )
                 }
             }
@@ -1498,37 +1083,60 @@ private fun MealCard(
     }
 }
 
+/** Макрос в строке блюда: цветная точка + «Б 24». Цвет — не единственный носитель смысла. */
+@Composable
+private fun MacroDot(letter: String, grams: Double, color: Color) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier
+                .size(7.dp)
+                .background(color, CircleShape)
+        )
+        Spacer(Modifier.width(4.dp))
+        Text(
+            text = "$letter ${grams.roundToInt()}",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
 @Composable
 private fun MealThumbnail(meal: MealWithImages) {
     val photo = meal.images.firstOrNull { it.kind == "THUMB" }
         ?: meal.images.firstOrNull { it.kind == "FULL" }
-    val shape = RoundedCornerShape(16.dp)
+    val shape = RoundedCornerShape(18.dp)
     if (photo != null) {
         AsyncImage(
             model = File(photo.path),
             contentDescription = meal.meal.name,
             contentScale = ContentScale.Crop,
             modifier = Modifier
-                .size(64.dp)
+                .size(62.dp)
                 .clip(shape)
-                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f), shape)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
         )
     } else {
         Box(
             modifier = Modifier
-                .size(64.dp)
+                .size(62.dp)
                 .clip(shape)
                 .background(
                     Brush.linearGradient(
                         listOf(
                             MaterialTheme.colorScheme.primaryContainer,
-                            MaterialTheme.colorScheme.surface
+                            MaterialTheme.colorScheme.secondaryContainer
                         )
                     )
                 ),
             contentAlignment = Alignment.Center
         ) {
-            Text("🍽️", fontSize = 26.sp)
+            Icon(
+                Icons.Rounded.RestaurantMenu,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.size(26.dp)
+            )
         }
     }
 }
@@ -1561,8 +1169,8 @@ private fun healthScoreOf(meal: MealEntity): Int {
 
 @Composable
 private fun healthBandColor(score: Int): Color = when {
-    score >= 75 -> MaterialTheme.colorScheme.primary
-    score >= 50 -> WaterBlue
+    score >= 75 -> NutriTheme.colors.success
+    score >= 50 -> NutriTheme.colors.waterDeep
     score >= 25 -> MaterialTheme.colorScheme.tertiary
     else -> MaterialTheme.colorScheme.error
 }
@@ -1574,54 +1182,80 @@ private fun healthBandLabel(score: Int): String = when {
     else -> "Тяжёлое блюдо"
 }
 
+/** Компактная оценка состава: тонированная пилюля «● 82». */
 @Composable
 private fun HealthBadge(score: Int) {
-    Box(
+    val color = healthBandColor(score)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
-            .padding(top = 2.dp)
-            .size(22.dp)
-            .clip(CircleShape)
-            .background(healthBandColor(score)),
-        contentAlignment = Alignment.Center
+            .clip(RoundedCornerShape(999.dp))
+            .background(color.copy(alpha = if (NutriTheme.colors.isDark) 0.2f else 0.12f))
+            .padding(horizontal = 7.dp, vertical = 2.dp)
+            .semantics(mergeDescendants = true) {
+                contentDescription = "Оценка состава $score из 100"
+            }
     ) {
+        Box(Modifier.size(6.dp).background(color, CircleShape))
+        Spacer(Modifier.width(4.dp))
         Text(
             text = "$score",
-            color = Color.White,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold
+            color = color,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.ExtraBold
         )
     }
 }
 
-// ---------- Диалог деталей ----------
+// ---------- Детали блюда (нижний лист) ----------
 
 /** Оценка состава: счёт 0–100 с цветом зоны, подписью и нейтральной заметкой ИИ. */
 @Composable
 private fun MealHealthSection(score: Int, note: String?) {
-    Spacer(Modifier.height(8.dp))
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(
-            modifier = Modifier
-                .size(12.dp)
-                .clip(CircleShape)
-                .background(healthBandColor(score))
-        )
-        Spacer(Modifier.width(6.dp))
-        Text(
-            text = "Оценка состава: $score/100 · ${healthBandLabel(score)}",
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium
-        )
-    }
-    if (!note.isNullOrBlank()) {
-        Text(
-            text = note,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+    val color = healthBandColor(score)
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = color.copy(alpha = if (NutriTheme.colors.isDark) 0.16f else 0.09f),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "$score",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = color
+                )
+                Text(
+                    text = "/100",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = healthBandLabel(score),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            if (!note.isNullOrBlank()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = note,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     }
 }
 
+/**
+ * Детали блюда — нижний лист вместо диалога: крупное фото, КБЖУ плашками,
+ * продукты, мысли ИИ и действия внизу. Лист тянется жестом и закрывается свайпом.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MealDetailsDialog(
     meal: MealWithImages,
@@ -1632,34 +1266,81 @@ private fun MealDetailsDialog(
     onCorrect: () -> Unit
 ) {
     val m = meal.meal
+    val palette = macroPalette()
     // Уточнение доступно только для сегодняшних и вчерашних приёмов пищи:
     // позже правки перестают быть точными (а фото могут быть уже не актуальны).
     val canCorrect = (m.date == LocalDate.now().toString() ||
         m.date == LocalDate.now().minusDays(1).toString()) && !refining
-    AlertDialog(
+    val photo = meal.images.firstOrNull { it.kind == "FULL" }
+        ?: meal.images.firstOrNull { it.kind == "THUMB" }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
         onDismissRequest = onClose,
-        title = { Text(m.name) },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                Text(
-                    text = "${m.time} · ${m.calories.roundToInt()} ккал",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp)
+        ) {
+            if (photo != null) {
+                AsyncImage(
+                    model = File(photo.path),
+                    contentDescription = m.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(220.dp)
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                 )
-                Text(
-                    text = "Б ${m.protein.roundToInt()} · Ж ${m.fat.roundToInt()} · У ${m.carbs.roundToInt()} г",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                MealHealthSection(score = healthScoreOf(m), note = m.healthNote)
-                Spacer(Modifier.height(8.dp))
-                if (items.isNotEmpty()) {
-                    Text("Продукты", style = MaterialTheme.typography.titleSmall)
-                    items.forEach { item ->
-                        Column(Modifier.padding(vertical = 4.dp)) {
+                Spacer(Modifier.height(16.dp))
+            }
+            Text(
+                text = m.name,
+                style = MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = m.time,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(16.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                NutrientTile("ккал", m.calories, MaterialTheme.colorScheme.primary, Modifier.weight(1.2f))
+                NutrientTile("белки", m.protein, palette.protein, Modifier.weight(1f))
+                NutrientTile("жиры", m.fat, palette.fat, Modifier.weight(1f))
+                NutrientTile("углев.", m.carbs, palette.carbs, Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(12.dp))
+            MealHealthSection(score = healthScoreOf(m), note = m.healthNote)
+            if (items.isNotEmpty()) {
+                Spacer(Modifier.height(20.dp))
+                SectionTitle("Продукты")
+                items.forEachIndexed { i, item ->
+                    if (i > 0) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 10.dp)
+                                .height(1.dp)
+                                .background(NutriTheme.colors.hairline)
+                        )
+                    }
+                    Row(verticalAlignment = Alignment.Top) {
+                        Column(Modifier.weight(1f)) {
                             Text(
-                                text = "${item.name} — ${item.weightG.roundToInt()} г, " +
-                                    "${item.calories.roundToInt()} ккал",
-                                style = MaterialTheme.typography.bodyMedium
+                                text = item.name,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                             if (item.breakdown.isNotBlank()) {
                                 Text(
@@ -1669,41 +1350,89 @@ private fun MealDetailsDialog(
                                 )
                             }
                         }
+                        Spacer(Modifier.width(12.dp))
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                text = "${item.calories.roundToInt()} ккал",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "${item.weightG.roundToInt()} г",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
-                if (m.aiThoughts.isNotBlank()) {
-                    Spacer(Modifier.height(8.dp))
-                    Text("Мысли ИИ", style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        text = m.aiThoughts,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onClose) { Text("Закрыть") }
-        },
-        dismissButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (canCorrect) {
-                    TextButton(onClick = onCorrect) { Text("Поправить ✏️") }
-                } else if (refining) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+            if (m.aiThoughts.isNotBlank()) {
+                Spacer(Modifier.height(20.dp))
+                SectionTitle("Мысли ИИ")
+                Text(
+                    text = m.aiThoughts,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.height(24.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                SoftButton(text = "Изменить", onClick = onEdit, modifier = Modifier.weight(1f))
+                when {
+                    canCorrect -> GlowButton(
+                        text = "Поправить",
+                        onClick = onCorrect,
+                        icon = Icons.Rounded.AutoFixHigh,
+                        height = 52,
+                        modifier = Modifier.weight(1f)
+                    )
+                    refining -> Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(52.dp)
+                    ) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(13.dp),
+                            modifier = Modifier.size(16.dp),
                             strokeWidth = 2.dp,
                             color = MaterialTheme.colorScheme.primary
                         )
-                        Spacer(Modifier.width(6.dp))
-                        Text("Уточняем…", style = MaterialTheme.typography.labelLarge)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "Уточняем…",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     }
+                    else -> Unit
                 }
-                TextButton(onClick = onEdit) { Text("Изменить") }
             }
         }
-    )
+    }
+}
+
+/** Плашка нутриента в листе деталей: крупное число, подпись, цветной акцент. */
+@Composable
+private fun NutrientTile(label: String, value: Double, color: Color, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(18.dp))
+            .background(color.copy(alpha = if (NutriTheme.colors.isDark) 0.16f else 0.09f))
+            .padding(vertical = 12.dp, horizontal = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "${value.roundToInt()}",
+            style = MaterialTheme.typography.titleLarge,
+            color = color
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
 }
 
 // ---------- Диалог уточнения блюда («Поправить») ----------
@@ -1888,45 +1617,620 @@ private fun WeightDialog(onConfirm: (Double) -> Unit, onDismiss: () -> Unit) {
 
 // ---------- Заглушка пустого дня ----------
 
+/** Ступенчатое появление только во время первого показа экрана. */
 @Composable
-private fun EmptyState() {
-    Surface(
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surface
+private fun Modifier.introIn(index: Int, introDone: Boolean): Modifier =
+    if (introDone) this else this.staggeredIn(index)
+
+// ---------- «Сегодня»: шапка, неделя, сводка ----------
+
+/** Шапка: день недели + крупная дата, серия и возврат к «сегодня». */
+@Composable
+private fun TodayHeader(
+    selected: LocalDate,
+    streak: Int,
+    onToday: () -> Unit
+) {
+    val isToday = selected == LocalDate.now()
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.weight(1f)) {
+            TinyLabel(
+                selected.format(DateTimeFormatter.ofPattern("EEEE, d MMMM", java.util.Locale("ru", "RU")))
+            )
+            Spacer(Modifier.height(2.dp))
+            AnimatedContent(
+                targetState = selected,
+                transitionSpec = {
+                    val dir = if (targetState > initialState) 1 else -1
+                    (slideInHorizontally(tween(Motion.Medium, easing = Motion.Emphasized)) { dir * it / 3 } +
+                        fadeIn(tween(Motion.Medium))) togetherWith
+                        (slideOutHorizontally(tween(Motion.Short, easing = Motion.Exit)) { -dir * it / 3 } +
+                            fadeOut(tween(Motion.Short)))
+                },
+                label = "dayTitle"
+            ) { date ->
+                Text(
+                    text = dateLabelRu(date).replaceFirstChar { it.uppercase() },
+                    style = MaterialTheme.typography.displaySmall,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+            }
+        }
+        if (streak > 0) {
+            HeaderChip(
+                icon = Icons.Rounded.LocalFireDepartment,
+                iconTint = NutriTheme.colors.warnTo,
+                text = "$streak",
+                container = MaterialTheme.colorScheme.tertiaryContainer,
+                textColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                contentDescription = "Серия: $streak ${daysWord(streak)} подряд"
+            )
+            Spacer(Modifier.width(8.dp))
+        }
+        AnimatedVisibility(
+            visible = !isToday,
+            enter = fadeIn(tween(Motion.Medium)) + scaleIn(Motion.press(), initialScale = 0.8f),
+            exit = fadeOut(tween(Motion.Short)) + scaleOut(tween(Motion.Short), targetScale = 0.8f)
+        ) {
+            HeaderChip(
+                icon = Icons.Rounded.Today,
+                iconTint = MaterialTheme.colorScheme.onPrimaryContainer,
+                text = "Сегодня",
+                container = MaterialTheme.colorScheme.primaryContainer,
+                textColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                onClick = onToday
+            )
+        }
+    }
+}
+
+private val WEEK_LABELS = arrayOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
+
+/**
+ * Полоса недели: у каждого дня мини-кольцо выполнения плана (изумруд — в цели,
+ * янтарь — перебор). Тап — открыть день; смахивание влево/вправо — соседняя неделя.
+ */
+@Composable
+private fun WeekStrip(
+    selected: LocalDate,
+    weekKcal: Map<LocalDate, Double>,
+    goal: Double,
+    onSelect: (LocalDate) -> Unit
+) {
+    val monday = selected.with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY))
+    val today = LocalDate.now()
+    val c = NutriTheme.colors
+    val haptics = LocalHapticFeedback.current
+    var dragTotal by remember { mutableStateOf(0f) }
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .pointerInput(selected) {
+                detectHorizontalDragGestures(
+                    onDragStart = { dragTotal = 0f },
+                    onDragEnd = {
+                        val threshold = 60.dp.toPx()
+                        if (dragTotal > threshold) onSelect(selected.minusDays(7))
+                        else if (dragTotal < -threshold && selected.plusDays(7) <= today) onSelect(selected.plusDays(7))
+                    },
+                    onHorizontalDrag = { _, delta -> dragTotal += delta }
+                )
+            }
     ) {
+        for (i in 0 until 7) {
+            val date = monday.plusDays(i.toLong())
+            val isSel = date == selected
+            val future = date > today
+            val kcal = weekKcal[date] ?: 0.0
+            val fraction by animateFloatAsState(
+                if (goal > 0) (kcal / goal).toFloat().coerceIn(0f, 1f) else 0f,
+                tween(Motion.ExtraLong, easing = Motion.Emphasized),
+                label = "dayRing"
+            )
+            val over = goal > 0 && kcal > goal
+            val bg by animateColorAsState(
+                if (isSel) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                tween(Motion.Medium),
+                label = "dayBg"
+            )
+            val track = MaterialTheme.colorScheme.surfaceContainerHigh
+            val ring = if (over) c.warnTo else c.brandFrom
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(bg)
+                    .then(
+                        if (future) Modifier else Modifier.clickable {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onSelect(date)
+                        }
+                    )
+                    .padding(vertical = 8.dp)
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = "${WEEK_LABELS[i]} ${date.dayOfMonth}: ${kcal.roundToInt()} ккал"
+                    }
+            ) {
+                Text(
+                    WEEK_LABELS[i],
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (isSel) MaterialTheme.colorScheme.onPrimaryContainer
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(6.dp))
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(36.dp)) {
+                    Canvas(Modifier.fillMaxSize()) {
+                        val stroke = 3.5.dp.toPx()
+                        val inset = stroke / 2f
+                        val arc = Size(size.width - stroke, size.height - stroke)
+                        drawArc(track, 0f, 360f, false, Offset(inset, inset), arc, style = Stroke(stroke))
+                        if (fraction > 0f) {
+                            drawArc(
+                                ring, -90f, 360f * fraction, false, Offset(inset, inset), arc,
+                                style = Stroke(stroke, cap = StrokeCap.Round)
+                            )
+                        }
+                    }
+                    Text(
+                        "${date.dayOfMonth}",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = when {
+                            future -> MaterialTheme.colorScheme.outline
+                            date == today -> MaterialTheme.colorScheme.primary
+                            else -> MaterialTheme.colorScheme.onSurface
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Сводка дня: компактное кольцо калорий + «осталось» и полосы БЖУ рядом.
+ * Тап по кольцу переключает «съедено ↔ осталось», кубок — лидерборд.
+ */
+@Composable
+private fun HeroSummary(
+    meals: List<MealWithImages>,
+    settings: SettingsEntity,
+    lastWeight: Double?,
+    onLeaderboard: () -> Unit
+) {
+    val eaten = meals.sumOf { it.meal.calories }
+    val goal = settings.dailyGoal
+    val isOver = goal > 0 && eaten > goal
+    val c = NutriTheme.colors
+    val palette = macroPalette()
+    val goals = effectiveMacroGoals(
+        settings.proteinGoal, settings.fatGoal, settings.carbsGoal, settings.dailyGoal, lastWeight
+    )
+    val fraction by animateFloatAsState(
+        if (goal > 0) (eaten / goal).toFloat().coerceIn(0f, 1f) else 0f,
+        tween(Motion.ExtraLong + 300, easing = Motion.Emphasized),
+        label = "ring"
+    )
+    val eatenShown by animateFloatAsState(
+        eaten.toFloat(), tween(Motion.ExtraLong, easing = Motion.Emphasized), label = "eatenCount"
+    )
+    val arcFrom = if (isOver) c.warnFrom else c.brandFrom
+    val arcTo = if (isOver) c.warnTo else c.brandTo
+    val track = MaterialTheme.colorScheme.surfaceContainerHigh
+
+    FreshCard(Modifier.fillMaxWidth(), radius = 28) {
+        Box(Modifier.fillMaxWidth()) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(18.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(132.dp)) {
+                    Canvas(Modifier.fillMaxSize()) {
+                        val stroke = 12.dp.toPx()
+                        val radius = (size.minDimension - stroke) / 2f
+                        val topLeft = Offset(center.x - radius, center.y - radius)
+                        val arcSize = Size(radius * 2, radius * 2)
+                        drawArc(track, 0f, 360f, false, topLeft, arcSize, style = Stroke(stroke))
+                        if (fraction > 0f) {
+                            rotate(-90f) {
+                                drawArc(
+                                    brush = Brush.sweepGradient(
+                                        0f to arcFrom,
+                                        fraction.coerceIn(0.01f, 0.99f) to arcTo,
+                                        1f to arcTo,
+                                        center = center
+                                    ),
+                                    startAngle = 0f,
+                                    sweepAngle = 360f * fraction,
+                                    useCenter = false,
+                                    topLeft = topLeft,
+                                    size = arcSize,
+                                    style = Stroke(stroke, cap = StrokeCap.Round)
+                                )
+                                drawCircle(arcFrom, radius = stroke / 2f, center = Offset(center.x + radius, center.y))
+                            }
+                        }
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        DisplayNumber("${eatenShown.roundToInt()}", size = 30, color = MaterialTheme.colorScheme.onSurface)
+                        Text(
+                            "из ${goal.roundToInt()} ккал",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Spacer(Modifier.width(18.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Column {
+                        TinyLabel(if (isOver) "Перебор" else "Осталось")
+                        Text(
+                            "${kotlin.math.abs(goal - eaten).roundToInt()} ккал",
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = if (isOver) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    MacroBar("Белки", meals.sumOf { it.meal.protein }, goals.protein, palette.protein)
+                    MacroBar("Жиры", meals.sumOf { it.meal.fat }, goals.fat, palette.fat)
+                    MacroBar("Углеводы", meals.sumOf { it.meal.carbs }, goals.carbs, palette.carbs)
+                }
+            }
+            Surface(
+                onClick = onLeaderboard,
+                shape = CircleShape,
+                color = Color.Transparent,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(4.dp)
+                    .size(44.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Rounded.EmojiEvents,
+                        contentDescription = "Лидерборд",
+                        tint = c.warnTo,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Полоса макроса: подпись, «съедено / цель», заполнение с пружинкой. */
+@Composable
+private fun MacroBar(label: String, value: Double, goal: Double, color: Color) {
+    val fraction by animateFloatAsState(
+        if (goal > 0) (value / goal).toFloat().coerceIn(0f, 1f) else 0f,
+        tween(Motion.ExtraLong, easing = Motion.Emphasized),
+        label = "macroBar"
+    )
+    Column(
+        Modifier.semantics(mergeDescendants = true) {
+            contentDescription = "$label: ${value.roundToInt()} из ${goal.roundToInt()} грамм"
+        }
+    ) {
+        Row(Modifier.fillMaxWidth()) {
+            Text(
+                label,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                "${value.roundToInt()} / ${goal.roundToInt()} г",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(6.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .background(color.copy(alpha = if (NutriTheme.colors.isDark) 0.2f else 0.15f))
+        ) {
+            Box(
+                Modifier
+                    .fillMaxWidth(fraction)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(color)
+            )
+        }
+    }
+}
+
+/** Одна строка совета коуча — ведёт в «Коуч», где подробности и инструменты. */
+@Composable
+private fun CoachTip(text: String, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    val shape = RoundedCornerShape(20.dp)
+    Surface(
+        onClick = onClick,
+        interactionSource = interaction,
+        shape = shape,
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = if (NutriTheme.colors.isDark) 0.55f else 0.8f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .pressScale(interaction, 0.98f)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)
+        ) {
+            Icon(
+                Icons.Rounded.AutoAwesome,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(22.dp)
+            )
+            Spacer(Modifier.width(12.dp))
+            Text(
+                text,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f)
+            )
+            Icon(
+                Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+/** Вода и вес — две компактные плитки в ряд. */
+@Composable
+private fun VitalsRow(
+    waterMl: Int,
+    waterNormMl: Int,
+    lastWeight: Double?,
+    daysSinceWeight: Int?,
+    onAddWater: () -> Unit,
+    onWeigh: () -> Unit
+) {
+    val c = NutriTheme.colors
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+        val waterFraction by animateFloatAsState(
+            if (waterNormMl > 0) (waterMl.toFloat() / waterNormMl).coerceIn(0f, 1f) else 0f,
+            Motion.settle(),
+            label = "waterFill"
+        )
+        FreshCard(Modifier.weight(1f), radius = 24, onClick = onAddWater) {
+            Column(Modifier.padding(14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconBadge(Icons.Rounded.WaterDrop, c.water, size = 34)
+                    Spacer(Modifier.weight(1f))
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(34.dp)
+                            .clip(CircleShape)
+                            .background(c.waterGradient)
+                    ) {
+                        Icon(Icons.Rounded.Add, contentDescription = "Добавить 250 мл воды", tint = Color.White, modifier = Modifier.size(18.dp))
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "$waterMl мл",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    "из $waterNormMl мл",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(c.water.copy(alpha = 0.18f))
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth(waterFraction)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(c.waterGradient)
+                    )
+                }
+            }
+        }
+        val overdue = daysSinceWeight == null || daysSinceWeight >= 7
+        FreshCard(Modifier.weight(1f), radius = 24, onClick = onWeigh) {
+            Column(Modifier.padding(14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconBadge(Icons.Rounded.MonitorWeight, if (overdue) c.warnTo else MaterialTheme.colorScheme.secondary, size = 34)
+                    Spacer(Modifier.weight(1f))
+                    if (overdue) {
+                        Box(Modifier.size(10.dp).clip(CircleShape).background(c.warnTo))
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    lastWeight?.let { "%.1f кг".format(it) } ?: "— кг",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    when {
+                        daysSinceWeight == null -> "Записать вес"
+                        daysSinceWeight == 0 -> "сегодня"
+                        overdue -> "пора взвеситься"
+                        else -> "$daysSinceWeight ${daysWord(daysSinceWeight)} назад"
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (overdue) c.warnTo else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+// ---------- Приёмы пищи по слотам ----------
+
+/** Слот дня по времени записи; порядок enum — порядок на экране. */
+private enum class MealSlot(val title: String, val cta: String) {
+    BREAKFAST("Завтрак", "Сфотографировать завтрак"),
+    LUNCH("Обед", "Сфотографировать обед"),
+    SNACK("Перекус", "Добавить перекус"),
+    DINNER("Ужин", "Сфотографировать ужин")
+}
+
+private fun slotOf(time: String): MealSlot {
+    val hour = time.substringBefore(":").toIntOrNull() ?: 12
+    return when {
+        hour < 11 -> MealSlot.BREAKFAST
+        hour < 16 -> MealSlot.LUNCH
+        hour < 18 -> MealSlot.SNACK
+        else -> MealSlot.DINNER
+    }
+}
+
+/** Какой основной приём пора добавить сейчас (null — всё уже записано). */
+private fun suggestedSlot(now: java.time.LocalTime, filled: Set<MealSlot>): MealSlot? {
+    val current = slotOf("%02d:00".format(now.hour))
+    val main = when (current) {
+        MealSlot.SNACK -> MealSlot.SNACK
+        else -> current
+    }
+    return main.takeIf { it !in filled }
+}
+
+@Composable
+private fun MealsHeader(count: Int, kcal: Double) {
+    Row(
+        verticalAlignment = Alignment.Bottom,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 6.dp)
+    ) {
+        Text(
+            "Приёмы пищи",
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.weight(1f)
+        )
+        if (count > 0) {
+            Text(
+                "$count · ${kcal.roundToInt()} ккал",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun SlotHeader(slot: MealSlot, kcal: Double, modifier: Modifier = Modifier) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(start = 4.dp, top = 4.dp)
+    ) {
+        TinyLabel(slot.title, Modifier.weight(1f))
+        TinyLabel("${kcal.roundToInt()} ккал")
+    }
+}
+
+/** Пустой слот текущего приёма: пунктирная плашка с камерой. */
+@Composable
+private fun EmptySlotCta(slot: MealSlot, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val interaction = remember { MutableInteractionSource() }
+    val shape = RoundedCornerShape(22.dp)
+    Surface(
+        onClick = onClick,
+        interactionSource = interaction,
+        shape = shape,
+        color = Color.Transparent,
+        border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
+        modifier = modifier
+            .fillMaxWidth()
+            .pressScale(interaction, 0.98f)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(10.dp)) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer)
+            ) {
+                Icon(
+                    Icons.Rounded.PhotoCamera,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            Spacer(Modifier.width(14.dp))
+            Column {
+                TinyLabel(slot.title)
+                Text(
+                    slot.cta,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+/** Пустой день: сегодня — призыв сфотографировать, прошлый день — «записей нет». */
+@Composable
+private fun EmptyState(today: Boolean, onAdd: () -> Unit, modifier: Modifier = Modifier) {
+    FreshCard(modifier.fillMaxWidth(), onClick = if (today) onAdd else null) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 32.dp, horizontal = 16.dp),
+                .padding(vertical = 28.dp, horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Box(
                 modifier = Modifier
                     .size(64.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primaryContainer),
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(if (today) NutriTheme.colors.brandGradient else SolidColor(MaterialTheme.colorScheme.surfaceContainerHigh)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = Icons.Filled.Restaurant,
+                    if (today) Icons.Rounded.PhotoCamera else Icons.Rounded.RestaurantMenu,
                     contentDescription = null,
-                    modifier = Modifier.size(32.dp),
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                    modifier = Modifier.size(30.dp),
+                    tint = if (today) NutriTheme.colors.onBrand else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(14.dp))
             Text(
-                text = "Записей пока нет",
+                if (today) "Сфотографируй первый приём пищи" else "В этот день записей нет",
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = "Нажмите «+» внизу, чтобы сфотографировать первый приём пищи 🍽️",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center
             )
+            if (today) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "ИИ посчитает калории и БЖУ в фоне",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+            }
         }
     }
 }

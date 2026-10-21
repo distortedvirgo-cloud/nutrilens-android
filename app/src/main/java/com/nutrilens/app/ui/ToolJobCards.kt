@@ -1,5 +1,12 @@
 package com.nutrilens.app.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.ui.draw.clip
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -34,12 +41,20 @@ fun ToolJobProcessingCard(title: String, modifier: Modifier = Modifier) {
                 .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(13.dp),
-                strokeWidth = 2.dp,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(Modifier.width(12.dp))
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer)
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
+            Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(
                     title,
@@ -72,8 +87,12 @@ fun ToolJobErrorCard(
     FreshCard(modifier) {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("😔", fontSize = 20.sp)
-                Spacer(Modifier.width(10.dp))
+                IconBadge(
+                    icon = Icons.Rounded.ErrorOutline,
+                    tint = MaterialTheme.colorScheme.error,
+                    size = 36
+                )
+                Spacer(Modifier.width(12.dp))
                 Text(
                     title,
                     style = MaterialTheme.typography.titleSmall,

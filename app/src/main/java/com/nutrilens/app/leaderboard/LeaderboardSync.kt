@@ -40,7 +40,10 @@ class LeaderboardSync(context: Context) {
         .build()
 
     /**
-     * Мержит сегодняшние ккал/цель в свой файл (хранит скользящее окно 35 дней) и PUT-ит.
+     * Мержит сегодняшние ккал/цель в свой файл data/p_<id>.json (скользящее окно
+     * 35 дней) и PUT-ит. Перед этим один раз на ник сливает старые файлы
+     * data/<ник>.json без id (текущий ник и прошлый) и удаляет их — так игрок,
+     * сменивший ник, не появляется в таблице дважды.
      * Ник пуст или BuildConfig-конфиги пусты — no-op, вернуть false.
      */
     suspend fun pushOwn(): Boolean {
@@ -53,29 +56,55 @@ class LeaderboardSync(context: Context) {
                 val settings = SettingsRepository(db.settingsDao()).get()
                 val nickname = settings.leaderboardNickname.trim()
                 if (nickname.isEmpty()) return@withContext false
+                val playerId = PlayerIdentity.id(appContext)
+                val ownPath = "p_$playerId"
 
                 // Наш день: сумма ккал за сегодня + цель из настроек.
                 val today = LocalDate.now().toString()
                 val calories = db.mealDao().mealsBetween(today, today).sumOf { it.calories }
 
+                // Старые файлы по нику, которые ещё не слиты.
+                val legacyNames = listOfNotNull(nickname, PlayerIdentity.lastPushedNickname(appContext))
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+                    .distinct()
+                    .filter { it !in PlayerIdentity.absorbed(appContext) }
+                val legacy = legacyNames.mapNotNull { name ->
+                    runCatching { getFile(name) }.getOrNull()?.let { (sha, entry) ->
+                        // Чужой файл с тем же ником (у него есть другой id) — не трогаем.
+                        if (entry.id.isNotEmpty() && entry.id != playerId) null
+                        else Triple(name, sha, entry)
+                    }
+                }
+
                 // 409 — файл перезаписали между нашим GET и PUT (в т.ч. параллельный
-                // пуш самого приложения: стартовый + «Обновить» на экране).
-                // Один раз перечитываем sha и пробуем снова.
+                // пуш самого приложения). Один раз перечитываем sha и пробуем снова.
                 var lastError: IOException? = null
                 repeat(2) { attempt ->
                     try {
-                        // Текущий файл (если есть): нужен и старый контент, и sha для PUT.
-                        val existing = getOwnFile(nickname)
-                        val previous = existing?.second ?: LeaderboardEntry(nickname = nickname)
-                        val days = previous.days + (today to LeaderboardDay(calories, settings.dailyGoal))
+                        val existing = getFile(ownPath)
+                        val previous = existing?.second ?: LeaderboardEntry(id = playerId, nickname = nickname)
+                        // Дни из старых файлов — только там, где в нашем файле дня нет.
+                        val merged = legacy.fold(previous.days) { acc, (_, _, entry) -> entry.days + acc }
+                        val days = merged + (today to LeaderboardDay(calories, settings.dailyGoal))
                         val entry = previous.copy(
+                            id = playerId,
                             nickname = nickname,
-                            // Скользящее окно: ключи «yyyy-MM-dd» сортируются как строки —
-                            // оставляем последние 35 дней.
+                            // Ключи «yyyy-MM-dd» сортируются как строки — последние 35 дней.
                             days = days.toSortedMap().toList().takeLast(MAX_DAYS).toMap(),
                             updatedAt = System.currentTimeMillis()
                         )
-                        put(nickname, mealJson.encodeToString(entry), existing?.first)
+                        put(ownPath, mealJson.encodeToString(entry), existing?.first)
+                        // Своё сохранено — теперь можно убрать старые файлы по нику.
+                        legacy.forEach { (name, sha, _) ->
+                            runCatching { delete(name, sha) }
+                                .onSuccess { PlayerIdentity.markAbsorbed(appContext, name) }
+                                .onFailure { Log.w(TAG, "Не удалось удалить старый файл $name: ${it.message}") }
+                        }
+                        // Ники без старого файла тоже помечаем — больше не проверяем.
+                        legacyNames.filter { name -> legacy.none { it.first == name } }
+                            .forEach { PlayerIdentity.markAbsorbed(appContext, it) }
+                        PlayerIdentity.setLastPushedNickname(appContext, nickname)
                         return@withContext true
                     } catch (e: IOException) {
                         lastError = e
@@ -106,7 +135,7 @@ class LeaderboardSync(context: Context) {
                 val body = get(listUrl) ?: return@withContext emptyList()
                 val files = mealJson.decodeFromString<List<GitHubContentDto>>(body)
                     .filter { it.type == "file" && it.name.endsWith(".json") }
-                files.mapNotNull { file ->
+                val all = files.mapNotNull { file ->
                     runCatching {
                         // GET файла возвращает КОНВЕРТ Contents API (name/sha/content),
                         // сама запись лежит в content в base64: декод конверта как записи
@@ -121,6 +150,7 @@ class LeaderboardSync(context: Context) {
                         )
                     }.getOrNull()
                 }
+                LeaderboardMath.dedupe(all)
             } catch (e: Exception) {
                 Log.w(TAG, "Чтение лидерборда не удалось: ${e.message}")
                 emptyList()
@@ -128,9 +158,9 @@ class LeaderboardSync(context: Context) {
         }
     }
 
-    /** GET своего файла: пара (sha, запись); null — файла ещё нет (404). */
-    private fun getOwnFile(nickname: String): Pair<String, LeaderboardEntry>? {
-        val body = get(fileUrl(nickname)) ?: return null
+    /** GET файла участника: пара (sha, запись); null — файла нет (404). */
+    private fun getFile(name: String): Pair<String, LeaderboardEntry>? {
+        val body = get(fileUrl(name)) ?: return null
         val dto = mealJson.decodeFromString<GitHubContentDto>(body)
         val content = dto.content?.filterNot { it.isWhitespace() }.orEmpty()
         if (dto.sha == null || content.isEmpty()) return null
@@ -138,8 +168,19 @@ class LeaderboardSync(context: Context) {
         return dto.sha to mealJson.decodeFromString<LeaderboardEntry>(json)
     }
 
+    /** DELETE файла участника (старый файл по нику после слияния). */
+    private fun delete(name: String, sha: String) {
+        val payload = mealJson.encodeToString(GitHubDeleteDto(message = COMMIT_MESSAGE, sha = sha))
+        val request = baseRequest(fileUrl(name))
+            .delete(payload.toRequestBody(JSON_MEDIA))
+            .build()
+        http.newCall(request).execute().use { resp ->
+            if (!resp.isSuccessful && resp.code != 404) throw IOException("GitHub DELETE ${resp.code}")
+        }
+    }
+
     /** PUT файла участника; sha передаётся, если файл уже существовал. */
-    private fun put(nickname: String, json: String, sha: String?) {
+    private fun put(name: String, json: String, sha: String?) {
         val payload = mealJson.encodeToString(
             GitHubPutDto(
                 message = COMMIT_MESSAGE,
@@ -147,7 +188,7 @@ class LeaderboardSync(context: Context) {
                 sha = sha
             )
         )
-        val request = baseRequest(fileUrl(nickname))
+        val request = baseRequest(fileUrl(name))
             .put(payload.toRequestBody(JSON_MEDIA))
             .build()
         http.newCall(request).execute().use { resp ->
@@ -175,9 +216,9 @@ class LeaderboardSync(context: Context) {
             .header("Authorization", "Bearer ${BuildConfig.LEADERBOARD_TOKEN}")
             .header("Accept", GITHUB_ACCEPT)
 
-    /** URL файла участника; ник URL-кодируется как сегмент пути. */
-    private fun fileUrl(nickname: String): String =
-        "$API_BASE/${BuildConfig.LEADERBOARD_REPO}/contents/$DATA_DIR/${Uri.encode(nickname)}.json"
+    /** URL файла участника; имя URL-кодируется как сегмент пути. */
+    private fun fileUrl(name: String): String =
+        "$API_BASE/${BuildConfig.LEADERBOARD_REPO}/contents/$DATA_DIR/${Uri.encode(name)}.json"
 
     companion object {
         private const val TAG = "LeaderboardSync"
@@ -222,4 +263,11 @@ internal data class GitHubPutDto(
     val message: String,
     val content: String,
     val sha: String? = null
+)
+
+/** Тело DELETE в Contents API. */
+@Serializable
+internal data class GitHubDeleteDto(
+    val message: String,
+    val sha: String
 )

@@ -17,3 +17,8 @@ captures/
 # Logs
 *.log
 leaderboard.properties
+
+# Ключ подписи — никогда не коммитить
+keystore.properties
+*.jks
+*.keystore

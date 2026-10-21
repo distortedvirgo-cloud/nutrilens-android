@@ -58,6 +58,12 @@ object Backup {
                     ?: JsonArray(emptyList())
             )
             put(
+                "leaderboard_player_id",
+                kotlinx.serialization.json.JsonPrimitive(
+                    com.nutrilens.app.leaderboard.PlayerIdentity.id(context)
+                )
+            )
+            put(
                 "grocery",
                 groceryRaw?.let { raw -> runCatching { json.parseToJsonElement(raw) }.getOrNull() }
                     ?: JsonNull
@@ -77,6 +83,11 @@ object Backup {
             WebBackupImport.import(context, db, root)
             return
         }
+
+        // Свой id в лидерборде переезжает вместе с данными — без дубля в таблице.
+        (root["leaderboard_player_id"] as? kotlinx.serialization.json.JsonPrimitive)
+            ?.content
+            ?.let { com.nutrilens.app.leaderboard.PlayerIdentity.restore(context, it) }
 
         db.withTransaction {
             db.settingsDao().deleteAll()

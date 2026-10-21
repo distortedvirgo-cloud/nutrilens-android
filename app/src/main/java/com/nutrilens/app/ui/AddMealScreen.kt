@@ -1,6 +1,7 @@
 package com.nutrilens.app.ui
 
 import android.app.Application
+import androidx.compose.ui.focus.focusRequester
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -56,8 +57,19 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import com.nutrilens.app.ui.theme.AccentFrom
-import com.nutrilens.app.ui.theme.AccentTo
+import com.nutrilens.app.ui.theme.Motion
+import androidx.compose.ui.graphics.graphicsLayer
+import com.nutrilens.app.ui.theme.NutriTheme
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.fadeIn
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.NotificationsActive
+import androidx.compose.material.icons.rounded.PhotoCamera
+import androidx.compose.material.icons.rounded.PhotoLibrary
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -363,6 +375,7 @@ private class GrantingTakePicture : ActivityResultContracts.TakePicture() {
 
 @Composable
 fun AddMealScreen(
+    mode: String? = null,
     onDone: () -> Unit,
     onGoSettings: () -> Unit,
     onBack: () -> Unit,
@@ -405,16 +418,38 @@ fun AddMealScreen(
         uris.take(remaining).forEach { viewModel.addPhoto(context, it) }
     }
 
+    // Пришли из панели «+» с конкретным действием — сразу открываем камеру,
+    // галерею или поле описания (один раз, не при каждом возврате на экран).
+    var autoLaunched by rememberSaveable { mutableStateOf(false) }
+    val noteFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(mode) {
+        if (autoLaunched) return@LaunchedEffect
+        autoLaunched = true
+        when (mode) {
+            "camera" -> runCatching { launchCamera() }
+            "gallery" -> runCatching {
+                galleryLauncher.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                )
+            }
+            "text" -> {
+                kotlinx.coroutines.delay(350)
+                runCatching { noteFocus.requestFocus() }
+            }
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(horizontal = 20.dp)
+                .padding(top = 4.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
         ScreenHeader(
-            title = "Добавить еду 🍽️",
+            title = "Добавить еду",
             subtitle = "Фото или текст — ИИ посчитает калории и КБЖУ",
             onBack = onBack
         )
@@ -441,15 +476,19 @@ when (phase) {
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     PhotoSourceTile(
-                        emoji = "📷",
+                        icon = Icons.Rounded.PhotoCamera,
                         label = "Камера",
-                        modifier = Modifier.weight(1f),
+                        hint = "Сфотографировать",
+                        primary = true,
+                        modifier = Modifier.weight(1f).staggeredIn(1),
                         onClick = ::launchCamera
                     )
                     PhotoSourceTile(
-                        emoji = "🖼️",
+                        icon = Icons.Rounded.PhotoLibrary,
                         label = "Галерея",
-                        modifier = Modifier.weight(1f),
+                        hint = "До 10 фото",
+                        primary = false,
+                        modifier = Modifier.weight(1f).staggeredIn(2),
                         onClick = {
                             galleryLauncher.launch(
                                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
@@ -464,26 +503,40 @@ when (phase) {
                     value = note,
                     onValueChange = viewModel::setNote,
                     label = { Text("Что ели? Например: борщ со сметаной") },
-                    shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(20.dp),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
-                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = NutriTheme.colors.hairline,
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface
                     ),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(noteFocus)
+                        .staggeredIn(3),
                     minLines = 2
                 )
                 GlowButton(
-                    text = "🚀 Проанализировать",
+                    text = "Проанализировать",
+                    icon = Icons.Rounded.AutoAwesome,
                     onClick = { viewModel.enqueueBackground(context, onDone) },
-                    enabled = note.isNotBlank() || photos.isNotEmpty()
+                    enabled = note.isNotBlank() || photos.isNotEmpty(),
+                    modifier = Modifier.fillMaxWidth().staggeredIn(4)
                 )
-                Text(
-                    text = "Работает в фоне: приложение можно закрыть — результат придёт уведомлением",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.outline
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Rounded.NotificationsActive,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "Работает в фоне: приложение можно закрыть — результат придёт уведомлением",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }
@@ -513,25 +566,37 @@ private fun FavoritesRow(
     onRemove: (FavoriteEntity) -> Unit
 ) {
     Column {
-        Text(
-            text = "⭐ Избранное",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Rounded.Star,
+                contentDescription = null,
+                tint = NutriTheme.colors.warnTo,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = "Избранное",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+        }
         Spacer(Modifier.height(8.dp))
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             favorites.forEach { favorite ->
+                val chipInteraction = remember { MutableInteractionSource() }
                 Surface(
                     onClick = { onPick(favorite) },
-                    shape = RoundedCornerShape(16.dp),
+                    interactionSource = chipInteraction,
+                    shape = RoundedCornerShape(18.dp),
                     color = MaterialTheme.colorScheme.surface,
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        MaterialTheme.colorScheme.outlineVariant
-                    )
+                    border = androidx.compose.foundation.BorderStroke(1.dp, NutriTheme.colors.hairline),
+                    modifier = Modifier
+                        .pressScale(chipInteraction)
+                        .softShadow(RoundedCornerShape(18.dp), 4)
                 ) {
                     Row(
                         modifier = Modifier.padding(start = 14.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
@@ -584,21 +649,30 @@ private fun FailedJobsSection(
     onDismiss: (AnalysisJobEntity) -> Unit
 ) {
     Column {
-        Text(
-            text = "⚠️ Не удалось проанализировать",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.error
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Rounded.ErrorOutline,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = "Не удалось проанализировать",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
         Spacer(Modifier.height(8.dp))
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             jobs.forEach { job ->
                 Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surface,
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
                     border = androidx.compose.foundation.BorderStroke(
                         1.dp,
-                        MaterialTheme.colorScheme.error.copy(alpha = 0.4f)
+                        MaterialTheme.colorScheme.error.copy(alpha = 0.25f)
                     )
                 ) {
                     Row(
@@ -675,42 +749,77 @@ private fun ErrorBlock(message: String, onGoSettings: () -> Unit) {
     }
 }
 
-/** Плашка источника фото как в вебе: пунктирная рамка, квадрат, сжатие. */
+/**
+ * Плашка источника фото. Камера — главное действие (градиент бренда),
+ * галерея — вторичное (поверхность с пунктиром). Нажатие — упругое сжатие.
+ */
 @Composable
 private fun PhotoSourceTile(
-    emoji: String,
+    icon: ImageVector,
     label: String,
+    hint: String,
+    primary: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
+    val c = NutriTheme.colors
     val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) 0.96f else 1f, label = "tilePress")
-    val shape = RoundedCornerShape(26.dp)
+    val shape = RoundedCornerShape(28.dp)
+    val content = if (primary) c.onBrand else MaterialTheme.colorScheme.onSurface
     Surface(
         onClick = onClick,
         interactionSource = interaction,
         shape = shape,
-        color = MaterialTheme.colorScheme.surface,
+        color = if (primary) Color.Transparent else MaterialTheme.colorScheme.surface,
         modifier = modifier
             .aspectRatio(1f)
-            .scale(scale)
-            .shadow(5.dp, shape, ambientColor = Color(0x120F172A), spotColor = Color(0x120F172A))
-            .dashedBorder(1.5.dp, MaterialTheme.colorScheme.outlineVariant, 26.dp)
+            .pressScale(interaction)
+            .then(
+                if (primary) Modifier.shadow(
+                    16.dp, shape,
+                    ambientColor = c.brandFrom.copy(alpha = 0.45f),
+                    spotColor = c.brandFrom.copy(alpha = 0.45f)
+                ) else Modifier
+                    .softShadow(shape, 6)
+                    .dashedBorder(1.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f), 28.dp)
+            )
     ) {
         Column(
-            modifier = Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            modifier = Modifier
+                .fillMaxSize()
+                .then(if (primary) Modifier.background(c.brandGradient) else Modifier)
+                .padding(18.dp),
+            verticalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(emoji, style = MaterialTheme.typography.headlineMedium)
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(
+                        if (primary) Color.White.copy(alpha = 0.2f)
+                        else MaterialTheme.colorScheme.primaryContainer
+                    )
+            ) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = if (primary) c.onBrand else MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(26.dp)
+                )
+            }
+            Column {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = content
+                )
+                Text(
+                    text = hint,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = content.copy(alpha = 0.8f)
+                )
+            }
         }
     }
 }
@@ -735,11 +844,13 @@ private fun Modifier.dashedBorder(width: Dp, color: Color, radius: Dp): Modifier
 private fun SentOverlay(onDone: () -> Unit) {
     var visible by remember { mutableStateOf(true) }
     var dismissRequested by remember { mutableStateOf(false) }
-    val checkScale by animateFloatAsState(
-        targetValue = 1f,
-        animationSpec = spring(dampingRatio = 0.6f, stiffness = 260f),
-        label = "check"
-    )
+    // Галочка «выпрыгивает» с пружиной (раньше targetValue совпадал с
+    // начальным и анимации не было).
+    val checkScale = remember { Animatable(0.4f) }
+    LaunchedEffect(Unit) {
+        checkScale.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = 320f))
+    }
+    val c = NutriTheme.colors
     val overlayInteraction = remember { MutableInteractionSource() }
 
     // Автозакрытие через 1.25 с; тап/«назад» закрывают мгновенно.
@@ -762,7 +873,8 @@ private fun SentOverlay(onDone: () -> Unit) {
 
     AnimatedVisibility(
         visible = visible,
-        exit = fadeOut(tween(360)) + scaleOut(targetScale = 0.97f, animationSpec = tween(360))
+        enter = fadeIn(tween(Motion.Medium)),
+        exit = fadeOut(tween(Motion.Medium)) + scaleOut(targetScale = 0.97f, animationSpec = tween(Motion.Medium))
     ) {
         Box(
             modifier = Modifier
@@ -794,18 +906,24 @@ private fun SentOverlay(onDone: () -> Unit) {
                 Box(
                     modifier = Modifier
                         .size(88.dp)
-                        .scale(checkScale)
+                        .graphicsLayer {
+                            scaleX = checkScale.value
+                            scaleY = checkScale.value
+                        }
                         .shadow(
-                            18.dp, CircleShape,
-                            ambientColor = AccentFrom.copy(alpha = 0.4f), spotColor = AccentFrom.copy(alpha = 0.4f)
+                            22.dp, CircleShape,
+                            ambientColor = c.brandFrom.copy(alpha = 0.5f), spotColor = c.brandFrom.copy(alpha = 0.5f)
                         )
                         .clip(CircleShape)
-                        .background(
-                            Brush.linearGradient(listOf(AccentFrom, AccentTo))
-                        ),
+                        .background(c.brandGradient),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("✓", fontSize = 44.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
+                    Icon(
+                        Icons.Rounded.Check,
+                        contentDescription = null,
+                        tint = c.onBrand,
+                        modifier = Modifier.size(46.dp)
+                    )
                 }
                 Spacer(Modifier.height(22.dp))
                 Text(
@@ -826,7 +944,7 @@ private fun SentOverlay(onDone: () -> Unit) {
                 Text(
                     text = "Можно закрыть приложение — результат придёт уведомлением",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.outline,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center
                 )
             }
@@ -841,7 +959,7 @@ private fun ScanFrame() {
     val sweep by t.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(2000), RepeatMode.Reverse),
+        animationSpec = infiniteRepeatable(tween(1800, easing = Motion.Standard), RepeatMode.Reverse),
         label = "sweep"
     )
     val frameShape = RoundedCornerShape(18.dp)
@@ -908,8 +1026,8 @@ private fun ScanFrame() {
 private fun PhotoPreviewRow(photos: List<Uri>, onRemove: (Uri) -> Unit) {
     LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         items(photos, key = { it.toString() }) { uri ->
-            val thumbShape = RoundedCornerShape(16.dp)
-            Box {
+            val thumbShape = RoundedCornerShape(20.dp)
+            Box(Modifier.animateItem()) {
                 AsyncImage(
                     model = uri,
                     contentDescription = null,
@@ -917,8 +1035,7 @@ private fun PhotoPreviewRow(photos: List<Uri>, onRemove: (Uri) -> Unit) {
                     modifier = Modifier
                         .size(96.dp)
                         .clip(thumbShape)
-                        .shadow(5.dp, thumbShape, ambientColor = Color(0x120F172A), spotColor = Color(0x120F172A))
-                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f), thumbShape)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                 )
                 IconButton(
                     onClick = { onRemove(uri) },

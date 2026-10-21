@@ -114,7 +114,7 @@ fun GroceryScreen(onBack: () -> Unit) {
             .padding(bottom = 32.dp)
     ) {
         ScreenHeader(
-            title = "🛒 Покупки",
+            title = "Покупки",
             subtitle = "План питания и список покупок на неделю",
             onBack = onBack
         )

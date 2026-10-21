@@ -1,83 +1,133 @@
 package com.nutrilens.app.ui
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import kotlinx.coroutines.delay
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.draw.alpha
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.animation.core.CubicBezierEasing
-import androidx.compose.animation.core.Animatable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.nutrilens.app.ui.theme.LocalReducedMotion
+import com.nutrilens.app.ui.theme.Motion
+import com.nutrilens.app.ui.theme.NutriTheme
 
-// Тени из токенов веб-версии (--f-shadow-card / soft / lift): чёрнильное семейство.
-private val ShadowCard = Color(0x1A0F172A)   // 0.1 @ 12px
-private val ShadowSoft = Color(0x120F172A)   // 0.07 @ 4px
-private val ShadowLift = Color(0x290F172A)   // 0.16 @ 18px
+/**
+ * Упругое сжатие при нажатии (skill: stable interaction states — меняем только
+ * graphicsLayer, границы лейаута не двигаются). Пружина прерываемая:
+ * быстрый повторный тап не «дёргает» анимацию.
+ */
+@Composable
+fun Modifier.pressScale(interaction: MutableInteractionSource, pressed: Float = 0.96f): Modifier {
+    val isPressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) pressed else 1f,
+        animationSpec = Motion.press(),
+        label = "pressScale"
+    )
+    return this.graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+    }
+}
 
-// Палитра кнопок (дизайн-система): здоровый изумруд → глубокий.
-private val AccentFrom = Color(0xFF059669)
-private val AccentTo = Color(0xFF047857)
+/**
+ * Мягкая многослойная тень: две тени (контактная + рассеянная) читаются
+ * дороже одной. В тёмной теме глубину даёт тон поверхности, тень — минимальная.
+ */
+@Composable
+fun Modifier.softShadow(shape: androidx.compose.ui.graphics.Shape, elevation: Int = 10): Modifier {
+    val c = NutriTheme.colors
+    val strong = if (c.isDark) 0.35f else 0.07f
+    val contact = if (c.isDark) 0.4f else 0.05f
+    return this
+        .shadow(1.dp, shape, ambientColor = c.shadow.copy(alpha = contact), spotColor = c.shadow.copy(alpha = contact))
+        .shadow(elevation.dp, shape, ambientColor = c.shadow.copy(alpha = strong), spotColor = c.shadow.copy(alpha = strong))
+}
 
-/** Карточка в духе минимализма: белая, почти плоская, едва заметная граница. */
+/**
+ * Карточка: белая (в тёмной — тонально поднятая) поверхность, тонкая «волосяная»
+ * граница и мягкая двойная тень. С onClick — нажимаемая: ripple обрезан формой,
+ * карточка слегка сжимается.
+ */
 @Composable
 fun FreshCard(
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.surface,
     radius: Int = 26,
-    borderAlpha: Float = 0.3f,
+    borderAlpha: Float = 1f,
+    onClick: (() -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
     val shape = RoundedCornerShape(radius.dp)
-    Surface(
-        shape = shape,
-        color = color,
-        border = BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = borderAlpha)
-        ),
-        shadowElevation = 0.dp,
-        modifier = modifier.shadow(4.dp, shape, ambientColor = Color(0x080F172A), spotColor = Color(0x080F172A))
-    ) {
-        content()
+    val border = BorderStroke(1.dp, NutriTheme.colors.hairline.copy(alpha = NutriTheme.colors.hairline.alpha * borderAlpha))
+    if (onClick != null) {
+        val interaction = remember { MutableInteractionSource() }
+        Surface(
+            onClick = onClick,
+            interactionSource = interaction,
+            shape = shape,
+            color = color,
+            border = border,
+            modifier = modifier
+                .pressScale(interaction, 0.975f)
+                .softShadow(shape, 8)
+        ) { content() }
+    } else {
+        Surface(
+            shape = shape,
+            color = color,
+            border = border,
+            modifier = modifier.softShadow(shape, 8)
+        ) { content() }
     }
 }
 
 /**
- * Главная кнопка: градиент изумруда, лёгкая тень, сжатие при нажатии.
+ * Главная кнопка: градиент бренда, цветная «светящаяся» тень, упругое сжатие
+ * и лёгкий хаптик. Выключенная — приглушённая, без тени и отклика.
  */
 @Composable
 fun GlowButton(
@@ -85,42 +135,55 @@ fun GlowButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    height: Int = 52
+    height: Int = 54,
+    icon: ImageVector? = null
 ) {
     val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) 0.97f else 1f, label = "press")
-    val background = Brush.linearGradient(
-        colors = listOf(AccentFrom, AccentTo),
-        start = androidx.compose.ui.geometry.Offset.Zero,
-        end = androidx.compose.ui.geometry.Offset.Infinite
-    )
-    val shape = RoundedCornerShape(16.dp)
+    val haptics = LocalHapticFeedback.current
+    val c = NutriTheme.colors
+    val shape = RoundedCornerShape(18.dp)
+    val fade by animateFloatAsState(if (enabled) 1f else 0.45f, tween(Motion.Medium), label = "btnAlpha")
     Surface(
-        onClick = onClick,
+        onClick = {
+            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            onClick()
+        },
         enabled = enabled,
         interactionSource = interaction,
         shape = shape,
         color = Color.Transparent,
         modifier = modifier
             .height(height.dp)
-            .scale(scale)
-            .shadow(8.dp, shape, ambientColor = AccentFrom.copy(alpha = 0.25f), spotColor = AccentFrom.copy(alpha = 0.25f))
+            .pressScale(interaction)
+            .then(
+                if (enabled) Modifier.shadow(
+                    14.dp, shape,
+                    ambientColor = c.brandFrom.copy(alpha = 0.45f),
+                    spotColor = c.brandFrom.copy(alpha = 0.45f)
+                ) else Modifier
+            )
             .clip(shape)
+            .graphicsLayer { alpha = fade }
     ) {
-        Box(
-            contentAlignment = Alignment.Center,
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(height.dp)
-                .background(background)
+                .background(c.brandGradient)
+                .padding(horizontal = 18.dp)
         ) {
+            if (icon != null) {
+                Icon(icon, contentDescription = null, tint = c.onBrand, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+            }
             Text(
                 text = text,
                 style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onPrimary,
-                modifier = Modifier.padding(horizontal = 16.dp)
+                color = c.onBrand,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
@@ -137,30 +200,28 @@ fun PillButton(
     contentColor: Color = MaterialTheme.colorScheme.onPrimary
 ) {
     if (containerColor == MaterialTheme.colorScheme.primary) {
-        // Стандартный акцент — новая градиентная кнопка с glow.
-        GlowButton(text = text, onClick = onClick, modifier = modifier, enabled = enabled, height = 48)
+        // Стандартный акцент — градиентная кнопка с glow.
+        GlowButton(text = text, onClick = onClick, modifier = modifier, enabled = enabled, height = 50)
     } else {
         val interaction = remember { MutableInteractionSource() }
-        val pressed by interaction.collectIsPressedAsState()
-        val scale by animateFloatAsState(if (pressed) 0.97f else 1f, label = "pillCustom")
         Surface(
             onClick = onClick,
             enabled = enabled,
             interactionSource = interaction,
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(18.dp),
             color = containerColor,
             modifier = modifier
-                .height(48.dp)
-                .scale(scale)
+                .height(50.dp)
+                .pressScale(interaction)
         ) {
             Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth()) {
-                Text(text, fontWeight = FontWeight.SemiBold, color = contentColor)
+                Text(text, style = MaterialTheme.typography.labelLarge, color = contentColor)
             }
         }
     }
 }
 
-/** Вторичная кнопка: поверхность + бордер, нажатие — лёгкое сжатие. */
+/** Вторичная кнопка: тональная поверхность без тени, нажатие — сжатие + затемнение. */
 @Composable
 fun SoftButton(
     text: String,
@@ -171,11 +232,11 @@ fun SoftButton(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) 0.97f else 1f, label = "pressSoft")
-    val shape = RoundedCornerShape(16.dp)
+    val shape = RoundedCornerShape(18.dp)
     val bg by animateColorAsState(
-        if (pressed) MaterialTheme.colorScheme.surfaceVariant
-        else MaterialTheme.colorScheme.surface,
+        if (pressed) MaterialTheme.colorScheme.surfaceContainerHighest
+        else MaterialTheme.colorScheme.surfaceContainerHigh,
+        tween(Motion.Short),
         label = "softBg"
     )
     Surface(
@@ -184,24 +245,21 @@ fun SoftButton(
         interactionSource = interaction,
         shape = shape,
         color = bg,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
         modifier = modifier
             .height(height.dp)
-            .scale(scale)
-            .shadow(5.dp, shape, ambientColor = ShadowSoft, spotColor = ShadowSoft)
+            .pressScale(interaction)
     ) {
         Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth()) {
             Text(
                 text = text,
                 style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurface
             )
         }
     }
 }
 
-/** Заголовок экрана: кнопка-назад как в вебе (круглая поверхность на мягкой тени). */
+/** Заголовок экрана: крупный плотный заголовок, подзаголовок приглушённый. */
 @Composable
 fun ScreenHeader(
     title: String,
@@ -212,20 +270,22 @@ fun ScreenHeader(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 8.dp, bottom = 14.dp)
+            .padding(top = 12.dp, bottom = 18.dp)
+            .staggeredIn(0)
     ) {
         if (onBack != null) {
             BackPill(onClick = onBack)
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(14.dp))
         }
         Column {
             Text(
                 text = title,
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.ExtraBold,
+                style = if (onBack != null) MaterialTheme.typography.headlineMedium
+                else MaterialTheme.typography.displaySmall,
                 color = MaterialTheme.colorScheme.onBackground
             )
             if (subtitle != null) {
+                Spacer(Modifier.height(2.dp))
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodyMedium,
@@ -236,44 +296,43 @@ fun ScreenHeader(
     }
 }
 
-/** Круглая кнопка «назад»: bg-surface, border line/40, active:scale-90. */
+/** Круглая кнопка «назад»: 48dp зона нажатия, стеклянная поверхность. */
 @Composable
 fun BackPill(onClick: () -> Unit, modifier: Modifier = Modifier) {
     val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) 0.9f else 1f, label = "backScale")
     val shape = RoundedCornerShape(999.dp)
     Surface(
         onClick = onClick,
         interactionSource = interaction,
         shape = shape,
         color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+        border = BorderStroke(1.dp, NutriTheme.colors.hairline),
         modifier = modifier
-            .size(40.dp)
-            .scale(scale)
-            .shadow(5.dp, shape, ambientColor = ShadowSoft, spotColor = ShadowSoft)
+            .size(46.dp)
+            .pressScale(interaction, 0.88f)
+            .softShadow(shape, 6)
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
-                Icons.AutoMirrored.Filled.ArrowBack,
+                Icons.AutoMirrored.Rounded.ArrowBack,
                 contentDescription = "Назад",
                 tint = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.size(18.dp)
+                modifier = Modifier.size(20.dp)
             )
         }
     }
 }
 
-/** Крупные цифры калорий: Manrope ExtraBold, плотный трекинг — как в вебе. */
+/** Крупные цифры: Manrope ExtraBold, плотный трекинг. */
 @Composable
 fun DisplayNumber(text: String, size: Int = 40, color: Color = MaterialTheme.colorScheme.onBackground) {
     Text(
         text = text,
-        fontSize = size.sp,
-        fontFamily = MaterialTheme.typography.displayLarge.fontFamily,
-        fontWeight = FontWeight.ExtraBold,
-        letterSpacing = MaterialTheme.typography.displayLarge.letterSpacing,
+        style = MaterialTheme.typography.displayLarge.copy(
+            fontSize = size.sp,
+            lineHeight = (size * 1.1f).sp,
+            letterSpacing = (-size * 0.03f).sp
+        ),
         color = color
     )
 }
@@ -283,42 +342,151 @@ fun SectionTitle(text: String, modifier: Modifier = Modifier) {
     Text(
         text = text,
         style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.onBackground,
-        modifier = modifier.padding(bottom = 8.dp)
+        modifier = modifier.padding(bottom = 10.dp)
     )
 }
 
-/** Маленькая подпись: uppercase, tracking-wider, ink-faint — как text-[10px] в вебе. */
+/** Маленькая подпись-«оверлайн»: uppercase, разреженный трекинг. */
 @Composable
 fun TinyLabel(text: String, modifier: Modifier = Modifier, color: Color = MaterialTheme.colorScheme.outline) {
     Text(
         text = text.uppercase(),
         style = MaterialTheme.typography.labelSmall,
-        fontWeight = FontWeight.SemiBold,
-        letterSpacing = 1.2.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 1.1.sp,
         color = color,
         modifier = modifier
     )
 }
 
-/** Кривая появления: decelerate как в вебе. */
-private val InEasing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
-
 /**
- * Мягкое появление элемента «лесенкой»: fade + подъём снизу, задержка растёт
- * с индексом. Для статических списков (хаб, настройки, идеи) — живые экраны.
+ * Иконка в тонированной «плашке» — замена эмодзи в структурных местах
+ * (skill: no emoji as icons). Иконка декоративная, если рядом есть текст.
  */
 @Composable
-fun Modifier.staggeredIn(index: Int, delayMs: Int = 40, durationMs: Int = 340): Modifier {
-    val progress = remember { Animatable(0f) }
-    LaunchedEffect(index) {
-        delay(delayMs * index.toLong())
-        progress.animateTo(1f, tween(durationMs, easing = InEasing))
+fun IconBadge(
+    icon: ImageVector,
+    tint: Color,
+    modifier: Modifier = Modifier,
+    size: Int = 40,
+    contentDescription: String? = null
+) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .size(size.dp)
+            .clip(RoundedCornerShape((size * 0.34f).dp))
+            .background(tint.copy(alpha = if (NutriTheme.colors.isDark) 0.18f else 0.12f))
+    ) {
+        Icon(
+            icon,
+            contentDescription = contentDescription,
+            tint = tint,
+            modifier = Modifier.size((size * 0.5f).dp)
+        )
     }
-    return this.then(
-        Modifier
-            .alpha(progress.value)
-            .graphicsLayer { translationY = (1f - progress.value) * 26f }
+}
+
+/**
+ * Сегментный переключатель с «перетекающим» индикатором на пружине.
+ * Общий для отчёта, лидерборда и других мест с выбором периода/режима.
+ */
+@Composable
+fun <T> SegmentedSwitcher(
+    options: List<Pair<T, String>>,
+    selected: T,
+    onSelect: (T) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val haptics = LocalHapticFeedback.current
+    val index = options.indexOfFirst { it.first == selected }.coerceAtLeast(0)
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = modifier
+    ) {
+        BoxWithConstraints(Modifier.padding(4.dp)) {
+            val segment = maxWidth / options.size
+            val x by animateDpAsState(segment * index, Motion.slide(), label = "segX")
+            Box(
+                Modifier
+                    .offset(x = x)
+                    .width(segment)
+                    .height(42.dp)
+                    .softShadow(RoundedCornerShape(14.dp), 4)
+                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(14.dp))
+            )
+            Row(Modifier.fillMaxWidth().height(42.dp)) {
+                options.forEachIndexed { i, (value, label) ->
+                    val active = i == index
+                    val color by animateColorAsState(
+                        if (active) MaterialTheme.colorScheme.onSurface
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        tween(Motion.Medium),
+                        label = "segText"
+                    )
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(14.dp))
+                            .semantics {
+                                role = Role.Tab
+                                this.selected = active
+                            }
+                            .clickableNoRipple {
+                                if (!active) {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onSelect(value)
+                                }
+                            }
+                    ) {
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = color
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Клик без ripple — для мест, где отклик уже даёт анимация (индикатор, сжатие). */
+@Composable
+fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier {
+    val interaction = remember { MutableInteractionSource() }
+    return this.clickable(
+        interactionSource = interaction,
+        indication = null,
+        onClick = onClick
     )
+}
+
+/**
+ * Мягкое появление элемента «лесенкой»: fade + подъём снизу на emphasized-кривой,
+ * задержка растёт с индексом (ограничена, чтобы длинные списки не «ждали»).
+ * При «Удалить анимации» элемент сразу в финальном состоянии.
+ */
+@Composable
+fun Modifier.staggeredIn(index: Int, delayMs: Int = Motion.StaggerStep, durationMs: Int = Motion.Long): Modifier {
+    val reduced = LocalReducedMotion.current
+    val progress = remember { Animatable(if (reduced) 1f else 0f) }
+    LaunchedEffect(Unit) {
+        if (progress.value < 1f) {
+            kotlinx.coroutines.delay(delayMs * index.coerceIn(0, 8).toLong())
+            progress.animateTo(1f, tween(durationMs, easing = Motion.Emphasized))
+        }
+    }
+    return this.graphicsLayer {
+        val p = progress.value
+        alpha = p
+        translationY = (1f - p) * 22.dp.toPx()
+        val s = 0.98f + 0.02f * p
+        scaleX = s
+        scaleY = s
+    }
 }

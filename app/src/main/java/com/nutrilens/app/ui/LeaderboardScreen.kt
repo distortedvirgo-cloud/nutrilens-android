@@ -1,5 +1,11 @@
 package com.nutrilens.app.ui
 
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.SolidColor
+
 import android.app.Application
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -62,6 +68,7 @@ import kotlin.math.roundToLong
 class LeaderboardViewModel(application: Application) : AndroidViewModel(application) {
 
     private val sync = LeaderboardSync(application)
+    val playerId: String = com.nutrilens.app.leaderboard.PlayerIdentity.id(application)
     private val settingsRepository =
         SettingsRepository(NutriLensDatabase.getInstance(application).settingsDao())
 
@@ -124,17 +131,17 @@ fun LeaderboardScreen(onBack: () -> Unit, viewModel: LeaderboardViewModel = view
 
     // Строки периода считаем локально: при смене периода сеть не трогаем.
     val rows: List<LeaderboardRow> = remember(entries, period, nickname) {
-        entries?.let { LeaderboardMath.rows(it, period, nickname) } ?: emptyList()
+        entries?.let { LeaderboardMath.rows(it, period, viewModel.playerId, nickname) } ?: emptyList()
     }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 20.dp)
-            .padding(top = 16.dp, bottom = 24.dp)
+            .padding(bottom = 24.dp)
     ) {
         ScreenHeader(
-            title = "🏆 Лидерборд",
+            title = "Лидерборд",
             subtitle = "Соревнование: кто точнее вписывается в план",
             onBack = onBack
         )
@@ -143,7 +150,12 @@ fun LeaderboardScreen(onBack: () -> Unit, viewModel: LeaderboardViewModel = view
             !viewModel.configured -> StatusCard("Лидерборд не настроен в этой сборке")
             nickname.isBlank() -> StatusCard("Введи ник в настройках, чтобы участвовать")
             else -> {
-                PeriodSwitcher(
+                SegmentedSwitcher(
+                    options = listOf(
+                        LeaderboardPeriod.DAY to "День",
+                        LeaderboardPeriod.WEEK to "Неделя",
+                        LeaderboardPeriod.MONTH to "Месяц"
+                    ),
                     selected = period,
                     onSelect = viewModel::setPeriod,
                     modifier = Modifier.fillMaxWidth()
@@ -171,7 +183,12 @@ fun LeaderboardScreen(onBack: () -> Unit, viewModel: LeaderboardViewModel = view
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         itemsIndexed(rows) { index, row ->
-                            LeaderboardRowCard(row = row, place = index, period = period)
+                            LeaderboardRowCard(
+                                row = row,
+                                place = index,
+                                period = period,
+                                modifier = Modifier.staggeredIn(index)
+                            )
                         }
                     }
                 }
@@ -180,12 +197,33 @@ fun LeaderboardScreen(onBack: () -> Unit, viewModel: LeaderboardViewModel = view
     }
 }
 
-/** Место с медалью у топ-3, остальным — номер. */
-private fun medalFor(place: Int): String = when (place) {
-    0 -> "🥇"
-    1 -> "🥈"
-    2 -> "🥉"
-    else -> "${place + 1}"
+// Цвета медалей топ-3 (золото / серебро / бронза) — семантические, одинаковые в обеих темах.
+private val MedalColors = listOf(Color(0xFFF2B53A), Color(0xFFA9B4C2), Color(0xFFCD8A57))
+
+/** Место: у топ-3 — круглая медаль с градиентом и номером, остальным — номер на тональной плашке. */
+@Composable
+private fun PlaceBadge(place: Int) {
+    val medal = MedalColors.getOrNull(place)
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .size(38.dp)
+            .clip(CircleShape)
+            .background(
+                if (medal != null) {
+                    Brush.linearGradient(listOf(medal.copy(alpha = 0.85f), medal))
+                } else {
+                    SolidColor(MaterialTheme.colorScheme.surfaceContainerHigh)
+                }
+            )
+    ) {
+        Text(
+            text = "${place + 1}",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.ExtraBold,
+            color = if (medal != null) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
 }
 
 /** «84% плана» для вписавшихся, «+8% плана» для перееавших. */
@@ -205,23 +243,24 @@ private fun secondaryLine(row: LeaderboardRow, period: LeaderboardPeriod): Strin
 private fun fmtKcal(value: Double): String = value.roundToLong().toString()
 
 @Composable
-private fun LeaderboardRowCard(row: LeaderboardRow, place: Int, period: LeaderboardPeriod) {
+private fun LeaderboardRowCard(
+    row: LeaderboardRow,
+    place: Int,
+    period: LeaderboardPeriod,
+    modifier: Modifier = Modifier
+) {
     FreshCard(
         color = if (row.isSelf) MaterialTheme.colorScheme.primaryContainer
         else MaterialTheme.colorScheme.surface,
-        modifier = Modifier.fillMaxWidth()
+        radius = 22,
+        modifier = modifier.fillMaxWidth()
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = medalFor(place),
-                fontSize = if (place < 3) 22.sp else 15.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.width(36.dp)
-            )
+            PlaceBadge(place)
+            Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = row.nickname,
@@ -245,7 +284,7 @@ private fun LeaderboardRowCard(row: LeaderboardRow, place: Int, period: Leaderbo
                             "переел на +${(row.calories - row.goal).roundToInt()} ккал"
                         else "вписался",
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (row.isOver) MaterialTheme.colorScheme.error
+                        color = if (row.isOver) MaterialTheme.colorScheme.tertiary
                         else MaterialTheme.colorScheme.primary
                     )
                 }
@@ -253,54 +292,11 @@ private fun LeaderboardRowCard(row: LeaderboardRow, place: Int, period: Leaderbo
             Spacer(Modifier.width(10.dp))
             Text(
                 text = percentLabel(row.percent),
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.ExtraBold,
-                color = if (row.isOver) MaterialTheme.colorScheme.error
+                color = if (row.isOver) MaterialTheme.colorScheme.tertiary
                 else MaterialTheme.colorScheme.primary
             )
-        }
-    }
-}
-
-/** Переключатель периода «День / Неделя / Месяц» — как PeriodSwitcher в отчёте. */
-@Composable
-private fun PeriodSwitcher(
-    selected: LeaderboardPeriod,
-    onSelect: (LeaderboardPeriod) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = modifier
-    ) {
-        Row(modifier = Modifier.padding(4.dp)) {
-            listOf(
-                LeaderboardPeriod.DAY to "День",
-                LeaderboardPeriod.WEEK to "Неделя",
-                LeaderboardPeriod.MONTH to "Месяц"
-            ).forEach { (period, label) ->
-                val active = selected == period
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clickable { onSelect(period) }
-                        .background(
-                            color = if (active) MaterialTheme.colorScheme.primary
-                            else Color.Transparent,
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                        .padding(vertical = 10.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = label,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = if (active) MaterialTheme.colorScheme.onPrimary
-                        else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
         }
     }
 }
