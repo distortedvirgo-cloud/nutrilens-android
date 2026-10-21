@@ -52,6 +52,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -113,6 +114,7 @@ fun NutriTextField(
     maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
     supportingText: String? = null,
     trailingIcon: @Composable (() -> Unit)? = null
 ) {
@@ -128,6 +130,7 @@ fun NutriTextField(
         maxLines = maxLines,
         keyboardOptions = keyboardOptions,
         keyboardActions = keyboardActions,
+        visualTransformation = visualTransformation,
         textStyle = MaterialTheme.typography.bodyLarge.copy(color = scheme.onSurface),
         label = label?.let { { Text(it) } },
         placeholder = placeholder?.let { { Text(it, color = scheme.onSurfaceVariant) } },

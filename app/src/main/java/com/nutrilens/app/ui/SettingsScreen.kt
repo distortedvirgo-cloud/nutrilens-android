@@ -1,5 +1,10 @@
 package com.nutrilens.app.ui
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.TimePickerDefaults
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.BatteryChargingFull
@@ -326,9 +331,9 @@ fun SettingsScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = Space.Screen)
             .padding(bottom = 32.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        verticalArrangement = Arrangement.spacedBy(Space.Gap)
     ) {
         ScreenHeader(title = title, onBack = onBack)
 
@@ -338,7 +343,7 @@ fun SettingsScreen(
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
+                    .padding(Space.Card),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 SettingsSectionTitle(Icons.Rounded.AutoAwesome, "ИИ", MaterialTheme.colorScheme.primary)
@@ -359,7 +364,8 @@ fun SettingsScreen(
                 Text(
                     "Режим анализа",
                     style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 SettingsModeRow(
                     selected = settings.analysisMode,
@@ -392,7 +398,7 @@ fun SettingsScreen(
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
+                    .padding(Space.Card),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 SettingsSectionTitle(Icons.Rounded.TrackChanges, "Цели", MaterialTheme.colorScheme.secondary)
@@ -430,7 +436,7 @@ fun SettingsScreen(
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
+                    .padding(Space.Card),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 SettingsSectionTitle(Icons.Rounded.Person, "Профиль", macroPalette().protein)
@@ -460,7 +466,7 @@ fun SettingsScreen(
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
+                    .padding(Space.Card),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 SettingsSectionTitle(Icons.Rounded.NotificationsActive, "Напоминания", NutriTheme.colors.warnTo)
@@ -493,7 +499,13 @@ fun SettingsScreen(
                         .padding(vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Вода", modifier = Modifier.weight(1f))
+                    Text(
+                        "Вода, мин",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f)
+                    )
                     SettingsNumberField(
                         initial = settings.waterIntervalMinutes.toString(),
                         label = null,
@@ -502,7 +514,7 @@ fun SettingsScreen(
                         compact = true
                     )
                     Spacer(Modifier.width(12.dp))
-                    Switch(
+                    NutriSwitch(
                         checked = settings.waterReminderEnabled,
                         onCheckedChange = viewModel::setWaterReminderEnabled
                     )
@@ -515,14 +527,19 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("Взвешивание")
+                        Text(
+                            "Взвешивание",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
                         Text(
                             text = "Напоминание раз в 7 дней",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Switch(
+                    NutriSwitch(
                         checked = settings.weighInReminderEnabled,
                         onCheckedChange = viewModel::setWeighInReminderEnabled
                     )
@@ -533,7 +550,7 @@ fun SettingsScreen(
 
         if (show("updates")) {
         FreshCard(modifier = Modifier.fillMaxWidth().staggeredIn(4)) {
-            Column(Modifier.padding(16.dp)) {
+            Column(Modifier.padding(Space.Card)) {
                 SettingsSectionTitle(Icons.Rounded.SystemUpdate, "Обновления", MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.height(4.dp))
                 Text(
@@ -548,22 +565,18 @@ fun SettingsScreen(
                     onCommit = viewModel::setUpdateRepo
                 )
                 Spacer(Modifier.height(12.dp))
-                Button(
+                SoftButton(
+                    text = if (updateState is UpdateUiState.Checking) "Проверяем…" else "Проверить обновления",
                     onClick = viewModel::checkUpdates,
                     enabled = updateState !is UpdateUiState.Checking &&
                         updateState !is UpdateUiState.Downloading,
                     modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        if (updateState is UpdateUiState.Checking) "Проверяем…"
-                        else "Проверить обновления"
-                    )
-                }
+                )
                 Spacer(Modifier.height(8.dp))
                 when (val u = updateState) {
                     is UpdateUiState.Available -> {
                         Text(
-                            "Доступна версия ${u.release.version} 🎉",
+                            "Доступна версия ${u.release.version}",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.primary
@@ -577,16 +590,14 @@ fun SettingsScreen(
                             )
                         }
                         Spacer(Modifier.height(8.dp))
-                        Button(
+                        GlowButton(
+                            text = "Скачать и установить",
                             onClick = viewModel::downloadAndInstall,
                             modifier = Modifier.fillMaxWidth()
-                        ) { Text("Скачать и установить") }
+                        )
                     }
                     is UpdateUiState.Downloading -> {
-                        LinearProgressIndicator(
-                            progress = { (u.percent.coerceAtLeast(0)) / 100f },
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                        ProgressTrack(fraction = u.percent.coerceAtLeast(0) / 100f)
                         Spacer(Modifier.height(4.dp))
                         Text(
                             if (u.percent >= 0) "Загрузка: ${u.percent}%" else "Загрузка…",
@@ -619,7 +630,7 @@ fun SettingsScreen(
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
+                    .padding(Space.Card),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 SettingsSectionTitle(Icons.Rounded.Storage, "Данные", macroPalette().carbs)
@@ -629,16 +640,20 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
+                    SoftButton(
+                        text = "Экспорт",
+                        icon = Icons.Rounded.Upload,
                         onClick = {
                             exportLauncher.launch("nutrilens_backup_${LocalDate.now()}.json")
                         },
                         modifier = Modifier.weight(1f)
-                    ) { Text("Экспорт") }
-                    OutlinedButton(
+                    )
+                    SoftButton(
+                        text = "Импорт",
+                        icon = Icons.Rounded.Download,
                         onClick = { importLauncher.launch(arrayOf("application/json")) },
                         modifier = Modifier.weight(1f)
-                    ) { Text("Импорт") }
+                    )
                 }
                 dataMessage?.let { message ->
                     Text(
@@ -686,7 +701,7 @@ fun SettingsScreen(
             batteryExempt = powerManager.isIgnoringBatteryOptimizations(context.packageName)
         }
         FreshCard(modifier = Modifier.fillMaxWidth().staggeredIn(5)) {
-            Column(Modifier.padding(16.dp)) {
+            Column(Modifier.padding(Space.Card)) {
                 SettingsSectionTitle(Icons.Rounded.BatteryChargingFull, "Фоновая работа", NutriTheme.colors.success)
                 Spacer(Modifier.height(4.dp))
                 Text(
@@ -702,7 +717,8 @@ fun SettingsScreen(
                 )
                 if (!batteryExempt) {
                     Spacer(Modifier.height(12.dp))
-                    Button(
+                    GlowButton(
+                        text = "Разрешить работу в фоне",
                         onClick = {
                             val ok = runCatching {
                                 context.startActivity(
@@ -721,9 +737,7 @@ fun SettingsScreen(
                             }
                         },
                         modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Разрешить работу в фоне")
-                    }
+                    )
                 }
                 Spacer(Modifier.height(4.dp))
                 Text(
@@ -751,23 +765,27 @@ fun SettingsScreen(
             initialMinute = current.substringAfter(":", "").toIntOrNull() ?: 0,
             is24Hour = true
         )
-        AlertDialog(
-            onDismissRequest = { timePickerFor = null },
-            title = { Text("Выберите время") },
-            text = { TimePicker(state = state) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val time = "%02d:%02d".format(state.hour, state.minute)
-                        viewModel.setReminderTime(kind, time)
-                        timePickerFor = null
-                    }
-                ) { Text("ОК") }
-            },
-            dismissButton = {
-                TextButton(onClick = { timePickerFor = null }) { Text("Отмена") }
+        NutriDialog(
+            onDismiss = { timePickerFor = null },
+            title = "Время напоминания",
+            confirmText = "Готово",
+            onConfirm = {
+                val time = "%02d:%02d".format(state.hour, state.minute)
+                viewModel.setReminderTime(kind, time)
+                timePickerFor = null
             }
-        )
+        ) {
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                TimePicker(
+                    state = state,
+                    colors = TimePickerDefaults.colors(
+                        clockDialColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        timeSelectorSelectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        timeSelectorUnselectedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                    )
+                )
+            }
+        }
     }
 }
 
@@ -787,9 +805,16 @@ private fun ReminderTimeRow(
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(label, modifier = Modifier.weight(1f))
-        TextButton(onClick = onTimeClick, enabled = enabled) { Text(time) }
-        Switch(checked = enabled, onCheckedChange = onEnabledChange)
+        Text(
+            label,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f)
+        )
+        NutriChip(text = time, onClick = onTimeClick, enabled = enabled, icon = Icons.Rounded.Schedule)
+        Spacer(Modifier.width(12.dp))
+        NutriSwitch(checked = enabled, onCheckedChange = onEnabledChange)
     }
 }
 
@@ -807,7 +832,7 @@ private fun SettingsTextField(
     LaunchedEffect(initial) {
         if (!focused) text = initial
     }
-    OutlinedTextField(
+    NutriTextField(
         value = text,
         onValueChange = { new ->
             text = new
@@ -816,8 +841,7 @@ private fun SettingsTextField(
         modifier = Modifier
             .fillMaxWidth()
             .onFocusEvent { focused = it.isFocused },
-        label = { Text(label) },
-        shape = MaterialTheme.shapes.small,
+        label = label,
         visualTransformation = visualTransformation,
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
         minLines = minLines
@@ -843,11 +867,11 @@ private fun SettingsNumberField(
         if (!focused) text = initial
     }
     val modifier = if (compact) {
-        Modifier.width(72.dp).onFocusEvent { focused = it.isFocused }
+        Modifier.width(88.dp).onFocusEvent { focused = it.isFocused }
     } else {
         Modifier.fillMaxWidth().onFocusEvent { focused = it.isFocused }
     }
-    OutlinedTextField(
+    NutriTextField(
         value = text,
         onValueChange = { new ->
             text = new
@@ -859,8 +883,7 @@ private fun SettingsNumberField(
             }
         },
         modifier = modifier,
-        label = label?.let { { Text(it) } },
-        shape = MaterialTheme.shapes.small,
+        label = label,
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
     )
@@ -886,16 +909,5 @@ private fun SettingsModeRow(selected: String, onSelect: (String) -> Unit) {
 /** Заголовок секции настроек: тонированная иконка + название. */
 @Composable
 private fun SettingsSectionTitle(icon: ImageVector, title: String, tint: Color) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(bottom = 4.dp)
-    ) {
-        IconBadge(icon = icon, tint = tint, size = 34)
-        Spacer(Modifier.width(12.dp))
-        Text(
-            title,
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-    }
+    CardHeader(title = title, icon = icon, tint = tint, modifier = Modifier.padding(bottom = 4.dp))
 }
