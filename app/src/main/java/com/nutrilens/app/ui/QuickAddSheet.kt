@@ -152,7 +152,7 @@ fun QuickAddSheet(
                     close { onNavigate("add/camera") }
                 },
                 interactionSource = heroInteraction,
-                shape = RoundedCornerShape(26.dp),
+                shape = RoundedCornerShape(Radius.Card),
                 color = Color.Transparent,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -284,7 +284,7 @@ private fun SheetAction(
     Surface(
         onClick = onClick,
         interactionSource = interaction,
-        shape = RoundedCornerShape(22.dp),
+        shape = RoundedCornerShape(Radius.Tile),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         border = BorderStroke(1.dp, NutriTheme.colors.hairline),
         modifier = modifier.pressScale(interaction)
@@ -310,24 +310,21 @@ private fun SheetAction(
 fun WeightEntryDialog(onConfirm: (Double) -> Unit, onDismiss: () -> Unit) {
     var input by remember { mutableStateOf("") }
     val parsed = input.trim().replace(",", ".").toDoubleOrNull()?.takeIf { it in 20.0..400.0 }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Записать вес") },
-        text = {
-            OutlinedTextField(
-                value = input,
-                onValueChange = { input = it },
-                label = { Text("Вес, кг") },
-                singleLine = true,
-                shape = MaterialTheme.shapes.small,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
-            )
-        },
-        confirmButton = {
-            TextButton(enabled = parsed != null, onClick = { parsed?.let(onConfirm) }) { Text("Сохранить") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Отмена") }
-        }
-    )
+    NutriDialog(
+        onDismiss = onDismiss,
+        title = "Записать вес",
+        confirmText = "Сохранить",
+        confirmEnabled = parsed != null,
+        onConfirm = { parsed?.let(onConfirm) }
+    ) {
+        NutriTextField(
+            value = input,
+            onValueChange = { input = it },
+            label = "Вес",
+            suffix = "кг",
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
 }

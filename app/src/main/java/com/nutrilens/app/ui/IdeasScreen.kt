@@ -1,5 +1,10 @@
 package com.nutrilens.app.ui
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.automirrored.rounded.MenuBook
+import androidx.compose.material.icons.Icons
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -196,7 +201,7 @@ fun IdeasScreen(onBack: () -> Unit, viewModel: IdeasViewModel = viewModel()) {
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = Space.Screen)
             .padding(bottom = 32.dp)
     ) {
         ScreenHeader(
@@ -206,21 +211,13 @@ fun IdeasScreen(onBack: () -> Unit, viewModel: IdeasViewModel = viewModel()) {
         )
 
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
         ) {
             MEAL_TYPES.forEach { type ->
-                FilterChip(
-                    selected = selectedType == type,
-                    onClick = { selectedType = type },
-                    label = {
-                        Text(type, style = MaterialTheme.typography.labelLarge)
-                    },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                )
+                NutriChip(text = type, onClick = { selectedType = type }, selected = selectedType == type)
             }
         }
 
@@ -248,9 +245,9 @@ fun IdeasScreen(onBack: () -> Unit, viewModel: IdeasViewModel = viewModel()) {
         )
 
         recommendations.forEachIndexed { idx, rec ->
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(Space.Gap))
             FreshCard(Modifier.fillMaxWidth().staggeredIn(idx)) {
-                Column(Modifier.padding(16.dp)) {
+                Column(Modifier.padding(Space.Card)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             rec.title,
@@ -259,16 +256,17 @@ fun IdeasScreen(onBack: () -> Unit, viewModel: IdeasViewModel = viewModel()) {
                             color = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.weight(1f)
                         )
-                        Surface(
-                            shape = RoundedCornerShape(999.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer
-                        ) {
+                        Spacer(Modifier.width(8.dp))
+                        Column(horizontalAlignment = Alignment.End) {
                             Text(
-                                "${rec.calories.roundToInt()} ккал",
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                "${rec.calories.roundToInt()}",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                "ккал",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
@@ -281,8 +279,8 @@ fun IdeasScreen(onBack: () -> Unit, viewModel: IdeasViewModel = viewModel()) {
                     Spacer(Modifier.height(12.dp))
                     SoftButton(
                         text = "Смотреть рецепт",
+                        icon = Icons.AutoMirrored.Rounded.MenuBook,
                         onClick = { viewModel.openRecipe(rec) },
-                        height = 46,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -295,7 +293,8 @@ fun IdeasScreen(onBack: () -> Unit, viewModel: IdeasViewModel = viewModel()) {
                 "Нажмите «Предложить идеи» — ИИ учтёт съеденное сегодня и подберёт 3 подходящих блюда.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 14.sp
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
             )
         }
     }
@@ -311,28 +310,10 @@ fun IdeasScreen(onBack: () -> Unit, viewModel: IdeasViewModel = viewModel()) {
 }
 
 /** Рецепт — нижний лист: тянется жестом, длинный текст удобно листать. */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RecipeSheet(title: String, loading: Boolean, text: String?, onClose: () -> Unit) {
-    ModalBottomSheet(
-        onDismissRequest = onClose,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)
-    ) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 28.dp)
-        ) {
-            Text(
-                title,
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(Modifier.height(14.dp))
+    NutriSheet(onDismiss = onClose, title = title) {
+        run {
             if (loading) {
                 Box(Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)

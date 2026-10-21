@@ -64,7 +64,7 @@ fun HabitToolScreen(onBack: () -> Unit) {
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = Space.Screen)
             .padding(bottom = 32.dp)
     ) {
         ScreenHeader(
@@ -73,14 +73,12 @@ fun HabitToolScreen(onBack: () -> Unit) {
             onBack = onBack
         )
 
-        OutlinedTextField(
+        NutriTextField(
             value = habitText,
             onValueChange = { habitText = it },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(140.dp),
-            placeholder = { Text("Например: каждый вечер ем сладкое за сериалом") },
-            shape = RoundedCornerShape(20.dp),
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = "Например: каждый вечер ем сладкое за сериалом",
+            minLines = 4,
             maxLines = 6
         )
 
@@ -108,10 +106,8 @@ fun HabitToolScreen(onBack: () -> Unit) {
         }
 
         lastDone?.result?.takeIf { it.isNotBlank() }?.let { text ->
-            Spacer(Modifier.height(14.dp))
-            FreshCard(Modifier.fillMaxWidth()) {
-                MarkdownText(text, Modifier.padding(16.dp))
-            }
+            Spacer(Modifier.height(Space.Gap))
+            AiResultCard(text, title = "Разбор привычки")
         }
     }
 }

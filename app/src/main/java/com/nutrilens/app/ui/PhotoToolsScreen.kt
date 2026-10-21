@@ -1,5 +1,6 @@
 package com.nutrilens.app.ui
 
+import androidx.compose.foundation.shape.CircleShape
 import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -131,20 +132,17 @@ private fun PhotoToolScreen(kind: PhotoToolKind, onBack: () -> Unit) {
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = Space.Screen)
             .padding(bottom = 32.dp)
     ) {
         ScreenHeader(title = title, subtitle = subtitle, onBack = onBack)
 
         FreshCard(Modifier.fillMaxWidth()) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { useRemaining = !useRemaining }
-                    .padding(horizontal = 10.dp, vertical = 6.dp)
+            CheckRow(
+                checked = useRemaining,
+                onToggle = { useRemaining = !useRemaining },
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
             ) {
-                Checkbox(checked = useRemaining, onCheckedChange = { useRemaining = it })
                 Text(
                     "Учитывать остаток калорий на сегодня",
                     style = MaterialTheme.typography.bodyMedium,
@@ -163,13 +161,13 @@ private fun PhotoToolScreen(kind: PhotoToolKind, onBack: () -> Unit) {
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
                             .size(76.dp)
-                            .clip(RoundedCornerShape(14.dp))
+                            .clip(RoundedCornerShape(Radius.Tile))
                     )
                     Box(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
                             .size(22.dp)
-                            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(11.dp))
+                            .background(MaterialTheme.colorScheme.surface, CircleShape)
                             .clickable { photos = photos - file },
                         contentAlignment = Alignment.Center
                     ) {
@@ -186,8 +184,8 @@ private fun PhotoToolScreen(kind: PhotoToolKind, onBack: () -> Unit) {
                 Box(
                     modifier = Modifier
                         .size(76.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .clip(RoundedCornerShape(Radius.Tile))
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = tintAlpha()))
                         .clickable {
                             pickLauncher.launch(
                                 PickVisualMediaRequest(
@@ -230,10 +228,8 @@ private fun PhotoToolScreen(kind: PhotoToolKind, onBack: () -> Unit) {
         )
 
         lastDone?.result?.takeIf { it.isNotBlank() }?.let { text ->
-            Spacer(Modifier.height(14.dp))
-            FreshCard(Modifier.fillMaxWidth()) {
-                MarkdownText(text, Modifier.padding(16.dp))
-            }
+            Spacer(Modifier.height(Space.Gap))
+            AiResultCard(text, title = cta.trimEnd('?'))
         }
     }
 }

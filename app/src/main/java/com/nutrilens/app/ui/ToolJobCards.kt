@@ -38,14 +38,14 @@ fun ToolJobProcessingCard(title: String, modifier: Modifier = Modifier) {
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
+                .padding(Space.Card),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .size(40.dp)
-                    .clip(RoundedCornerShape(14.dp))
+                    .clip(RoundedCornerShape(Radius.Small))
                     .background(MaterialTheme.colorScheme.primaryContainer)
             ) {
                 CircularProgressIndicator(
@@ -85,7 +85,7 @@ fun ToolJobErrorCard(
     modifier: Modifier = Modifier
 ) {
     FreshCard(modifier) {
-        Column(Modifier.padding(14.dp)) {
+        Column(Modifier.padding(Space.Card)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconBadge(
                     icon = Icons.Rounded.ErrorOutline,
@@ -115,8 +115,8 @@ fun ToolJobErrorCard(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End
             ) {
-                TextButton(onClick = onRetry) { Text("Повторить") }
-                TextButton(onClick = onDismiss) { Text("Скрыть") }
+                TextAction("Скрыть", onClick = onDismiss, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextAction("Повторить", onClick = onRetry)
             }
         }
     }
