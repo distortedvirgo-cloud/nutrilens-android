@@ -1,23 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Знак NutriLens: кольцо объектива (Lens), внутри — лист (Nutri) с прожилкой,
+     сверху-слева — блик линзы. Всё в безопасной зоне адаптивной иконки (r ≈ 33). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- Кольцо объектива -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4.5"
+        android:pathData="M54,27.5 a26.5,26.5 0 1,1 0,53 a26.5,26.5 0 1,1 0,-53" />
+    <!-- Блик линзы -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeAlpha="0.55"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:pathData="M37.5,48 A18,18 0 0,1 48,36.8" />
     <!-- Лист -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M57,49 C57,35 67,28 76,28 C76,41 68,49 57,49 Z" />
-    <!-- Стебель -->
+        android:pathData="M40.5,68.5 C39,51 51,39.5 68.5,39.5 C69.5,57 57.5,69.5 40.5,68.5 Z" />
+    <!-- Прожилка листа -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M53,53 C54,51 56,49 58,47 L60,49 C58,51 57,52 56,54 Z" />
-    <!-- Кромка миски -->
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M32,54 h44 a2,2 0 0 1 2,2 v1 a2,2 0 0 1 -2,2 h-44 a2,2 0 0 1 -2,-2 v-1 a2,2 0 0 1 2,-2 z" />
-    <!-- Чаша миски -->
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M35,61 a19,19 0 0 0 38,0 z" />
+        android:strokeColor="#0A7F5A"
+        android:strokeWidth="2.2"
+        android:strokeLineCap="round"
+        android:pathData="M44,65 L63,45" />
 </vector>

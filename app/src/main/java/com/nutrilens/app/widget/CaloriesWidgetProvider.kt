@@ -115,7 +115,8 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
                 R.id.widget_remain,
                 eaten.roundToInt().toString()
             )
-            views.setTextViewText(R.id.widget_remain_unit, "ккал")
+            // Число — съедено; подпись «из 2100» — как в кольце на главном экране.
+            views.setTextViewText(R.id.widget_remain_unit, "из ${goal.roundToInt()}")
             // Перебор — оранжевым, фирменный акцент тревоги.
             views.setTextColor(
                 R.id.widget_remain,
