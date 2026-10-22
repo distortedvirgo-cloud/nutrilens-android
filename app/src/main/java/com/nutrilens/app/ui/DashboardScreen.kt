@@ -1,5 +1,6 @@
 package com.nutrilens.app.ui
 
+import androidx.compose.material.icons.rounded.Refresh
 import android.app.Application
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -222,6 +223,24 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch { refinementJobRepository.deleteJob(job.id) }
     }
 
+    /**
+     * Неудавшиеся анализы — на главном экране, рядом с «ИИ анализирует»: сюда
+     * ведёт уведомление о сбое, и сюда же пользователь смотрит после съёмки.
+     * Раньше они жили только на экране «Добавить еду», а «+» → «Фото» открывает
+     * камеру в обход него, так что повторить анализ было негде.
+     */
+    val failedAnalyses: StateFlow<List<AnalysisJobEntity>> = analysisJobRepository.observeFailed()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Повтор анализа; newNote — исправленное описание (те же фото). */
+    fun retryAnalysis(job: AnalysisJobEntity, newNote: String? = null) {
+        viewModelScope.launch { AnalysisScheduler.retry(getApplication(), job.id, newNote) }
+    }
+
+    fun dismissAnalysis(job: AnalysisJobEntity) {
+        viewModelScope.launch { AnalysisScheduler.dismiss(getApplication(), job) }
+    }
+
     private val _selectedDate = MutableStateFlow(LocalDate.now())
     val selectedDate: StateFlow<LocalDate> = _selectedDate.asStateFlow()
 
@@ -386,6 +405,7 @@ fun DashboardScreen(
     val activeJobs by viewModel.activeJobs.collectAsStateWithLifecycle()
     val refiningJobs by viewModel.refiningJobs.collectAsStateWithLifecycle()
     val failedRefinements by viewModel.failedRefinements.collectAsStateWithLifecycle()
+    val failedAnalyses by viewModel.failedAnalyses.collectAsStateWithLifecycle()
     val selectedDate by viewModel.selectedDate.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val waterMl by viewModel.waterMl.collectAsStateWithLifecycle()
@@ -408,6 +428,7 @@ fun DashboardScreen(
     var editTarget by remember { mutableStateOf<MealWithImages?>(null) }
     var correctTarget by remember { mutableStateOf<MealWithImages?>(null) }
     var showWeightDialog by remember { mutableStateOf(false) }
+    var retryNoteTarget by remember { mutableStateOf<AnalysisJobEntity?>(null) }
 
     fun isFavorite(meal: MealEntity): Boolean =
         favorites.any { it.name == meal.name && kotlin.math.abs(it.calories - meal.calories) < 0.5 }
@@ -469,6 +490,18 @@ fun DashboardScreen(
                     extraCount = activeJobs.size - 1
                 )
             }
+        }
+        items(failedAnalyses, key = { "failed-${it.id}" }) { job ->
+            FailedAnalysisCard(
+                job = job,
+                onRetry = {
+                    viewModel.retryAnalysis(job)
+                    scope.launch { snackbarHostState.showSnackbar("Отправлено на повторный анализ — придёт уведомление") }
+                },
+                onEdit = { retryNoteTarget = job },
+                onDismiss = { viewModel.dismissAnalysis(job) },
+                modifier = Modifier.animateItem()
+            )
         }
         if (refiningJobs.isNotEmpty()) {
             item { RefinementProcessingCard(job = refiningJobs.first(), extraCount = refiningJobs.size - 1) }
@@ -622,6 +655,29 @@ fun DashboardScreen(
                 }
             }
         )
+    }
+
+    retryNoteTarget?.let { job ->
+        var note by remember(job.id) { mutableStateOf(job.note) }
+        NutriDialog(
+            onDismiss = { retryNoteTarget = null },
+            title = "Повторить анализ",
+            subtitle = "Те же фото уйдут заново. Подскажите ИИ, что это и сколько — так расчёт будет точнее.",
+            confirmText = "Повторить",
+            onConfirm = {
+                viewModel.retryAnalysis(job, note)
+                retryNoteTarget = null
+                scope.launch { snackbarHostState.showSnackbar("Отправлено на повторный анализ — придёт уведомление") }
+            }
+        ) {
+            NutriTextField(
+                value = note,
+                onValueChange = { note = it },
+                placeholder = "Например: борщ со сметаной, тарелка ~350 г",
+                minLines = 3,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
     }
 
     if (showWeightDialog) {
@@ -901,6 +957,79 @@ private fun RefinementProcessingCard(job: RefinementJobEntity, extraCount: Int) 
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary
                 )
+            }
+        }
+    }
+}
+
+/**
+ * Неудавшийся анализ: фото, что это было, причина и три действия — повторить как
+ * есть, повторить с исправленным описанием, скрыть (фото удаляются).
+ */
+@Composable
+private fun FailedAnalysisCard(
+    job: AnalysisJobEntity,
+    onRetry: () -> Unit,
+    onEdit: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val thumbPath = firstPhotoThumb(job.photoPaths)
+    val error = MaterialTheme.colorScheme.error
+    FreshCard(modifier.fillMaxWidth()) {
+        Column(Modifier.padding(start = 14.dp, top = 14.dp, end = 8.dp, bottom = 6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(RoundedCornerShape(Radius.Tile))
+                        .background(error.copy(alpha = tintAlpha()))
+                ) {
+                    if (thumbPath != null) {
+                        AsyncImage(
+                            model = File(thumbPath),
+                            contentDescription = "Фото блюда",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Icon(Icons.Rounded.ErrorOutline, contentDescription = null, tint = error, modifier = Modifier.size(24.dp))
+                    }
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "Анализ не удался",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = error
+                    )
+                    Text(
+                        job.note.ifBlank { "Фото без описания" },
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    job.error?.takeIf { it.isNotBlank() }?.let {
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                TextAction("Скрыть", onClick = onDismiss, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.weight(1f))
+                TextAction("Изменить описание", onClick = onEdit)
+                NutriChip("Повторить", onClick = onRetry, primary = true, icon = Icons.Rounded.Refresh)
             }
         }
     }

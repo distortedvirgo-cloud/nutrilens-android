@@ -293,17 +293,7 @@ class AddMealViewModel(application: Application) : AndroidViewModel(application)
     fun dismissFailedJob(job: AnalysisJobEntity) {
         viewModelScope.launch {
             try {
-                try {
-                    val paths = JSONArray(job.photoPaths)
-                    for (i in 0 until paths.length()) {
-                        paths.optString(i).split("|").forEach { path ->
-                            if (path.isNotBlank()) File(path).delete()
-                        }
-                    }
-                } catch (_: Exception) {
-                    // битый JSON путей — записи всё равно удаляем
-                }
-                analysisJobRepository.deleteJob(job.id)
+                AnalysisScheduler.dismiss(getApplication(), job)
                 _messages.emit("Убрано из списка")
             } catch (e: Exception) {
                 _error.value = e.message ?: "Не удалось убрать"
