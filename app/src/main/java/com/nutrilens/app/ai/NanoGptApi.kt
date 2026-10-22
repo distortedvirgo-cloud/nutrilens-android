@@ -177,8 +177,8 @@ object NanoGptApi {
         }
 
         val first = attempt(basePrompt, reasoningEffort = "low")
-        if (first.items.isNotEmpty() || first.calories > 0.0) {
-            return fixMealDrift(first)
+        if (first.items.isNotEmpty() || first.calories > 0.0 || isNoFood(first)) {
+            return finalizeMeal(first)
         }
 
         // Модель отдала разбор только текстом (без items и итогов). Сначала пробуем
@@ -207,7 +207,7 @@ object NanoGptApi {
                 null
             }
             if (salvage != null && (salvage.items.isNotEmpty() || salvage.calories > 0.0)) {
-                return fixMealDrift(salvage)
+                return finalizeMeal(salvage)
             }
         }
 
@@ -224,7 +224,7 @@ object NanoGptApi {
                 "Модель не вернула разбивку по продуктам и итоговые КБЖУ — повторите анализ"
             )
         }
-        return fixMealDrift(second)
+        return finalizeMeal(second)
     }
 
     private suspend fun execute(request: Request): String = suspendCancellableCoroutine { cont ->

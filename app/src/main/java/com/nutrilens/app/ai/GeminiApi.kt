@@ -104,7 +104,7 @@ class GeminiApi(private val apiKey: String) {
             )
         }
 
-        return fixMealDrift(result)
+        return finalizeMeal(result)
     }
 
     /**
@@ -207,6 +207,15 @@ class GeminiApi(private val apiKey: String) {
                                     put("carbs", buildJsonObject { put("type", "NUMBER") })
                                     put("breakdown", buildJsonObject { put("type", "STRING") })
                                 }
+                                // Порядок генерации: сначала чем оценён вес и расчёт, потом числа.
+                                put(
+                                    "propertyOrdering",
+                                    buildJsonArray {
+                                        add("name"); add("portion_basis"); add("estimated_weight_g")
+                                        add("calorie_density"); add("breakdown")
+                                        add("calories"); add("protein"); add("fat"); add("carbs")
+                                    }
+                                )
                                 put(
                                     "required",
                                     buildJsonArray {
@@ -224,6 +233,17 @@ class GeminiApi(private val apiKey: String) {
                             }
                         }
                     }
+                    // Без propertyOrdering Gemini пишет поля по алфавиту: итоговые калории
+                    // раньше продуктов, а reasoning — в самом конце, когда числа уже названы.
+                    // Рассуждение и продукты первыми — модель считает, а не подгоняет.
+                    put(
+                        "propertyOrdering",
+                        buildJsonArray {
+                            add("reasoning"); add("items"); add("name")
+                            add("calories"); add("protein"); add("fat"); add("carbs")
+                            add("aiThoughts"); add("confidence_score"); add("health_score"); add("health_note")
+                        }
+                    )
                     put(
                         "required",
                         buildJsonArray {

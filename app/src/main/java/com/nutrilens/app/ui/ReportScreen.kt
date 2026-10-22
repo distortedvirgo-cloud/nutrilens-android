@@ -1,5 +1,6 @@
 package com.nutrilens.app.ui
 
+import com.nutrilens.app.insights.effectiveMacroGoals
 import android.app.Application
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -172,9 +173,15 @@ class ReportViewModel(application: Application) : AndroidViewModel(application) 
             _aiLoading.value = true
             _aiError.value = null
             try {
-                _aiText.value = GeminiTools.statsInsight(settings,
+                val goals = effectiveMacroGoals(
+                    settings.proteinGoal, settings.fatGoal, settings.carbsGoal,
+                    settings.dailyGoal, db.weightDao().latest()?.weight
+                )
+                _aiText.value = GeminiTools.statsInsight(
+                    settings,
                     settings.dailyGoal,
-                    current.recentData
+                    current.recentData,
+                    Triple(goals.protein, goals.fat, goals.carbs)
                 )
             } catch (e: Exception) {
                 _aiError.value = e.message ?: "Не удалось получить оценку"

@@ -1,5 +1,6 @@
 package com.nutrilens.app.bg
 
+import com.nutrilens.app.data.AnalysisJobEntity
 import android.content.Context
 import android.net.Uri
 import androidx.work.Constraints
@@ -51,12 +52,30 @@ object AnalysisScheduler {
      * возвращает её в очередь с чистым статусом и ставит в WorkManager заново.
      * Фото уже лежат в filesDir и переживают сбой, поэтому пересаживать их не нужно.
      */
-    suspend fun retry(context: Context, jobId: String) {
+    suspend fun retry(context: Context, jobId: String, newNote: String? = null) {
         val jobRepo = AnalysisJobRepository(NutriLensDatabase.getInstance(context).analysisJobDao())
         val job = jobRepo.byId(jobId) ?: return
         if (job.status == "RUNNING") return // уже в работе — не дублируем
-        jobRepo.requeueForRetry(job)
+        // Новое описание («это борщ, 300 г») уходит в анализ вместе с теми же фото.
+        jobRepo.requeueForRetry(if (newNote != null) job.copy(note = newNote.trim()) else job)
         WorkManager.getInstance(context).enqueue(analysisWorkRequest(jobId))
+    }
+
+    /** Убрать неудавшийся анализ: удаляем сохранённые фото и запись очереди. */
+    suspend fun dismiss(context: Context, job: AnalysisJobEntity) {
+        runCatching {
+            val paths = org.json.JSONArray(job.photoPaths)
+            for (i in 0 until paths.length()) {
+                val element = paths.opt(i)
+                val files = if (element is org.json.JSONObject) {
+                    listOf(element.optString("full"), element.optString("thumb"))
+                } else {
+                    element.toString().split("|")
+                }
+                files.filter { it.isNotBlank() }.forEach { java.io.File(it).delete() }
+            }
+        }
+        AnalysisJobRepository(NutriLensDatabase.getInstance(context).analysisJobDao()).deleteJob(job.id)
     }
 
     /**

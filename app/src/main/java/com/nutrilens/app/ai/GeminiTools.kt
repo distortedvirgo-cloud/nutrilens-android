@@ -102,8 +102,9 @@ object GeminiTools {
             safetySettings()
         }.toString()
 
-        val responseBody = execute(apiKey, bodyJson)
-        return responseBody
+        // Раньше здесь возвращалось сырое тело ответа Gemini — в бесплатном режиме
+        // чат показывал пользователю JSON вместо текста.
+        return parseText(execute(apiKey, bodyJson))
     }
 
     /**
@@ -192,7 +193,8 @@ object GeminiTools {
         val prompt = """
             Напиши подробный пошаговый рецепт для следующего блюда:
             ${recipePrompt}
-            Включи ингредиенты (с граммовками) и пошаговую инструкцию. Отвечай просто текстом (без сложного форматирования, используй обычные списки с тире). Не используй JSON.
+            Включи: число порций; ингредиенты с граммовками; пошаговую инструкцию с временем шагов; в конце — КБЖУ на одну порцию (ккал, белки, жиры, углеводы), согласованные с граммовками.
+            Отвечай просто текстом (без сложного форматирования, используй обычные списки с тире). Не используй JSON.
         """.trimIndent()
 
         val responseBody = modelText(settings, buildSchemalessBody(prompt))
@@ -345,14 +347,29 @@ object GeminiTools {
     /**
      * Короткая оценка рациона за последние дни (свободный текст).
      */
-    suspend fun statsInsight(settings: SettingsEntity, dailyGoal: Double, recentData: String): String {
+    suspend fun statsInsight(
+        settings: SettingsEntity,
+        dailyGoal: Double,
+        recentData: String,
+        macroGoals: Triple<Double, Double, Double>? = null
+    ): String {
+        val macroLine = macroGoals?.let {
+            "Цели по БЖУ на день: Б ${it.first.roundToInt()} г / Ж ${it.second.roundToInt()} г / У ${it.third.roundToInt()} г."
+        } ?: "Цели по БЖУ не заданы — ориентируйся на белок ~1.6 г/кг и сбалансированное распределение."
         val prompt = """
-            Проанализируй рацион за последние дни:
+            Ты спокойный и конкретный диетолог. Оцени рацион пользователя по дням (только дни с записями):
             ${recentData}
 
-            Цель пользователя: ${dailyGoal.roundToInt()} ккал/день.
+            Цель: ${dailyGoal.roundToInt()} ккал/день. ${macroLine}
+            Контекст пользователя: ${settings.userContext.ifBlank { "не указан" }}
 
-            Дай оценку от 1 до 10 (где 10 - идеально) и 2-3 коротких конструктивных совета по улучшению нутриентов/выбора блюд. Отвечай коротко и только по делу.
+            Сначала про себя посчитай средние калории и БЖУ, сравни с целями, найди повторяющиеся паттерны
+            (недобор белка, переборы в конкретные дни, однообразие, мало овощей). Затем ответь в Markdown строго так:
+            **Оценка: N/10** — одна фраза, почему.
+            **Что получается** — 1–2 пункта с цифрами из данных.
+            **Что улучшить** — 2–3 пункта: каждый с конкретной цифрой (средние/цель) и конкретным действием (продукт, порция, приём пищи).
+            **На завтра** — одно простое действие.
+            Не выдумывай данных, которых нет. Без медицинских диагнозов. Коротко: не больше 120 слов.
         """.trimIndent()
 
         val responseBody = modelText(settings, buildSchemalessBody(prompt))
@@ -366,14 +383,37 @@ object GeminiTools {
         dailyGoal: Double,
         userContext: String,
         todayMeals: List<Pair<String, Int>>,
-        todayTotal: Int
-    ): String = """
-        Ты дружелюбный и профессиональный ИИ-диетолог.
-        Твоя цель — помогать пользователю, отвечать на вопросы о питании, давать советы, также можешь анализировать фото еды, которые пользователь прикрепляет к сообщениям.
-        Данные пользователя: цель ${dailyGoal.roundToInt()} ккал. Контекст: ${userContext}.
-        Съедено сегодня: ${todayMeals.joinToString(", ") { "${it.first} (${it.second}ккал)" }} / За день: ${todayTotal} ккал.
-        Старайся давать короткие, ёмкие и поддерживающие ответы. НЕ ставь медицинских диагнозов и не назначай лечение — при подозрении на расстройство питания мягко рекомендуй обратиться к специалисту.
-    """.trimIndent()
+        todayTotal: Int,
+        todayMacros: Triple<Double, Double, Double>? = null,
+        macroGoals: Triple<Double, Double, Double>? = null,
+        recentDays: String = "",
+        weightKg: Double? = null,
+        now: java.time.LocalDateTime = java.time.LocalDateTime.now()
+    ): String {
+        val remaining = dailyGoal.roundToInt() - todayTotal
+        val macros = if (todayMacros != null && macroGoals != null) {
+            "БЖУ сегодня: Б ${todayMacros.first.roundToInt()}/${macroGoals.first.roundToInt()} г, " +
+                "Ж ${todayMacros.second.roundToInt()}/${macroGoals.second.roundToInt()} г, " +
+                "У ${todayMacros.third.roundToInt()}/${macroGoals.third.roundToInt()} г (съедено/цель)."
+        } else ""
+        val meals = todayMeals.joinToString("; ") { "${it.first} — ${it.second} ккал" }.ifBlank { "пока ничего" }
+        return """
+            Ты ИИ-диетолог в приложении NutriLens: дружелюбный, спокойный, конкретный. Видишь дневник пользователя и можешь разбирать фото еды из сообщений.
+
+            СЕЙЧАС: ${now.toLocalDate()} ${"%02d:%02d".format(now.hour, now.minute)}.
+            ПОЛЬЗОВАТЕЛЬ: ${userContext.ifBlank { "о себе ничего не написал" }}${weightKg?.let { ". Вес ${"%.1f".format(it)} кг" } ?: ""}.
+            ЦЕЛЬ: ${dailyGoal.roundToInt()} ккал/день. Сегодня съедено ${todayTotal} ккал, ${if (remaining >= 0) "осталось $remaining" else "перебор ${-remaining}"} ккал. $macros
+            СЕГОДНЯ В ДНЕВНИКЕ: $meals.
+            ${if (recentDays.isNotBlank()) "ПОСЛЕДНИЕ ДНИ:\n$recentDays" else ""}
+
+            Как отвечать:
+            - Опирайся на цифры выше: остаток калорий, недобор или перебор по БЖУ, время дня. Не проси данные, которые уже есть.
+            - Совет — конкретный: продукт, примерная порция в граммах и её ккал/белок. Без общих слов вроде «питайтесь сбалансированно».
+            - Фото еды в сообщении — оцени состав и примерные КБЖУ. Скажи, что точно записать в дневник можно через «+» → фото.
+            - Коротко: 2–6 предложений или короткий список. Markdown можно, таблицы — нет.
+            - Не осуждай выбор еды. Не ставь диагнозов и не назначай лечение; при признаках расстройства пищевого поведения мягко посоветуй специалиста.
+        """.trimIndent()
+    }
 
     // ---------- Построение тела запроса ----------
 
@@ -579,7 +619,7 @@ object GeminiTools {
         if (!useNano) return parseText(execute(settings.apiKey, bodyJson))
 
         val root = org.json.JSONObject(bodyJson)
-        val system = root.optJSONObject("systemInstruction")
+        val system = (root.optJSONObject("system_instruction") ?: root.optJSONObject("systemInstruction"))
             ?.optJSONArray("parts")?.optJSONObject(0)?.optString("text") ?: ""
         val messages = mutableListOf<NanoGptApi.Msg>()
         root.optJSONArray("contents")?.let { contents ->
@@ -592,7 +632,11 @@ object GeminiTools {
                 for (j in 0 until parts.length()) {
                     val part = parts.getJSONObject(j)
                     if (part.has("text")) text.append(part.optString("text"))
-                    part.optJSONObject("inlineData")?.optString("data")?.let { images += it }
+                    // Тело собирается с ключом inline_data (см. addPromptContent). Раньше
+                    // здесь читали только inlineData — фото холодильника и меню терялись
+                    // по дороге в NanoGPT, и модель отвечала, не видя снимков.
+                    (part.optJSONObject("inline_data") ?: part.optJSONObject("inlineData"))
+                        ?.optString("data")?.takeIf { it.isNotEmpty() }?.let { images += it }
                 }
                 messages += NanoGptApi.Msg(role, text.toString(), images)
             }

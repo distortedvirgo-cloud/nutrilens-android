@@ -1,5 +1,6 @@
 package com.nutrilens.app.ui
 
+import com.nutrilens.app.insights.effectiveMacroGoals
 import android.app.Application
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -135,17 +136,35 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             _error.value = null
             try {
                 val mealsToday = mealRepository.mealsOn(today)
+                val weight = mealRepository.getLatestWeight()
+                val goals = effectiveMacroGoals(
+                    settings.proteinGoal, settings.fatGoal, settings.carbsGoal, settings.dailyGoal, weight
+                )
                 val system = GeminiTools.buildChatSystemInstruction(
                     dailyGoal = settings.dailyGoal,
                     userContext = settings.userContext,
                     todayMeals = mealsToday.map { it.name to it.calories.roundToInt() },
-                    todayTotal = mealsToday.sumOf { it.calories }.roundToInt()
+                    todayTotal = mealsToday.sumOf { it.calories }.roundToInt(),
+                    todayMacros = Triple(
+                        mealsToday.sumOf { it.protein }, mealsToday.sumOf { it.fat }, mealsToday.sumOf { it.carbs }
+                    ),
+                    macroGoals = Triple(goals.protein, goals.fat, goals.carbs),
+                    recentDays = recentDaysSummary(),
+                    weightKg = weight
                 )
-                val history = _messages.value.map { msg ->
+                // В модель уходят только последние реплики, а фото — только у самых
+                // свежих: раньше каждое сообщение пересылало всю историю со всеми
+                // снимками, ответы дорожали и замедлялись с каждым фото.
+                val window = _messages.value.takeLast(CHAT_HISTORY_LIMIT)
+                    .dropWhile { it.role != "user" }
+                val history = window.mapIndexed { index, msg ->
+                    val withImages = index >= window.size - CHAT_IMAGE_TURNS
                     GeminiTools.ChatTurn(
                         role = msg.role,
-                        text = msg.text,
-                        imagesBase64 = msg.imagePaths.mapNotNull { path ->
+                        text = if (!withImages && msg.imagePaths.isNotEmpty() && msg.text.isBlank()) {
+                            "[фото еды из прошлых сообщений]"
+                        } else msg.text,
+                        imagesBase64 = if (!withImages) emptyList() else msg.imagePaths.mapNotNull { path ->
                             runCatching {
                                 Base64.encodeToString(
                                     ImagePrep.readBytes(File(path)),
@@ -169,6 +188,18 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 _error.value = e.message ?: "Не удалось получить ответ"
             }
             _loading.value = false
+        }
+    }
+
+    /** Три прошлых дня одной строкой на день — память диетолога о рационе. */
+    private suspend fun recentDaysSummary(): String {
+        val end = LocalDate.parse(today).minusDays(1)
+        val start = end.minusDays(2)
+        val meals = database.mealDao().mealsBetween(start.toString(), end.toString())
+        return meals.groupBy { it.date }.toSortedMap().entries.joinToString("\n") { (date, list) ->
+            "$date: ${list.sumOf { it.calories }.roundToInt()} ккал " +
+                "(Б ${list.sumOf { it.protein }.roundToInt()} Ж ${list.sumOf { it.fat }.roundToInt()} " +
+                "У ${list.sumOf { it.carbs }.roundToInt()}) — ${list.joinToString(", ") { it.name }.take(160)}"
         }
     }
 
@@ -559,3 +590,9 @@ private fun ChatInputBar(
         }
     }
 }
+
+/** Сколько последних реплик чата уходит в модель. */
+private const val CHAT_HISTORY_LIMIT = 20
+
+/** У скольких последних реплик пересылаются фото (у остальных — только текст). */
+private const val CHAT_IMAGE_TURNS = 4

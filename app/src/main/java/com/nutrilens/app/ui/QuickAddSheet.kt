@@ -1,5 +1,8 @@
 package com.nutrilens.app.ui
 
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.material.icons.rounded.ErrorOutline
+import kotlinx.coroutines.flow.map
 import android.app.Application
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -74,6 +77,12 @@ class QuickAddViewModel(application: Application) : AndroidViewModel(application
         FavoriteRepository(NutriLensDatabase.getInstance(application).favoriteDao()).observe()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** Сколько анализов не удалось — их красная точка горит на «+». */
+    val failedCount: StateFlow<Int> =
+        NutriLensDatabase.getInstance(application).analysisJobDao().observeFailed()
+            .map { it.size }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
     fun addWater(onDone: (Int) -> Unit) {
         viewModelScope.launch { onDone(QuickActions.addWater(getApplication(), 250)) }
     }
@@ -111,6 +120,7 @@ fun QuickAddSheet(
     viewModel: QuickAddViewModel = viewModel()
 ) {
     val favorites by viewModel.favorites.collectAsStateWithLifecycle()
+    val failedCount by viewModel.failedCount.collectAsStateWithLifecycle()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
@@ -144,6 +154,43 @@ fun QuickAddSheet(
                 style = MaterialTheme.typography.headlineMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
+
+            // Красная точка на «+» — это сбои анализа; повторить их можно на «Сегодня».
+            if (failedCount > 0) {
+                val error = MaterialTheme.colorScheme.error
+                Surface(
+                    onClick = { close { onNavigate("dashboard") } },
+                    shape = RoundedCornerShape(Radius.Tile),
+                    color = error.copy(alpha = tintAlpha()),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
+                    ) {
+                        Icon(Icons.Rounded.ErrorOutline, contentDescription = null, tint = error, modifier = Modifier.size(22.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                if (failedCount == 1) "Анализ не удался" else "Не удалось анализов: $failedCount",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = error
+                            )
+                            Text(
+                                "Повторить или поправить описание — на «Сегодня»",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Icon(
+                            Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
 
             val heroInteraction = remember { MutableInteractionSource() }
             Surface(

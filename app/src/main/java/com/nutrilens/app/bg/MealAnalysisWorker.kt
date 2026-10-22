@@ -7,6 +7,7 @@ import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.nutrilens.app.ai.ImagePrep
+import com.nutrilens.app.ai.NO_FOOD_ERROR
 import com.nutrilens.app.ai.analyzeMealCascade
 import com.nutrilens.app.ai.buildRecentMealsContext
 import com.nutrilens.app.data.AnalysisJobRepository
@@ -85,6 +86,10 @@ class MealAnalysisWorker(context: Context, params: WorkerParameters) : Coroutine
             // Память между днями: последние приёмы пищи независимо от даты, в хронологическом порядке.
             val recent = buildRecentMealsContext(db.mealDao().recentMeals(RECENT_MEALS_LIMIT).asReversed())
             val result = analyzeMealCascade(settings, fullBytes, job.note, recent)
+            if (result.items.isEmpty() && result.calories <= 0.0) {
+                val why = result.aiThoughts.trim().take(160)
+                throw RuntimeException(if (why.isNotEmpty()) "$NO_FOOD_ERROR: $why" else NO_FOOD_ERROR)
+            }
 
             val meal = saveMeal(db, settings.dailyGoal, photos, result)
             com.nutrilens.app.widget.WidgetUpdater.refresh(applicationContext)
@@ -100,7 +105,8 @@ class MealAnalysisWorker(context: Context, params: WorkerParameters) : Coroutine
             if (lower.contains("dns") || lower.contains("сети") || lower.contains("таймаут")) {
                 error += " · Фон ограничен телефоном? Дайте NutriLens «работу без ограничений» (Настройки → Фоновая работа)"
             }
-            val nonRetryable = lower.contains("http 400") ||
+            val nonRetryable = error.startsWith(NO_FOOD_ERROR) ||
+                lower.contains("http 400") ||
                 lower.contains("http 403") ||
                 lower.contains("ключ")
             if (!nonRetryable && runAttemptCount < 2) {
