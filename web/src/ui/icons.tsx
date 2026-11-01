@@ -1,0 +1,45 @@
+// Иконки — линейные SVG в одном стиле (stroke 2, скруглённые концы).
+import type { SVGProps } from 'react'
+
+type P = SVGProps<SVGSVGElement> & { size?: number }
+const base = (size = 24): SVGProps<SVGSVGElement> => ({
+  width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor',
+  strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true
+})
+const mk = (d: string | string[]) => ({ size, ...p }: P) => (
+  <svg {...base(size)} {...p}>{(Array.isArray(d) ? d : [d]).map((x, i) => <path key={i} d={x} />)}</svg>
+)
+
+export const IcHome = mk('M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1z')
+export const IcChart = mk(['M4 20V10', 'M10 20V4', 'M16 20v-7', 'M21 20H3'])
+export const IcSpark = mk(['M12 3l1.8 4.7L18 9.5l-4.2 1.8L12 16l-1.8-4.7L6 9.5l4.2-1.8z', 'M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z'])
+export const IcUser = mk(['M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z', 'M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6'])
+export const IcPlus = mk(['M12 5v14', 'M5 12h14'])
+export const IcCamera = mk(['M4 8h3l2-3h6l2 3h3v11H4z', 'M12 16.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z'])
+export const IcGallery = mk(['M4 5h16v14H4z', 'M4 15l4-4 4 4 3-3 5 5', 'M15 9.5h.01'])
+export const IcText = mk(['M4 6h16', 'M4 12h10', 'M4 18h13'])
+export const IcDrop = mk('M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z')
+export const IcScale = mk(['M5 4h14v16H5z', 'M9 8h6', 'M12 8l1.5 3'])
+export const IcDumbbell = mk(['M3 12h3', 'M18 12h3', 'M6 8v8', 'M18 8v8', 'M8 10v4', 'M16 10v4', 'M8 12h8'])
+export const IcFire = mk('M12 3c1 3 4 5 4 9a4 4 0 0 1-8 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-5 0-8z')
+export const IcTrophy = mk(['M8 4h8v5a4 4 0 0 1-8 0z', 'M5 5h3', 'M16 5h3', 'M12 13v4', 'M9 20h6'])
+export const IcChevronR = mk('M9 6l6 6-6 6')
+export const IcChevronL = mk('M15 6l-6 6 6 6')
+export const IcClose = mk(['M6 6l12 12', 'M18 6L6 18'])
+export const IcStar = mk('M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z')
+export const IcTrash = mk(['M4 7h16', 'M9 7V4h6v3', 'M6 7l1 13h10l1-13'])
+export const IcEdit = mk(['M4 20h4l10-10-4-4L4 16z', 'M14 6l4 4'])
+export const IcSend = mk(['M5 12h14', 'M13 6l6 6-6 6'])
+export const IcCheck = mk('M5 12l5 5 9-10')
+export const IcShare = mk(['M12 3v12', 'M7 8l5-5 5 5', 'M5 13v7h14v-7'])
+export const IcDownload = mk(['M12 4v12', 'M7 11l5 5 5-5', 'M5 20h14'])
+export const IcUpload = mk(['M12 20V8', 'M7 13l5-5 5 5', 'M5 4h14'])
+export const IcTarget = mk(['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', 'M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10z', 'M12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z'])
+export const IcKey = mk(['M14 10a4 4 0 1 0-1 2.6L21 21', 'M17 17l2-2'])
+export const IcInfo = mk(['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', 'M12 11v6', 'M12 7.5h.01'])
+export const IcAlert = mk(['M12 9v4', 'M12 17h.01', 'M10.3 3.9L2 18a2 2 0 0 0 1.7 3h16.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z'])
+export const IcRefresh = mk(['M20 11a8 8 0 1 0-2.3 5.7', 'M20 4v7h-7'])
+export const IcFood = mk(['M7 3v8a2 2 0 0 0 4 0V3', 'M9 11v10', 'M17 3c-2 0-3 2-3 5s1 4 3 4v9'])
+export const IcBulb = mk(['M9 18h6', 'M10 21h4', 'M12 3a6 6 0 0 1 4 10.5c-.7.7-1 1.5-1 2.5H9c0-1-.3-1.8-1-2.5A6 6 0 0 1 12 3z'])
+export const IcChat = mk('M4 5h16v11H9l-5 4z')
+export const IcCalendar = mk(['M3 5h18v16H3z', 'M3 10h18', 'M8 3v4', 'M16 3v4'])
