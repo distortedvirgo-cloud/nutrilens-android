@@ -126,7 +126,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val settings = settingsRepository.get()
             if (settings.apiKey.isBlank() && settings.nanoApiKey.isBlank()) {
-                _error.value = "Сначала добавьте ключ Gemini или NanoGPT в настройках"
+                _error.value = com.nutrilens.app.ai.NO_KEY_ERROR
                 return@launch
             }
             val userMessage = ChatMessage(role = "user", text = text, imagePaths = imagePaths)

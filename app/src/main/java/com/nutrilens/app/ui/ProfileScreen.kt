@@ -50,6 +50,8 @@ import com.nutrilens.app.data.DataEvents
 import com.nutrilens.app.data.NutriLensDatabase
 import com.nutrilens.app.data.SettingsEntity
 import com.nutrilens.app.data.SettingsRepository
+import com.nutrilens.app.data.aiProvider
+import com.nutrilens.app.data.hasAnyAiKey
 import com.nutrilens.app.insights.effectiveMacroGoals
 import com.nutrilens.app.ui.theme.NutriTheme
 import com.nutrilens.app.ui.theme.macroPalette
@@ -101,10 +103,10 @@ fun ProfileScreen(onNavigate: (String) -> Unit, viewModel: ProfileViewModel = vi
         settings.proteinGoal, settings.fatGoal, settings.carbsGoal, settings.dailyGoal, lastWeight
     )
     val nickname = settings.leaderboardNickname.trim()
-    val modeLabel = when (settings.analysisMode) {
-        "simple" -> "Простой"
-        "advanced" -> "Продвинутый"
-        else -> "Бесплатно"
+    val modeLabel = when {
+        !settings.hasAnyAiKey -> "Добавить ключ"
+        settings.aiProvider == "gemini" -> "Gemini"
+        else -> "NanoGPT"
     }
 
     // Цвет иконки — по смыслу раздела (те же, что у его экрана настроек), а не по кругу.
@@ -133,6 +135,7 @@ fun ProfileScreen(onNavigate: (String) -> Unit, viewModel: ProfileViewModel = vi
             .padding(horizontal = Space.Screen)
             .padding(bottom = 120.dp)
     ) {
+        AiKeyBanner(onClick = { onNavigate("settings/ai") }, modifier = Modifier.padding(top = 16.dp))
         FreshCard(
             Modifier
                 .fillMaxWidth()

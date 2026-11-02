@@ -112,8 +112,9 @@ data class SettingsEntity(
     val updateRepo: String = "distortedvirgo-cloud/nutrilens-android",
     val nanoApiKey: String = "",
     val nanoApiEndpoint: String = "",
-    // free | simple | advanced — каскад провайдеров как в веб-версии.
-    val analysisMode: String = "free",
+    // Провайдер ИИ: "nanogpt" (по умолчанию) или "gemini" (бесплатный ключ Google).
+    // Старые значения free/simple/advanced читаются через [aiProvider].
+    val analysisMode: String = "nanogpt",
     // Ник участника лидерборда (пусто — в лидерборде не участвуем).
     val leaderboardNickname: String = ""
 )
@@ -155,3 +156,10 @@ data class ToolJobEntity(
     val createdAt: Long = System.currentTimeMillis(),
     val error: String? = null
 )
+/** Провайдер ИИ, выбранный пользователем: "nanogpt" или "gemini" (старые free → gemini). */
+val SettingsEntity.aiProvider: String
+    get() = if (analysisMode == "free" || analysisMode == "gemini") "gemini" else "nanogpt"
+
+/** Задан ли хоть один ключ — без него анализ еды и чат не работают. */
+val SettingsEntity.hasAnyAiKey: Boolean
+    get() = apiKey.isNotBlank() || nanoApiKey.isNotBlank()

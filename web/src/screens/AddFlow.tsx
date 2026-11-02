@@ -1,6 +1,7 @@
 // Добавление: лист «+» (фото, галерея, текст, вода, вес, тренировка,
 // избранное) и лист составления запроса к ИИ.
 import { useEffect, useRef, useState } from 'react'
+import { hasAnyKey } from '../ai'
 import { type Favorite, type Meal, addWater, favorites, getSettings, putMeal, setWeight, toggleWorkout, uid } from '../data/db'
 import { enqueueAnalysis, runQueue, storePhoto } from '../data/actions'
 import { iso, nowTime } from '../data/insights'
@@ -119,18 +120,18 @@ const Tile = ({ icon, label, tint, onClick }: { icon: React.ReactNode; label: st
 )
 
 /** Фото + описание → задача в очередь ИИ. Можно закрыть приложение: анализ продолжится при следующем открытии. */
-export function ComposeSheet({ initialPhotos, focusText, refineMeal, onClose, onSent }: {
-  initialPhotos: string[]; focusText?: boolean; refineMeal?: Meal; onClose: () => void; onSent: () => void
+export function ComposeSheet({ initialPhotos, focusText, refineMeal, onClose, onSent, onSetupAi }: {
+  initialPhotos: string[]; focusText?: boolean; refineMeal?: Meal; onClose: () => void; onSent: () => void; onSetupAi?: () => void
 }) {
   return (
     <Sheet onClose={onClose} label={refineMeal ? 'Поправить блюдо' : 'Новый приём пищи'}>
-      <ComposeBody initialPhotos={initialPhotos} focusText={focusText} refineMeal={refineMeal} onSent={onSent} />
+      <ComposeBody initialPhotos={initialPhotos} focusText={focusText} refineMeal={refineMeal} onSent={onSent} onSetupAi={onSetupAi} />
     </Sheet>
   )
 }
 
-function ComposeBody({ initialPhotos, focusText, refineMeal, onSent }: {
-  initialPhotos: string[]; focusText?: boolean; refineMeal?: Meal; onSent: () => void
+function ComposeBody({ initialPhotos, focusText, refineMeal, onSent, onSetupAi }: {
+  initialPhotos: string[]; focusText?: boolean; refineMeal?: Meal; onSent: () => void; onSetupAi?: () => void
 }) {
   const close = useSheetClose()
   const toast = useToast()
@@ -140,7 +141,7 @@ function ComposeBody({ initialPhotos, focusText, refineMeal, onSent }: {
   const textRef = useRef<HTMLTextAreaElement>(null)
   const { inputs, camera, gallery } = usePhotoPickers((ids) => setPhotos((p) => [...p, ...ids].slice(0, 6)))
 
-  useEffect(() => { getSettings().then((s) => setHasKey(!!s.apiKey.trim())) }, [])
+  useEffect(() => { getSettings().then((s) => setHasKey(hasAnyKey(s))) }, [])
   useEffect(() => {
     if (focusText || refineMeal) setTimeout(() => textRef.current?.focus(), 350)
   }, [focusText, refineMeal])
@@ -190,7 +191,8 @@ function ComposeBody({ initialPhotos, focusText, refineMeal, onSent }: {
 
       {!hasKey && (
         <div className="card r22 pad-14 small" style={{ background: 'var(--tertiary-cont)', color: 'var(--on-tertiary-cont)' }}>
-          Нужен ключ Gemini: Профиль → Нейросеть. Он бесплатный и хранится только на этом телефоне.
+          <div>Нужен ключ NanoGPT или Gemini — без него ИИ не посчитает калории.</div>
+          {onSetupAi && <button className="btn btn-soft" style={{ height: 40, marginTop: 10 }} onClick={() => { close(); onSetupAi() }}>Подключить нейросеть</button>}
         </div>
       )}
 

@@ -36,7 +36,13 @@ export interface Meal {
 
 export interface Settings {
   id: 1
+  /** Ключ Gemini (бесплатный, Google AI Studio). */
   apiKey: string
+  /** Ключ NanoGPT (nano-gpt.com), основной провайдер по умолчанию. */
+  nanoApiKey: string
+  nanoEndpoint: string
+  /** Какой сервис ИИ использовать в первую очередь. */
+  provider: 'nanogpt' | 'gemini'
   dailyGoal: number
   proteinGoal: number | null
   fatGoal: number | null
@@ -76,6 +82,9 @@ export interface ChatMessage {
 export const DEFAULT_SETTINGS: Settings = {
   id: 1,
   apiKey: '',
+  nanoApiKey: '',
+  nanoEndpoint: '',
+  provider: 'nanogpt',
   dailyGoal: 2000,
   proteinGoal: null,
   fatGoal: null,

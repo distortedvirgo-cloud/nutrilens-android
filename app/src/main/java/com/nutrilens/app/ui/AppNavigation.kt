@@ -241,7 +241,8 @@ fun NutriLensAppRoot(initialDate: String? = null, navigateTo: String? = null) {
                         snackbarHostState = snackbarHostState,
                         onOpenLeaderboard = { navigate("leaderboard") },
                         onOpenCoach = { navigate("coach") },
-                        onAddMeal = { navigate("add/camera") }
+                        onAddMeal = { navigate("add/camera") },
+                        onSetupAi = { navigate("settings/ai") }
                     )
                 }
                 composable("report") { ReportScreen(onOpenLeaderboard = { navigate("leaderboard") }) }

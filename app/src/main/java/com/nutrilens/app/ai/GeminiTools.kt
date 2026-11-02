@@ -1,6 +1,7 @@
 package com.nutrilens.app.ai
 
 import com.nutrilens.app.data.SettingsEntity
+import com.nutrilens.app.data.aiProvider
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.JsonObjectBuilder
@@ -561,7 +562,8 @@ object GeminiTools {
      */
     private suspend fun modelText(settings: SettingsEntity, bodyJson: String): String {
         val hasNano = settings.nanoApiKey.isNotBlank()
-        val useNano = hasNano && (settings.analysisMode != "free" || settings.apiKey.isBlank())
+        if (!hasNano && settings.apiKey.isBlank()) throw RuntimeException(NO_KEY_ERROR)
+        val useNano = hasNano && (settings.aiProvider == "nanogpt" || settings.apiKey.isBlank())
         if (!useNano) return parseText(execute(settings.apiKey, bodyJson))
 
         val root = org.json.JSONObject(bodyJson)
@@ -590,14 +592,8 @@ object GeminiTools {
         if (messages.isEmpty()) return parseText(execute(settings.apiKey, bodyJson))
         val jsonMode = root.optJSONObject("generationConfig")
             ?.optString("responseMimeType") == "application/json"
-        // У текстовых инструментов роутера сложности нет: simple — младшая модель,
-        // при пустом ответе или сбое — откат на старшую; advanced — сразу
-        // старшая, качество важнее скорости.
-        if (settings.analysisMode == "advanced") {
-            return NanoGptApi.complete(
-                settings.nanoApiKey, settings.nanoApiEndpoint, NANO_MODEL_SENIOR, system, messages, jsonMode
-            )
-        }
+        // У текстовых инструментов роутера сложности нет: младшая модель,
+        // при пустом ответе или сбое — откат на старшую.
         return try {
             val fast = NanoGptApi.complete(
                 settings.nanoApiKey, settings.nanoApiEndpoint, NANO_MODEL_JUNIOR, system, messages, jsonMode

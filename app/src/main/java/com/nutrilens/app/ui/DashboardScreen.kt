@@ -397,6 +397,7 @@ fun DashboardScreen(
     onOpenLeaderboard: () -> Unit = {},
     onOpenCoach: () -> Unit = {},
     onAddMeal: () -> Unit = {},
+    onSetupAi: () -> Unit = {},
     viewModel: DashboardViewModel = viewModel()
 ) {
     val scope = rememberCoroutineScope()
@@ -463,6 +464,7 @@ fun DashboardScreen(
                 )
             }
         }
+        item { AiKeyBanner(onClick = onSetupAi) }
         item {
             Box(Modifier.introIn(1, introDone)) {
                 WeekStrip(

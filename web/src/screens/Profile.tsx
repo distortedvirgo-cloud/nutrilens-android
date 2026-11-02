@@ -1,16 +1,19 @@
 // «Профиль»: кто я и цели + настройки по разделам (каждый — свой лист).
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { type Settings, getSettings, latestWeight, saveSettings } from '../data/db'
 import { exportBackup, importBackup } from '../data/actions'
 import { macroGoals } from '../data/insights'
-import { checkKey, dailyResetTime, usageToday } from '../ai/gemini'
+import { dailyResetTime, usageToday } from '../ai/gemini'
+import { activeProvider, hasAnyKey } from '../ai'
+import { KeyField, ProviderCards } from '../ui/AiSetup'
 import { Badge, Sheet, useData, useSheetClose, useToast } from '../ui/kit'
 import { IcChevronR, IcDownload, IcInfo, IcKey, IcShare, IcTarget, IcUpload, IcUser } from '../ui/icons'
 
 type Section = 'goals' | 'about' | 'ai' | 'data' | 'install' | null
 
-export function ProfileScreen() {
-  const [open, setOpen] = useState<Section>(null)
+export function ProfileScreen({ openAi = 0 }: { openAi?: number }) {
+  const [open, setOpen] = useState<Section>(openAi ? 'ai' : null)
+  useEffect(() => { if (openAi) setOpen('ai') }, [openAi])
   const data = useData(async () => ({ s: await getSettings(), w: (await latestWeight())?.weight ?? null }), [], null)
   if (!data) return <div className="screen" />
   const { s, w } = data
@@ -22,7 +25,7 @@ export function ProfileScreen() {
       ['about', <IcUser size={19} />, 'var(--protein)', 'О себе', s.nickname || '']
     ]],
     ['ИИ и данные', [
-      ['ai', <IcKey size={19} />, 'var(--secondary)', 'Нейросеть', s.apiKey ? 'Gemini подключён' : 'нужен ключ'],
+      ['ai', <IcKey size={19} />, 'var(--secondary)', 'Нейросеть', !hasAnyKey(s) ? 'добавить ключ' : activeProvider(s) === 'gemini' ? 'Gemini' : 'NanoGPT'],
       ['data', <IcDownload size={19} />, 'var(--carbs)', 'Экспорт и импорт', '']
     ]],
     ['Приложение', [
@@ -33,6 +36,14 @@ export function ProfileScreen() {
   return (
     <div className="screen screen-enter">
       <div className="col gap-16 stagger">
+        {!hasAnyKey(s) && (
+          <button className="card pad-16 pressable row gap-14" onClick={() => setOpen('ai')}
+            style={{ textAlign: 'left', marginTop: 4, border: '1.5px solid color-mix(in srgb, var(--primary) 50%, transparent)', background: 'color-mix(in srgb, var(--primary) 12%, var(--surface))' }}>
+            <span className="badge" style={{ width: 44, height: 44, borderRadius: 14, background: 'var(--primary)', color: 'var(--on-brand)' }}><IcKey size={22} /></span>
+            <span className="col grow"><span className="title">Подключи нейросеть</span><span className="small">Вставь ключ NanoGPT или Gemini — без него ИИ не работает</span></span>
+            <span className="muted"><IcChevronR size={18} /></span>
+          </button>
+        )}
         <button className="card pad-18 pressable row gap-16" style={{ textAlign: 'left', marginTop: 4 }} onClick={() => setOpen('about')}>
           <span className="badge" style={{ width: 60, height: 60, borderRadius: 30, fontSize: 24, fontWeight: 800, background: 'linear-gradient(135deg, var(--brand-from), var(--secondary))', color: 'var(--on-brand)' }}>
             {(s.nickname.trim()[0] ?? 'N').toUpperCase()}
@@ -166,33 +177,18 @@ function FreeTierCard() {
 function AiForm({ s }: { s: Settings }) {
   const close = useSheetClose()
   const toast = useToast()
-  const [key, setKey] = useState(s.apiKey)
-  const [checking, setChecking] = useState(false)
+  const [provider, setProvider] = useState<Settings['provider']>(s.provider)
   return (
     <div className="col gap-14">
       <div className="h1">Нейросеть</div>
-      <div className="small" style={{ fontSize: 14 }}>
-        Анализ еды и чат работают через Google Gemini — тот же «Бесплатный» режим, что в Android-приложении.
-        Ключ бесплатный и хранится только на этом телефоне.
+      {!hasAnyKey(s) && <div className="small" style={{ fontSize: 14, color: 'var(--tertiary)', fontWeight: 700 }}>Ключ ещё не добавлен — без него ИИ не посчитает калории. Выбери сервис, получи ключ по ссылке и вставь его ниже.</div>}
+      <ProviderCards value={provider} onChange={setProvider} />
+      {provider === 'gemini' && <FreeTierCard />}
+      <KeyField key={provider} s={s} provider={provider} onError={(m) => toast(m)}
+        onSaved={() => { close(); toast(provider === 'gemini' ? 'Gemini подключён' : 'NanoGPT подключён') }} />
+      <div className="small">
+        Ключи хранятся только на этом телефоне. Можно добавить оба: если основной сервис не ответит, приложение возьмёт второй.
       </div>
-      <FreeTierCard />
-      <a className="chip primary pressable" href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" style={{ alignSelf: 'flex-start', textDecoration: 'none' }}>
-        Получить ключ в Google AI Studio
-      </a>
-      <div>
-        <label className="field-label" htmlFor="ai-key">Ключ Gemini</label>
-        <input id="ai-key" className="field" value={key} onChange={(e) => setKey(e.target.value)}
-          autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder="AIza…" type="password" />
-      </div>
-      <button className="btn btn-brand full" disabled={!key.trim() || checking} onClick={async () => {
-        setChecking(true)
-        const ok = await checkKey(key)
-        setChecking(false)
-        if (!ok) { toast('Ключ не подошёл — проверь, что скопирован целиком'); return }
-        await saveSettings({ apiKey: key.trim() })
-        close()
-        toast('Gemini подключён')
-      }}>{checking ? <span className="spinner" /> : 'Проверить и сохранить'}</button>
     </div>
   )
 }

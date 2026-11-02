@@ -12,17 +12,19 @@ import {
 import { retryJob, runQueue } from '../data/actions'
 import { Bar, Badge, Photo, Ring, useCountUp, useData, useToast } from '../ui/kit'
 import {
-  IcCamera, IcChevronR, IcDrop, IcFire, IcPlus, IcRefresh, IcScale, IcSpark, IcStar, IcTrophy, IcAlert, IcClose
+  IcCamera, IcChevronR, IcKey, IcDrop, IcFire, IcPlus, IcRefresh, IcScale, IcSpark, IcStar, IcTrophy, IcAlert, IcClose
 } from '../ui/icons'
 
 const WEEK = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 
-export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOpenProgress }: {
+export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOpenProgress, needsKey, onSetupAi }: {
   onOpenMeal: (m: Meal) => void
   onAddPhoto: () => void
   onOpenCoach: () => void
   onWeigh: () => void
   onOpenProgress: () => void
+  needsKey: boolean
+  onSetupAi: () => void
 }) {
   const [date, setDate] = useState(() => iso(new Date()))
   const toast = useToast()
@@ -72,6 +74,17 @@ export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOp
     <div className="screen screen-enter">
       <div className="col gap-16 stagger">
         <Header date={d} streak={streak} isToday={isToday} onToday={() => setDate(today)} />
+        {needsKey && (
+          <button className="card pad-16 pressable row gap-14" onClick={onSetupAi}
+            style={{ textAlign: 'left', border: '1.5px solid color-mix(in srgb, var(--primary) 50%, transparent)', background: 'color-mix(in srgb, var(--primary) 12%, var(--surface))' }}>
+            <span className="badge" style={{ width: 44, height: 44, borderRadius: 14, background: 'var(--primary)', color: 'var(--on-brand)' }}><IcKey size={22} /></span>
+            <span className="col grow">
+              <span className="title">Подключи нейросеть</span>
+              <span className="small">Без ключа NanoGPT или Gemini ИИ не посчитает калории. Нажми — займёт минуту</span>
+            </span>
+            <span className="muted"><IcChevronR size={18} /></span>
+          </button>
+        )}
         <WeekStrip date={d} weekKcal={data.weekKcal} goal={settings.dailyGoal} onSelect={(x) => setDate(iso(x))} />
         <Hero meals={meals} goal={settings.dailyGoal} goals={goals} onLeaderboard={onOpenProgress} />
 

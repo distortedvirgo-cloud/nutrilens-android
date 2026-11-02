@@ -45,7 +45,7 @@ class MealAnalysisWorker(context: Context, params: WorkerParameters) : Coroutine
 
         val settings = settingsRepo.get()
         if (settings.apiKey.isBlank() && settings.nanoApiKey.isBlank()) {
-            val msg = "Не задан ключ Gemini или NanoGPT — укажите его в настройках"
+            val msg = com.nutrilens.app.ai.NO_KEY_ERROR
             jobRepo.markFailed(jobId, msg)
             postFailureNotification(jobId, msg)
             return Result.failure()

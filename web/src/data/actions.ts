@@ -3,7 +3,7 @@ import {
   type Job, type Meal, addChat, chatHistory, db, deleteJob, getMeal, getPhoto, getSettings,
   jobs, latestWeight, mealsBetween, mealsOn, notifyChanged, putJob, putMeal, putPhoto, recentMeals, uid
 } from './db'
-import { analyzeMeal, chat } from '../ai/gemini'
+import { analyzeMeal, chat } from '../ai'
 import { addDays, dayTotals, iso, macroGoals, nowTime } from './insights'
 
 // ---------- Фото: сжатие перед ИИ и хранением ----------
@@ -100,8 +100,7 @@ async function processJob(job: Job): Promise<Meal> {
     ? `${existing.name}: ${existing.calories} ккал, Б ${existing.protein} Ж ${existing.fat} У ${existing.carbs}. Продукты: ` +
       existing.items.map((i) => `${i.name} ${i.weightG} г ${i.calories} ккал`).join('; ')
     : ''
-  const r = await analyzeMeal({
-    apiKey: settings.apiKey,
+  const r = await analyzeMeal(settings, {
     images,
     userContext: settings.userContext || 'не указано',
     note: job.note,
@@ -171,7 +170,7 @@ export async function sendChat(text: string): Promise<void> {
     '- Не осуждай выбор еды. Не ставь диагнозов и не назначай лечение; при признаках расстройства пищевого поведения мягко посоветуй специалиста.'
   ].join('\n')
   const history = (await chatHistory()).slice(-20).map((m) => ({ role: m.role, text: m.text }))
-  const reply = await chat({ apiKey: settings.apiKey, system, history })
+  const reply = await chat(settings, { system, history })
   await addChat({ id: uid(), role: 'model', text: reply, createdAt: Date.now() })
 }
 
@@ -183,7 +182,8 @@ export async function exportBackup(): Promise<Blob> {
   const meals = await d.getAll('meals')
   const data = {
     settings: {
-      id: 1, apiKey: s.apiKey, dailyGoal: s.dailyGoal, proteinGoal: s.proteinGoal, fatGoal: s.fatGoal,
+      id: 1, apiKey: s.apiKey, nanoApiKey: s.nanoApiKey, nanoApiEndpoint: s.nanoEndpoint,
+      apiMode: s.provider === 'gemini' ? 'free' : 'simple', dailyGoal: s.dailyGoal, proteinGoal: s.proteinGoal, fatGoal: s.fatGoal,
       carbsGoal: s.carbsGoal, userContext: s.userContext, leaderboardNickname: s.nickname
     },
     meals: meals.map(({ items: _i, photoIds: _p, ...m }) => m),
@@ -258,9 +258,12 @@ export async function importBackup(file: Blob): Promise<number> {
   if (s) {
     const current = await tx.objectStore('settings').get(1)
     await tx.objectStore('settings').put({
-      ...(current ?? { id: 1, apiKey: '', userContext: '', nickname: '', onboarded: true, proteinGoal: null, fatGoal: null, carbsGoal: null, dailyGoal: 2000 }),
+      ...(current ?? { id: 1, apiKey: '', nanoApiKey: '', nanoEndpoint: '', provider: 'nanogpt' as const, userContext: '', nickname: '', onboarded: true, proteinGoal: null, fatGoal: null, carbsGoal: null, dailyGoal: 2000 }),
       id: 1,
       apiKey: String(s.apiKey || current?.apiKey || ''),
+      nanoApiKey: String(s.nanoApiKey || current?.nanoApiKey || ''),
+      nanoEndpoint: String(s.nanoApiEndpoint || current?.nanoEndpoint || ''),
+      provider: ['simple', 'advanced', 'nanogpt'].includes(String(s.apiMode)) ? 'nanogpt' : 'gemini',
       dailyGoal: Number(s.dailyGoal ?? 2000),
       proteinGoal: s.proteinGoal == null ? null : Number(s.proteinGoal),
       fatGoal: s.fatGoal == null ? null : Number(s.fatGoal),

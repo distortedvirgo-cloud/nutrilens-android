@@ -18,6 +18,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import com.nutrilens.app.ui.NutriLensAppRoot
+import com.nutrilens.app.ui.Onboarding
+import com.nutrilens.app.ui.OnboardingScreen
 import com.nutrilens.app.ui.theme.NutriLensTheme
 
 class MainActivity : ComponentActivity() {
@@ -38,10 +40,18 @@ class MainActivity : ComponentActivity() {
                 if (Build.VERSION.SDK_INT >= 33) {
                     RequestNotificationPermissionOnce()
                 }
-                NutriLensAppRoot(
-                    initialDate = dateExtra?.takeIf { it.isNotBlank() },
-                    navigateTo = navigateTo?.takeIf { it in DEEP_LINK_ROUTES }
-                )
+                // Первый запуск — онбординг (данные о себе + ключ ИИ), затем основное приложение.
+                val context = LocalContext.current
+                var onboarding by remember { mutableStateOf<Boolean?>(null) }
+                LaunchedEffect(Unit) { onboarding = Onboarding.needed(context) }
+                when (onboarding) {
+                    null -> Unit
+                    true -> OnboardingScreen(onFinish = { onboarding = false })
+                    false -> NutriLensAppRoot(
+                        initialDate = dateExtra?.takeIf { it.isNotBlank() },
+                        navigateTo = navigateTo?.takeIf { it in DEEP_LINK_ROUTES }
+                    )
+                }
             }
         }
 

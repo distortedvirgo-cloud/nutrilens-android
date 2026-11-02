@@ -78,6 +78,8 @@ import com.nutrilens.app.ai.NANO_MODEL_SENIOR
 import com.nutrilens.app.ai.NanoGptApi
 import com.nutrilens.app.bg.ReminderSync
 import com.nutrilens.app.data.Backup
+import com.nutrilens.app.data.aiProvider
+import com.nutrilens.app.data.hasAnyAiKey
 import com.nutrilens.app.data.NutriLensDatabase
 import com.nutrilens.app.data.SettingsEntity
 import com.nutrilens.app.data.SettingsRepository
@@ -346,45 +348,57 @@ fun SettingsScreen(
                     .padding(Space.Card),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                SettingsSectionTitle(Icons.Rounded.AutoAwesome, "ИИ", MaterialTheme.colorScheme.primary)
-                SettingsTextField(
-                    initial = settings.apiKey,
-                    label = "Ключ Gemini",
-                    onCommit = viewModel::setApiKey,
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardType = KeyboardType.Password
-                )
-                Text(
-                    text = "Хранится только на этом устройстве",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
+                SettingsSectionTitle(Icons.Rounded.AutoAwesome, "Нейросеть", MaterialTheme.colorScheme.primary)
+                val provider = settings.aiProvider
+                if (!settings.hasAnyAiKey) {
+                    Text(
+                        text = "Ключ ещё не добавлен — без него ИИ не посчитает калории. Выберите сервис, получите ключ по ссылке и вставьте его ниже.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+                AiProviderCards(selected = provider, onSelect = viewModel::setAnalysisMode)
                 Spacer(Modifier.height(4.dp))
+                if (provider == "nanogpt") {
+                    SettingsTextField(
+                        initial = settings.nanoApiKey,
+                        label = "Ключ NanoGPT",
+                        onCommit = viewModel::setNanoApiKey,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardType = KeyboardType.Password
+                    )
+                    GetKeyLink("nanogpt")
+                    SettingsTextField(
+                        initial = settings.nanoApiEndpoint,
+                        label = "Адрес NanoGPT (необязательно)",
+                        onCommit = viewModel::setNanoApiEndpoint
+                    )
+                    SettingsTextField(
+                        initial = settings.apiKey,
+                        label = "Ключ Gemini — запасной (необязательно)",
+                        onCommit = viewModel::setApiKey,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardType = KeyboardType.Password
+                    )
+                } else {
+                    SettingsTextField(
+                        initial = settings.apiKey,
+                        label = "Ключ Gemini",
+                        onCommit = viewModel::setApiKey,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardType = KeyboardType.Password
+                    )
+                    GetKeyLink("gemini")
+                    SettingsTextField(
+                        initial = settings.nanoApiKey,
+                        label = "Ключ NanoGPT — запасной (необязательно)",
+                        onCommit = viewModel::setNanoApiKey,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardType = KeyboardType.Password
+                    )
+                }
                 Text(
-                    "Режим анализа",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                SettingsModeRow(
-                    selected = settings.analysisMode,
-                    onSelect = viewModel::setAnalysisMode
-                )
-                SettingsTextField(
-                    initial = settings.nanoApiKey,
-                    label = "Ключ NanoGPT (для Простой/Продвинутый)",
-                    onCommit = viewModel::setNanoApiKey,
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardType = KeyboardType.Password
-                )
-                SettingsTextField(
-                    initial = settings.nanoApiEndpoint,
-                    label = "Адрес NanoGPT (необязательно)",
-                    onCommit = viewModel::setNanoApiEndpoint
-                )
-                Text(
-                    text = "«Бесплатно» — ваш ключ Gemini (при сбое — NanoGPT, если ключ задан). «Простой» и «Продвинутый» идут через nano-gpt.com; в «Продвинутом» сложные фото эскалируются на thinking-модель.",
+                    text = "Ключи хранятся только на этом устройстве. Запасной ключ подхватывается, если основной сервис не ответил.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -891,21 +905,6 @@ private fun SettingsNumberField(
 
 private fun formatNumber(value: Double): String =
     if (value % 1.0 == 0.0) value.toLong().toString() else value.toString()
-/** Переключатель режима анализа: три варианта, как в веб-версии. */
-@Composable
-private fun SettingsModeRow(selected: String, onSelect: (String) -> Unit) {
-    SegmentedSwitcher(
-        options = listOf(
-            "free" to "Бесплатно",
-            "simple" to "Простой",
-            "advanced" to "Продвинутый"
-        ),
-        selected = selected,
-        onSelect = onSelect,
-        modifier = Modifier.fillMaxWidth()
-    )
-}
-
 /** Заголовок секции настроек: тонированная иконка + название. */
 @Composable
 private fun SettingsSectionTitle(icon: ImageVector, title: String, tint: Color) {

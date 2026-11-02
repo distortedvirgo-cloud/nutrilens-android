@@ -1,15 +1,17 @@
 // Корень NutriLens Web: вкладки «Сегодня · Прогресс · [+] · Коуч · Профиль»,
 // листы добавления и деталей, чат, онбординг для iPhone.
 import { useEffect, useState } from 'react'
-import { type Meal, getSettings, saveSettings } from './data/db'
+import { type Meal, type Settings, getSettings, onDataChanged } from './data/db'
 import { runQueue } from './data/actions'
 import { applyUpdate, checkUpdate, remindLater, skipVersion, type UpdateInfo } from './data/update'
 import { TodayScreen } from './screens/Today'
 import { ProgressScreen } from './screens/Progress'
 import { CoachScreen, ChatScreen } from './screens/Coach'
-import { ProfileScreen, InstallHelp } from './screens/Profile'
+import { ProfileScreen } from './screens/Profile'
 import { ComposeSheet, QuickAddSheet, WeightSheet } from './screens/AddFlow'
 import { MealSheet } from './screens/MealSheet'
+import { Onboarding } from './screens/Onboarding'
+import { hasAnyKey } from './ai'
 import { Sheet, ToastHost, useSheetClose, useToast } from './ui/kit'
 import { IcChart, IcHome, IcPlus, IcSpark, IcUser } from './ui/icons'
 
@@ -19,12 +21,8 @@ type Overlay =
   | { kind: 'compose'; photos: string[]; focusText?: boolean; refine?: Meal }
   | { kind: 'meal'; id: string }
   | { kind: 'weight' }
-  | { kind: 'welcome' }
   | { kind: 'update'; info: UpdateInfo }
   | null
-
-const isStandalone = () =>
-  window.matchMedia('(display-mode: standalone)').matches || (navigator as Navigator & { standalone?: boolean }).standalone === true
 
 export default function App() {
   return (
@@ -53,9 +51,15 @@ function Shell() {
     }
   }, [toast])
 
+  // Настройки: первый запуск → онбординг; плашка «подключи нейросеть», пока нет ключа.
+  const [settings, setSettings] = useState<Settings | null>(null)
+  const [profileAi, setProfileAi] = useState(0)
   useEffect(() => {
-    getSettings().then((s) => { if (!s.onboarded) setOverlay({ kind: 'welcome' }) })
+    const load = () => getSettings().then(setSettings)
+    load()
+    return onDataChanged(load)
   }, [])
+  const openAiSetup = () => { setChat(null); setTab('profile'); setProfileAi((n) => n + 1) }
 
   // Новая версия на сервере — окно со сводкой. Проверяем при входе и при
   // возвращении в приложение (на iPhone PWA часто не перезапускается неделями).
@@ -76,6 +80,15 @@ function Shell() {
 
   const close = () => setOverlay(null)
 
+  if (settings && !settings.onboarded) {
+    return (
+      <div className="app">
+        <div className="aurora" />
+        <Onboarding settings={settings} onDone={(openAi) => { if (openAi) openAiSetup() }} />
+      </div>
+    )
+  }
+
   return (
     <div className="app">
       <div className="aurora" />
@@ -90,11 +103,13 @@ function Shell() {
               onOpenCoach={() => setTab('coach')}
               onWeigh={() => setOverlay({ kind: 'weight' })}
               onOpenProgress={() => setTab('progress')}
+              needsKey={!!settings && !hasAnyKey(settings)}
+              onSetupAi={openAiSetup}
             />
           )}
           {tab === 'progress' && <ProgressScreen />}
           {tab === 'coach' && <CoachScreen onOpenChat={(q) => setChat({ q })} />}
-          {tab === 'profile' && <ProfileScreen />}
+          {tab === 'profile' && <ProfileScreen openAi={profileAi} />}
           <TabBar tab={tab} onTab={setTab} onAdd={() => setOverlay({ kind: 'add' })} />
         </>
       )}
@@ -106,7 +121,7 @@ function Shell() {
       )}
       {overlay?.kind === 'compose' && (
         <ComposeSheet initialPhotos={overlay.photos} focusText={overlay.focusText} refineMeal={overlay.refine}
-          onClose={close} onSent={() => setTab('today')} />
+          onClose={close} onSent={() => setTab('today')} onSetupAi={openAiSetup} />
       )}
       {overlay?.kind === 'meal' && (
         <MealSheet mealId={overlay.id} onClose={close} onRefine={(m) => setOverlay({ kind: 'compose', photos: [], refine: m })} />
@@ -115,11 +130,6 @@ function Shell() {
       {overlay?.kind === 'update' && (
         <Sheet label="Обновление" onClose={() => { remindLater(); close() }}>
           <UpdatePrompt info={overlay.info} onSkip={() => { skipVersion(overlay.info.version); close() }} />
-        </Sheet>
-      )}
-      {overlay?.kind === 'welcome' && (
-        <Sheet label="Добро пожаловать" onClose={() => { saveSettings({ onboarded: true }); close() }}>
-          <Welcome onSetupKey={() => { saveSettings({ onboarded: true }); setTab('profile') }} />
         </Sheet>
       )}
     </div>
@@ -138,25 +148,6 @@ function TabBar({ tab, onTab, onAdd }: { tab: Tab; onTab: (t: Tab) => void; onAd
       {item('coach', 'Коуч', <IcSpark size={24} />)}
       {item('profile', 'Профиль', <IcUser size={24} />)}
     </nav>
-  )
-}
-
-function Welcome({ onSetupKey }: { onSetupKey: () => void }) {
-  const close = useSheetClose()
-  const standalone = isStandalone()
-  return (
-    <div className="col gap-16">
-      <img src="./icons/icon-192.png" alt="" style={{ width: 72, height: 72, borderRadius: 18, boxShadow: 'var(--glow)' }} />
-      <div>
-        <div className="h1">NutriLens на iPhone</div>
-        <div className="small" style={{ fontSize: 14, marginTop: 4 }}>
-          Сфотографируй еду — ИИ посчитает калории и БЖУ. Дневник, прогресс и коуч — как в Android-версии. Данные хранятся только на телефоне.
-        </div>
-      </div>
-      {!standalone && <InstallHelp />}
-      <button className="btn btn-brand full" onClick={() => { close(); setTimeout(onSetupKey, 220) }}>Подключить ИИ</button>
-      <button className="btn btn-soft full" onClick={close}>Позже</button>
-    </div>
   )
 }
 

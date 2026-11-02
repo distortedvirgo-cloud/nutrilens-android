@@ -162,7 +162,7 @@ async function post(apiKey: string, body: unknown, signal?: AbortSignal): Promis
   return out
 }
 
-const stripFence = (s: string) => s.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim()
+export const stripFence = (s: string) => s.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim()
 const num = (v: unknown) => {
   const n = typeof v === 'number' ? v : parseFloat(String(v ?? ''))
   return Number.isFinite(n) && n > 0 ? n : 0
@@ -192,7 +192,7 @@ function sanitizeItem(raw: Record<string, unknown>): MealItem {
 }
 
 /** Итоги сверяются с суммой продуктов (как fixMealDrift + finalizeMeal в Android). */
-function finalize(raw: Record<string, unknown>): AnalysisResult {
+export function finalize(raw: Record<string, unknown>): AnalysisResult {
   const items = ((raw.items as Record<string, unknown>[]) ?? []).map(sanitizeItem).filter((i) => i.name || i.calories > 0)
   let calories = num(raw.calories), protein = num(raw.protein), fat = num(raw.fat), carbs = num(raw.carbs)
   if (items.length) {
@@ -225,7 +225,7 @@ function finalize(raw: Record<string, unknown>): AnalysisResult {
   }
 }
 
-export async function analyzeMeal(opts: {
+export async function analyzeMealGemini(opts: {
   apiKey: string
   images: string[] // base64 JPEG без префикса
   userContext: string
@@ -250,7 +250,7 @@ export async function analyzeMeal(opts: {
   return finalize(parsed)
 }
 
-export async function chat(opts: {
+export async function chatGemini(opts: {
   apiKey: string
   system: string
   history: { role: 'user' | 'model'; text: string }[]
