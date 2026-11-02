@@ -19,8 +19,10 @@ const val COMPLEXITY_SENIOR_THRESHOLD = 7
  * расчётов) оценивает блюдо в 1–10, затем полный разбор делает соответствующая
  * модель. Это заменило прежнюю эскалацию по confidence — та пересылала весь
  * дорогой запрос повторно после уже оплаченного полного разбора.
- * - nanogpt: роутер → младшая/старшая; без ключа NanoGPT — Gemini;
- * - gemini: свой ключ Gemini; при сбое — NanoGPT-фолбэк, если ключ задан.
+ * - nanogpt: роутер → младшая/старшая;
+ * - gemini: только свой ключ Gemini.
+ * Провайдер строгий: фолбэков на другой провайдер нет — нет нужного ключа,
+ * будет ошибка, а не тихий запрос в чужой API.
  * Слаги ходят в сервисном тире flex (service_tier ставится в NanoGptApi).
  */
 suspend fun analyzeMealCascade(
@@ -51,7 +53,8 @@ suspend fun analyzeMealCascade(
     }
 
     return when (settings.aiProvider) {
-        "nanogpt" -> if (hasNano) {
+        "nanogpt" -> {
+            if (!hasNano) throw RuntimeException(NO_NANO_KEY_ERROR)
             val complexity = estimateComplexity(settings, imagesJpeg, userNote)
             when {
                 // Роутер не ответил — младшая модель с откатом на старшую.
@@ -59,23 +62,21 @@ suspend fun analyzeMealCascade(
                 complexity >= COMPLEXITY_SENIOR_THRESHOLD -> nano(NANO_MODEL_SENIOR)
                 else -> juniorThenSenior()
             }
-        } else if (hasGemini) gemini() else throw RuntimeException(NO_KEY_ERROR)
-        else -> if (hasGemini) {
-            try {
-                gemini()
-            } catch (e: Exception) {
-                if (hasNano) nano(NANO_MODEL_SENIOR) else throw e
-            }
-        } else if (hasNano) {
-            nano(NANO_MODEL_SENIOR)
-        } else {
-            throw RuntimeException(NO_KEY_ERROR)
+        }
+        // Режим gemini: только Gemini, без NanoGPT-фолбэка.
+        else -> {
+            if (!hasGemini) throw RuntimeException(NO_GEMINI_KEY_ERROR)
+            gemini()
         }
     }
 }
 
 /** Ошибка «нет ключа»: экраны предлагают сразу перейти в Профиль → Нейросеть. */
 const val NO_KEY_ERROR = "Нет ключа ИИ — добавьте ключ NanoGPT или Gemini в Профиль → Нейросеть"
+
+/** Ошибки «нет ключа выбранного провайдера»: режим строгий, фолбэков на другой провайдер нет. */
+const val NO_NANO_KEY_ERROR = "Нет ключа NanoGPT — добавьте его в Профиль → Нейросеть"
+const val NO_GEMINI_KEY_ERROR = "Нет ключа Gemini — добавьте его в Профиль → Нейросеть"
 
 /**
  * Оценка сложности блюда младшей моделью: только вердикт 1–10, без расчётов.
@@ -112,11 +113,10 @@ private suspend fun estimateComplexity(
 }
 
 /**
- * Ответы диетолога (чат) с тем же каскадом провайдеров, что и анализ еды:
- * nanogpt при наличии ключа NanoGPT идёт через NanoGPT, иначе — Gemini.
- * Роутера сложности у чата нет (сложность там не в блюде): младшая модель
- * с откатом на старшую.
- * Ключей нет — понятная ошибка, которую покажет экран чата.
+ * Ответы диетолога (чат) с тем же строгим провайдером, что и анализ еды:
+ * режим nanogpt — через NanoGPT (младшая модель с откатом на старшую),
+ * режим gemini — только через Gemini.
+ * Нет нужного ключа — понятная ошибка, которую покажет экран чата.
  */
 suspend fun chatWithCascade(
     settings: SettingsEntity,
@@ -136,7 +136,8 @@ suspend fun chatWithCascade(
     )
 
     return when {
-        settings.aiProvider == "nanogpt" && hasNano -> {
+        settings.aiProvider == "nanogpt" -> {
+            if (!hasNano) throw RuntimeException(NO_NANO_KEY_ERROR)
             // Младшая модель первой, старшая — фолбэк.
             try {
                 val junior = nano(NANO_MODEL_JUNIOR)
@@ -146,7 +147,6 @@ suspend fun chatWithCascade(
             }
         }
         hasGemini -> gemini()
-        hasNano -> nano(NANO_MODEL_SENIOR)
-        else -> throw RuntimeException(NO_KEY_ERROR)
+        else -> throw RuntimeException(NO_GEMINI_KEY_ERROR)
     }
 }

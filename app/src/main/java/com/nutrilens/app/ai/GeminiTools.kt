@@ -556,15 +556,16 @@ object GeminiTools {
 
     /**
      * Единый путь текстовых ИИ-инструментов (идеи, рецепты, покупки, холодильник,
-     * ресторан, привычки, вода, оценка отчёта): при ключе NanoGPT и режиме
-     * simple/advanced (или отсутствии Gemini) запрос идёт через NanoGPT с тем же
-     * промптом (тело конвертируется в messages), иначе — напрямую в Gemini.
+     * ресторан, привычки, вода, оценка отчёта). Провайдер строгий: режим nanogpt —
+     * через NanoGPT с тем же промптом (тело конвертируется в messages), режим
+     * gemini — напрямую в Gemini. Фолбэков на другой провайдер нет.
      */
     private suspend fun modelText(settings: SettingsEntity, bodyJson: String): String {
-        val hasNano = settings.nanoApiKey.isNotBlank()
-        if (!hasNano && settings.apiKey.isBlank()) throw RuntimeException(NO_KEY_ERROR)
-        val useNano = hasNano && (settings.aiProvider == "nanogpt" || settings.apiKey.isBlank())
-        if (!useNano) return parseText(execute(settings.apiKey, bodyJson))
+        if (settings.aiProvider != "nanogpt") {
+            if (settings.apiKey.isBlank()) throw RuntimeException(NO_GEMINI_KEY_ERROR)
+            return parseText(execute(settings.apiKey, bodyJson))
+        }
+        if (settings.nanoApiKey.isBlank()) throw RuntimeException(NO_NANO_KEY_ERROR)
 
         val root = org.json.JSONObject(bodyJson)
         val system = (root.optJSONObject("system_instruction") ?: root.optJSONObject("systemInstruction"))
@@ -589,7 +590,6 @@ object GeminiTools {
                 messages += NanoGptApi.Msg(role, text.toString(), images)
             }
         }
-        if (messages.isEmpty()) return parseText(execute(settings.apiKey, bodyJson))
         val jsonMode = root.optJSONObject("generationConfig")
             ?.optString("responseMimeType") == "application/json"
         // У текстовых инструментов роутера сложности нет: младшая модель,
