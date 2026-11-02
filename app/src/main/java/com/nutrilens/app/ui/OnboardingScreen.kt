@@ -55,6 +55,7 @@ import com.nutrilens.app.data.NutriLensDatabase
 import com.nutrilens.app.data.SettingsRepository
 import com.nutrilens.app.data.WeightRepository
 import com.nutrilens.app.data.hasAnyAiKey
+import com.nutrilens.app.ui.theme.NutriGlowBackground
 import com.nutrilens.app.ui.theme.NutriTheme
 import kotlinx.coroutines.launch
 import java.time.LocalDate
