@@ -74,7 +74,8 @@ class ToolJobWorker(context: Context, params: WorkerParameters) : CoroutineWorke
             if (lower.contains("dns") || lower.contains("сети") || lower.contains("таймаут")) {
                 error += " · Фон ограничен телефоном? Дайте NutriLens «работу без ограничений» (Настройки → Фоновая работа)"
             }
-            val nonRetryable = lower.contains("http 400") ||
+            val nonRetryable = error.startsWith(com.nutrilens.app.ai.GeminiTransport.DAILY_LIMIT_ERROR) ||
+                lower.contains("http 400") ||
                 lower.contains("http 403") ||
                 lower.contains("ключ")
             if (!nonRetryable && runAttemptCount < 2) {

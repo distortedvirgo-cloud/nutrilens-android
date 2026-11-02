@@ -82,14 +82,8 @@ class GeminiApi(private val apiKey: String) {
         )
         val bodyJson = buildRequestBodyJson(prompt, imagesJpeg)
 
-        val request = Request.Builder()
-            .url(URL)
-            .addHeader("x-goog-api-key", apiKey)
-            .addHeader("Content-Type", "application/json")
-            .post(bodyJson.toRequestBody("application/json".toMediaType()))
-            .build()
-
-        val responseBody = execute(request)
+        // Лимиты бесплатного тира (минутный/суточный) обрабатывает общий транспорт.
+        val responseBody = GeminiTransport.generate(apiKey, bodyJson)
 
         // Текст ответа: склеиваем все parts из content кандидата 0.
         val text = parseResponseBody(responseBody)
@@ -281,11 +275,6 @@ class GeminiApi(private val apiKey: String) {
         }.toString()
     }
 
-    companion object {
-        private const val MODEL = "gemini-3.1-flash-lite"
-        private const val URL =
-            "https://generativelanguage.googleapis.com/v1beta/models/$MODEL:generateContent"
-    }
 }
 
 /** Срезает обёртку ```json ... ``` если модель её добавила. */

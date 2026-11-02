@@ -1,7 +1,7 @@
 package com.nutrilens.app.ai
 
 import com.nutrilens.app.data.SettingsEntity
-import kotlinx.coroutines.suspendCancellableCoroutine
+import com.nutrilens.app.data.aiProvider
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.JsonObjectBuilder
@@ -12,18 +12,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
-import okhttp3.Call
-import okhttp3.Callback
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.Response
-import java.io.IOException
 import java.util.Calendar
-import java.util.concurrent.TimeUnit
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 import kotlin.math.roundToInt
 
 /**
@@ -36,15 +25,6 @@ import kotlin.math.roundToInt
  * срезается ```json-обёртка. Модель — gemini-3.1-flash-lite.
  */
 object GeminiTools {
-
-    private const val MODEL = "gemini-3.1-flash-lite"
-    private const val URL =
-        "https://generativelanguage.googleapis.com/v1beta/models/$MODEL:generateContent"
-
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(120, TimeUnit.SECONDS)
-        .build()
 
     // ---------- Модели данных ----------
 
@@ -570,42 +550,9 @@ object GeminiTools {
      * Выполняет HTTP-запрос через OkHttp в suspend-стиле. Возвращает тело ответа.
      * При коде != 200 бросает RuntimeException с телом ответа (первые 300 символов).
      */
+    /** Запрос через общий транспорт: повторы на минутном лимите, резерв на суточном. */
     private suspend fun execute(apiKey: String, bodyJson: String): String =
-        suspendCancellableCoroutine { cont ->
-            val request = Request.Builder()
-                .url(URL)
-                .addHeader("x-goog-api-key", apiKey)
-                .addHeader("Content-Type", "application/json")
-                .post(bodyJson.toRequestBody("application/json".toMediaType()))
-                .build()
-            val call = client.newCall(request)
-            cont.invokeOnCancellation { call.cancel() }
-            call.enqueue(object : Callback {
-                override fun onFailure(call: Call, e: IOException) {
-                    if (cont.isActive) cont.resumeWithException(e)
-                }
-
-                override fun onResponse(call: Call, response: Response) {
-                    response.use { resp ->
-                        val body = resp.body?.string().orEmpty()
-                        if (resp.isSuccessful) {
-                            cont.resume(body)
-                        } else {
-                            val friendly = if (
-                                body.contains("safety", true) || body.contains("SAFETY") ||
-                                body.contains("blocked", true)
-                            ) {
-                                "Запрос был заблокирован фильтрами безопасности Google Gemini. " +
-                                    "Тело ответа: ${body.take(300)}"
-                            } else {
-                                "Gemini HTTP ${resp.code}: ${body.take(300)}"
-                            }
-                            cont.resumeWithException(RuntimeException(friendly))
-                        }
-                    }
-                }
-            })
-        }
+        GeminiTransport.generate(apiKey, bodyJson)
 
     /**
      * Единый путь текстовых ИИ-инструментов (идеи, рецепты, покупки, холодильник,
@@ -615,7 +562,8 @@ object GeminiTools {
      */
     private suspend fun modelText(settings: SettingsEntity, bodyJson: String): String {
         val hasNano = settings.nanoApiKey.isNotBlank()
-        val useNano = hasNano && (settings.analysisMode != "free" || settings.apiKey.isBlank())
+        if (!hasNano && settings.apiKey.isBlank()) throw RuntimeException(NO_KEY_ERROR)
+        val useNano = hasNano && (settings.aiProvider == "nanogpt" || settings.apiKey.isBlank())
         if (!useNano) return parseText(execute(settings.apiKey, bodyJson))
 
         val root = org.json.JSONObject(bodyJson)
@@ -644,14 +592,8 @@ object GeminiTools {
         if (messages.isEmpty()) return parseText(execute(settings.apiKey, bodyJson))
         val jsonMode = root.optJSONObject("generationConfig")
             ?.optString("responseMimeType") == "application/json"
-        // У текстовых инструментов роутера сложности нет: simple — младшая модель,
-        // при пустом ответе или сбое — откат на старшую; advanced — сразу
-        // старшая, качество важнее скорости.
-        if (settings.analysisMode == "advanced") {
-            return NanoGptApi.complete(
-                settings.nanoApiKey, settings.nanoApiEndpoint, NANO_MODEL_SENIOR, system, messages, jsonMode
-            )
-        }
+        // У текстовых инструментов роутера сложности нет: младшая модель,
+        // при пустом ответе или сбое — откат на старшую.
         return try {
             val fast = NanoGptApi.complete(
                 settings.nanoApiKey, settings.nanoApiEndpoint, NANO_MODEL_JUNIOR, system, messages, jsonMode

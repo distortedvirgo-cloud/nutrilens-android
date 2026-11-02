@@ -45,7 +45,7 @@ class MealAnalysisWorker(context: Context, params: WorkerParameters) : Coroutine
 
         val settings = settingsRepo.get()
         if (settings.apiKey.isBlank() && settings.nanoApiKey.isBlank()) {
-            val msg = "Не задан ключ Gemini или NanoGPT — укажите его в настройках"
+            val msg = com.nutrilens.app.ai.NO_KEY_ERROR
             jobRepo.markFailed(jobId, msg)
             postFailureNotification(jobId, msg)
             return Result.failure()
@@ -106,6 +106,7 @@ class MealAnalysisWorker(context: Context, params: WorkerParameters) : Coroutine
                 error += " · Фон ограничен телефоном? Дайте NutriLens «работу без ограничений» (Настройки → Фоновая работа)"
             }
             val nonRetryable = error.startsWith(NO_FOOD_ERROR) ||
+                error.startsWith(com.nutrilens.app.ai.GeminiTransport.DAILY_LIMIT_ERROR) ||
                 lower.contains("http 400") ||
                 lower.contains("http 403") ||
                 lower.contains("ключ")

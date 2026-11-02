@@ -57,8 +57,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Сводка для окна «Вышло обновление» — из Changelog.kt; нет записи — текст коммита.
+          notes=$(python3 .github/scripts/release_notes.py "${{ steps.version.outputs.name }}")
+          [ -n "$notes" ] || notes=$(git log -1 --pretty=%B | head -40)
           gh release create "v${{ steps.version.outputs.name }}" \
             "NutriLens-${{ steps.version.outputs.name }}.apk" \
             --title "NutriLens ${{ steps.version.outputs.name }}" \
-            --notes "$(git log -1 --pretty=%B | head -40)" \
+            --notes "$notes" \
             --target "${{ github.sha }}"

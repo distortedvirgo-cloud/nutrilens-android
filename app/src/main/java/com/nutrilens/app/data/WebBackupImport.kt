@@ -109,9 +109,8 @@ object WebBackupImport {
         val s = obj(parseField(root, "settings")) ?: return
         val current = db.settingsDao().get() ?: SettingsEntity()
         val mode = when (str(s, "apiMode")) {
-            "simple" -> "simple"
-            "advanced" -> "advanced"
-            else -> "free"
+            "simple", "advanced", "nanogpt" -> "nanogpt"
+            else -> "gemini"
         }
         db.settingsDao().upsert(
             current.copy(
