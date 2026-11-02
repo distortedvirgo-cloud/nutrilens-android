@@ -19,6 +19,15 @@ data class ChangelogEntry(
  */
 val CHANGELOG: List<ChangelogEntry> = listOf(
     ChangelogEntry(
+        versionCode = 61,
+        versionName = "3.4",
+        title = "ИИ строго по режиму",
+        items = listOf(
+            "Режим больше не подменяет сервис: NanoGPT — только NanoGPT, Gemini — только Gemini, без тихих переключений",
+            "Нет ключа выбранного сервиса — приложение сразу подскажет, какой именно ключ добавить (Профиль → Нейросеть)"
+        )
+    ),
+    ChangelogEntry(
         versionCode = 60,
         versionName = "3.3",
         title = "Обновления и бесплатный режим",
