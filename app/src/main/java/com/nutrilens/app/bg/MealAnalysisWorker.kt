@@ -106,6 +106,7 @@ class MealAnalysisWorker(context: Context, params: WorkerParameters) : Coroutine
                 error += " · Фон ограничен телефоном? Дайте NutriLens «работу без ограничений» (Настройки → Фоновая работа)"
             }
             val nonRetryable = error.startsWith(NO_FOOD_ERROR) ||
+                error.startsWith(com.nutrilens.app.ai.GeminiTransport.DAILY_LIMIT_ERROR) ||
                 lower.contains("http 400") ||
                 lower.contains("http 403") ||
                 lower.contains("ключ")

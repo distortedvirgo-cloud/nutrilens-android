@@ -289,8 +289,9 @@ fun NutriLensAppRoot(initialDate: String? = null, navigateTo: String? = null) {
                 )
             }
 
-            // После обновления — один раз «Что нового».
+            // После обновления — один раз «Что нового»; при выходе новой версии — предложение скачать.
             WhatsNewOnUpdate()
+            UpdatePromptOnLaunch()
 
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,

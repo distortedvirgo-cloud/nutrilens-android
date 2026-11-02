@@ -194,7 +194,7 @@ img { display: block; }
 }
 .card.r24 { border-radius: 24px; }
 .card.r22 { border-radius: var(--r-lg); }
-.pad { padding: 16px; } .pad-18 { padding: 18px; } .pad-14 { padding: 14px; }
+.pad { padding: 16px; } .pad-18 { padding: 18px; } .pad-14 { padding: 14px; } .pad-16 { padding: 16px; }
 
 .pressable {
   transition: transform var(--t-short) var(--ease-spring), background-color var(--t-short) var(--ease-std), opacity var(--t-short);

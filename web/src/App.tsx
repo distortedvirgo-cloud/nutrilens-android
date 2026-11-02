@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { type Meal, getSettings, saveSettings } from './data/db'
 import { runQueue } from './data/actions'
+import { applyUpdate, checkUpdate, remindLater, skipVersion, type UpdateInfo } from './data/update'
 import { TodayScreen } from './screens/Today'
 import { ProgressScreen } from './screens/Progress'
 import { CoachScreen, ChatScreen } from './screens/Coach'
@@ -19,6 +20,7 @@ type Overlay =
   | { kind: 'meal'; id: string }
   | { kind: 'weight' }
   | { kind: 'welcome' }
+  | { kind: 'update'; info: UpdateInfo }
   | null
 
 const isStandalone = () =>
@@ -53,6 +55,23 @@ function Shell() {
 
   useEffect(() => {
     getSettings().then((s) => { if (!s.onboarded) setOverlay({ kind: 'welcome' }) })
+  }, [])
+
+  // Новая версия на сервере — окно со сводкой. Проверяем при входе и при
+  // возвращении в приложение (на iPhone PWA часто не перезапускается неделями).
+  useEffect(() => {
+    let last = 0
+    const check = () => {
+      if (Date.now() - last < 30 * 60 * 1000) return
+      last = Date.now()
+      checkUpdate().then((info) => {
+        if (info) setOverlay((o) => o ?? { kind: 'update', info })
+      })
+    }
+    const t = setTimeout(check, 1500)
+    const onVis = () => document.visibilityState === 'visible' && check()
+    document.addEventListener('visibilitychange', onVis)
+    return () => { clearTimeout(t); document.removeEventListener('visibilitychange', onVis) }
   }, [])
 
   const close = () => setOverlay(null)
@@ -93,6 +112,11 @@ function Shell() {
         <MealSheet mealId={overlay.id} onClose={close} onRefine={(m) => setOverlay({ kind: 'compose', photos: [], refine: m })} />
       )}
       {overlay?.kind === 'weight' && <WeightSheet onClose={close} />}
+      {overlay?.kind === 'update' && (
+        <Sheet label="Обновление" onClose={() => { remindLater(); close() }}>
+          <UpdatePrompt info={overlay.info} onSkip={() => { skipVersion(overlay.info.version); close() }} />
+        </Sheet>
+      )}
       {overlay?.kind === 'welcome' && (
         <Sheet label="Добро пожаловать" onClose={() => { saveSettings({ onboarded: true }); close() }}>
           <Welcome onSetupKey={() => { saveSettings({ onboarded: true }); setTab('profile') }} />
@@ -132,6 +156,35 @@ function Welcome({ onSetupKey }: { onSetupKey: () => void }) {
       {!standalone && <InstallHelp />}
       <button className="btn btn-brand full" onClick={() => { close(); setTimeout(onSetupKey, 220) }}>Подключить ИИ</button>
       <button className="btn btn-soft full" onClick={close}>Позже</button>
+    </div>
+  )
+}
+
+function UpdatePrompt({ info, onSkip }: { info: UpdateInfo; onSkip: () => void }) {
+  const close = useSheetClose()
+  const [busy, setBusy] = useState(false)
+  return (
+    <div className="col gap-16">
+      <img src="./icons/icon-192.png" alt="" style={{ width: 64, height: 64, borderRadius: 16, boxShadow: 'var(--glow)' }} />
+      <div>
+        <div className="label" style={{ color: 'var(--primary)' }}>Вышло обновление · {__APP_VERSION__} → {info.version}</div>
+        <div className="h1" style={{ marginTop: 4 }}>{info.title || `NutriLens ${info.version}`}</div>
+      </div>
+      {info.items.length > 0 && (
+        <div className="card pad-16 col gap-10" style={{ background: 'color-mix(in srgb, var(--primary) 9%, var(--surface))' }}>
+          {info.items.map((it, i) => (
+            <div key={i} className="row gap-10" style={{ alignItems: 'flex-start' }}>
+              <span style={{ width: 6, height: 6, borderRadius: 3, background: 'var(--primary)', marginTop: 8, flex: 'none' }} />
+              <span style={{ fontSize: 15, lineHeight: 1.45 }}>{it}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <button className="btn btn-brand full" disabled={busy} onClick={() => { setBusy(true); applyUpdate() }}>
+        {busy ? <span className="spinner" /> : null}{busy ? 'Обновляем…' : 'Обновить'}
+      </button>
+      <button className="btn btn-soft full" onClick={close}>Напомнить позже</button>
+      <button className="btn full" style={{ height: 44, color: 'var(--text-2)', fontWeight: 700 }} onClick={onSkip}>Не напоминать об этой версии</button>
     </div>
   )
 }

@@ -3,7 +3,7 @@ import { useRef, useState } from 'react'
 import { type Settings, getSettings, latestWeight, saveSettings } from '../data/db'
 import { exportBackup, importBackup } from '../data/actions'
 import { macroGoals } from '../data/insights'
-import { checkKey } from '../ai/gemini'
+import { checkKey, dailyResetTime, usageToday } from '../ai/gemini'
 import { Badge, Sheet, useData, useSheetClose, useToast } from '../ui/kit'
 import { IcChevronR, IcDownload, IcInfo, IcKey, IcShare, IcTarget, IcUpload, IcUser } from '../ui/icons'
 
@@ -145,6 +145,24 @@ function AboutForm({ s }: { s: Settings }) {
   )
 }
 
+/** Бесплатный тир: сколько запросов сделано сегодня и когда сбросится лимит. */
+function FreeTierCard() {
+  const u = usageToday()
+  return (
+    <div className="card pad-14 col gap-6" style={{ background: 'var(--surface-low)' }}>
+      <div className="title">Бесплатный режим</div>
+      <div className="small">
+        Google даёт бесплатный ключ с лимитами: несколько запросов в минуту и несколько сотен в сутки —
+        это десятки приёмов пищи в день. Упрёмся в минутный лимит — приложение подождёт и повторит,
+        в дневной — перейдёт на резервную модель.
+      </div>
+      <div className="small num" style={{ color: u.exhausted ? 'var(--warn-to)' : 'var(--primary)', fontWeight: 700 }}>
+        Сегодня запросов: {u.count}{u.exhausted ? ` · основная модель до ${dailyResetTime()} на паузе, работает резервная` : ''}
+      </div>
+    </div>
+  )
+}
+
 function AiForm({ s }: { s: Settings }) {
   const close = useSheetClose()
   const toast = useToast()
@@ -157,6 +175,7 @@ function AiForm({ s }: { s: Settings }) {
         Анализ еды и чат работают через Google Gemini — тот же «Бесплатный» режим, что в Android-приложении.
         Ключ бесплатный и хранится только на этом телефоне.
       </div>
+      <FreeTierCard />
       <a className="chip primary pressable" href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" style={{ alignSelf: 'flex-start', textDecoration: 'none' }}>
         Получить ключ в Google AI Studio
       </a>
