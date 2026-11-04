@@ -22,7 +22,10 @@
 const DATA_DIR = 'data'
 const MAX_DAYS = 35
 const CACHE_SECONDS = 30
-const MAX_BODY = 16 * 1024
+const MAX_BODY = 48 * 1024
+/** Аватарка участника: маленький JPEG/PNG/WebP data-URL. */
+const AVATAR_RE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/
+const MAX_AVATAR = 24000
 const ID_RE = /^[0-9a-f]{16}$/
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -76,7 +79,8 @@ async function listEntries(request, env, ctx, cors) {
         id: String(e.id || ''),
         nickname: String(e.nickname || ''),
         days: e.days && typeof e.days === 'object' ? e.days : {},
-        updatedAt: Number(e.updatedAt || 0)
+        updatedAt: Number(e.updatedAt || 0),
+        avatar: typeof e.avatar === 'string' && AVATAR_RE.test(e.avatar) && e.avatar.length <= MAX_AVATAR ? e.avatar : ''
       }
     } catch {
       return null
@@ -105,6 +109,7 @@ async function putEntry(request, env, ctx, cors, id, url) {
   const nickname = typeof body.nickname === 'string' ? body.nickname.trim().slice(0, 32) : ''
   if (!nickname) return json({ error: 'bad_nickname' }, 400, cors)
   const days = cleanDays(body.days)
+  const avatar = typeof body.avatar === 'string' && AVATAR_RE.test(body.avatar) && body.avatar.length <= MAX_AVATAR ? body.avatar : ''
   if (!days) return json({ error: 'bad_days' }, 400, cors)
   const keyHash = await sha256(secret)
   const path = `contents/${DATA_DIR}/p_${id}.json`
@@ -130,6 +135,7 @@ async function putEntry(request, env, ctx, cors, id, url) {
       nickname,
       days: Object.fromEntries(kept.map((k) => [k, merged[k]])),
       updatedAt: Date.now(),
+      avatar,
       keyHash,
       source: 'web'
     }

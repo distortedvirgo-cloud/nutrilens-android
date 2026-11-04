@@ -92,7 +92,8 @@ class LeaderboardSync(context: Context) {
                             nickname = nickname,
                             // Ключи «yyyy-MM-dd» сортируются как строки — последние 35 дней.
                             days = days.toSortedMap().toList().takeLast(MAX_DAYS).toMap(),
-                            updatedAt = System.currentTimeMillis()
+                            updatedAt = System.currentTimeMillis(),
+                            avatar = runCatching { com.nutrilens.app.data.Avatar.smallDataUrl(appContext) }.getOrDefault("")
                         )
                         put(ownPath, mealJson.encodeToString(entry), existing?.first)
                         // Своё сохранено — теперь можно убрать старые файлы по нику.

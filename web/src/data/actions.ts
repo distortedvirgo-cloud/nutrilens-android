@@ -265,7 +265,7 @@ export async function importBackup(file: Blob): Promise<number> {
   if (s) {
     const current = await tx.objectStore('settings').get(1)
     await tx.objectStore('settings').put({
-      ...(current ?? { id: 1, apiKey: '', nanoApiKey: '', nanoEndpoint: '', provider: 'nanogpt' as const, playerId: '', playerSecret: '', userContext: '', nickname: '', onboarded: true, proteinGoal: null, fatGoal: null, carbsGoal: null, dailyGoal: 2000 }),
+      ...(current ?? { id: 1, apiKey: '', nanoApiKey: '', nanoEndpoint: '', provider: 'nanogpt' as const, playerId: '', playerSecret: '', avatar: '', userContext: '', nickname: '', onboarded: true, proteinGoal: null, fatGoal: null, carbsGoal: null, dailyGoal: 2000 }),
       id: 1,
       apiKey: String(s.apiKey || current?.apiKey || ''),
       nanoApiKey: String(s.nanoApiKey || current?.nanoApiKey || ''),

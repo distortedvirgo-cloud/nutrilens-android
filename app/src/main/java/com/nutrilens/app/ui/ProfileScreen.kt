@@ -2,6 +2,9 @@ package com.nutrilens.app.ui
 
 import android.app.Application
 import androidx.compose.foundation.background
+import androidx.compose.material.icons.rounded.PhotoCamera
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -103,6 +106,14 @@ fun ProfileScreen(onNavigate: (String) -> Unit, onBack: () -> Unit = {}, viewMod
         settings.proteinGoal, settings.fatGoal, settings.carbsGoal, settings.dailyGoal, lastWeight
     )
     val nickname = settings.leaderboardNickname.trim()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val avatarScope = androidx.compose.runtime.rememberCoroutineScope()
+    val avatarPicker = androidx.activity.compose.rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) avatarScope.launch {
+            runCatching { com.nutrilens.app.data.Avatar.save(context, uri) }
+            com.nutrilens.app.leaderboard.LeaderboardSync.pushAsync(context)
+        }
+    }
     val modeLabel = when {
         !settings.hasAnyAiKey -> "Добавить ключ"
         settings.aiProvider == "gemini" -> "Gemini"
@@ -144,18 +155,15 @@ fun ProfileScreen(onNavigate: (String) -> Unit, onBack: () -> Unit = {}, viewMod
             onClick = { onNavigate("settings/profile") }
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(18.dp)) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .size(60.dp)
-                        .clip(CircleShape)
-                        .background(Brush.linearGradient(listOf(c.brandFrom, MaterialTheme.colorScheme.secondary)))
-                ) {
-                    Text(
-                        (nickname.firstOrNull()?.uppercase() ?: "N"),
-                        style = MaterialTheme.typography.headlineMedium,
-                        color = c.onBrand
-                    )
+                // Тап по кружку — выбрать фото для аватарки (видна и в лидерборде).
+                Box {
+                    UserAvatar(nickname = nickname, size = 60.dp, modifier = Modifier.clickableNoRipple {
+                        avatarPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    })
+                    Box(
+                        Modifier.align(Alignment.BottomEnd).size(22.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary),
+                        contentAlignment = Alignment.Center
+                    ) { Icon(Icons.Rounded.PhotoCamera, contentDescription = "Сменить фото", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(13.dp)) }
                 }
                 Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {

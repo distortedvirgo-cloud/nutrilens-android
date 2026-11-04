@@ -19,6 +19,14 @@ data class ChangelogEntry(
  */
 val CHANGELOG: List<ChangelogEntry> = listOf(
     ChangelogEntry(
+        versionCode = 63,
+        versionName = "3.6",
+        title = "Аватарки",
+        items = listOf(
+            "Аватарки: нажмите на кружок в Профиле и выберите фото — оно появится в шапке «Сегодня» и в лидерборде у всех участников"
+        )
+    ),
+    ChangelogEntry(
         versionCode = 62,
         versionName = "3.5",
         title = "Книга рецептов",

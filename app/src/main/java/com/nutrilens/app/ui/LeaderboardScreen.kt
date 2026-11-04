@@ -260,6 +260,8 @@ private fun LeaderboardRowCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             PlaceBadge(place)
+            Spacer(Modifier.width(10.dp))
+            LeaderAvatar(row.avatar, row.nickname, 40.dp)
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(

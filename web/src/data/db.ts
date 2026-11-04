@@ -53,6 +53,8 @@ export interface Settings {
   /** Постоянный id в лидерборде (не зависит от ника) и секрет устройства для записи. */
   playerId: string
   playerSecret: string
+  /** Аватарка 128 px, data-URL JPEG; пусто — буква ника. Видна и в лидерборде. */
+  avatar: string
 }
 
 export interface Favorite {
@@ -96,7 +98,8 @@ export const DEFAULT_SETTINGS: Settings = {
   nickname: '',
   onboarded: false,
   playerId: '',
-  playerSecret: ''
+  playerSecret: '',
+  avatar: ''
 }
 
 // ---------- Книга рецептов ----------

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { getSettings, saveSettings } from '../data/db'
 import { fetchEntries, leaderboardConfigured, pushOwn, rows, type LbEntry, type LbPeriod } from '../data/leaderboard'
 import { Badge, Segmented, useToast } from '../ui/kit'
+import { Avatar } from '../ui/Avatar'
 import { IcChevronL, IcRefresh, IcTrophy } from '../ui/icons'
 
 const MEDAL = ['#F5B83D', '#B8C2CC', '#D08B5B']
@@ -84,6 +85,7 @@ export function LeaderboardScreen({ onBack }: { onBack: () => void }) {
                   style={{ padding: '12px 14px', borderTop: i ? '1px solid var(--hairline)' : 'none', background: r.isSelf ? 'color-mix(in srgb, var(--primary) 10%, transparent)' : undefined }}>
                   <span className="num" style={{ width: 30, height: 30, borderRadius: 15, flex: 'none', display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 14,
                     background: i < 3 ? MEDAL[i] : 'var(--surface-high)', color: i < 3 ? '#1a1a1a' : 'var(--text-2)' }}>{i + 1}</span>
+                  <Avatar src={r.avatar} nickname={r.nickname} size={40} />
                   <div className="grow" style={{ minWidth: 0 }}>
                     <div className="title ellipsis">{r.nickname || 'Без ника'}{r.isSelf ? ' · ты' : ''}</div>
                     <div className="small num">

@@ -26,7 +26,9 @@ data class LeaderboardEntry(
     val id: String = "",
     val nickname: String = "",
     val days: Map<String, LeaderboardDay> = emptyMap(),
-    val updatedAt: Long = 0L
+    val updatedAt: Long = 0L,
+    /** Аватарка 128 px: "data:image/jpeg;base64,…"; пусто — буква ника. */
+    val avatar: String = ""
 )
 
 /** Период лидерборда: сегодняшний день, текущая неделя (Пн–Вс) или текущий месяц. */
@@ -42,7 +44,8 @@ data class LeaderboardRow(
     val goal: Double,
     val daysCounted: Int,
     val isOver: Boolean,
-    val isSelf: Boolean
+    val isSelf: Boolean,
+    val avatar: String = ""
 )
 
 /** Подсчёт очков и строк лидерборда за выбранный период. */
@@ -96,7 +99,8 @@ object LeaderboardMath {
                         goal = goal,
                         daysCounted = if (goal > 0.0) 1 else 0,
                         isOver = calories > goal,
-                        isSelf = isSelf(entry, selfId, selfNickname)
+                        isSelf = isSelf(entry, selfId, selfNickname),
+                        avatar = entry.avatar
                     )
                 }
                 LeaderboardPeriod.WEEK, LeaderboardPeriod.MONTH -> {
@@ -119,7 +123,8 @@ object LeaderboardMath {
                         goal = goal,
                         daysCounted = counted.size,
                         isOver = calories > goal,
-                        isSelf = isSelf(entry, selfId, selfNickname)
+                        isSelf = isSelf(entry, selfId, selfNickname),
+                        avatar = entry.avatar
                     )
                 }
             }

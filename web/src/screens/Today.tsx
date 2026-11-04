@@ -1,6 +1,7 @@
 // «Сегодня»: неделя с кольцами, сводка калорий и БЖУ, совет коуча,
 // вода и вес, приёмы пищи по слотам и состояние ИИ-анализа.
 import { useRef, useState } from 'react'
+import { Avatar } from '../ui/Avatar'
 import {
   type Meal, addWater, allMealDates, getSettings, jobs, latestWeight, mealsBetween, mealsOn,
   waterOn, workoutOn, deleteJob, favorites
@@ -12,7 +13,7 @@ import {
 import { retryJob, runQueue } from '../data/actions'
 import { Bar, Badge, Photo, Ring, useCountUp, useData, useToast } from '../ui/kit'
 import {
-  IcCamera, IcChevronR, IcKey, IcUser, IcDrop, IcFire, IcPlus, IcRefresh, IcScale, IcSpark, IcStar, IcTrophy, IcAlert, IcClose
+  IcCamera, IcChevronR, IcKey, IcDrop, IcFire, IcPlus, IcRefresh, IcScale, IcSpark, IcStar, IcTrophy, IcAlert, IcClose
 } from '../ui/icons'
 
 const WEEK = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
@@ -75,7 +76,7 @@ export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOp
   return (
     <div className="screen screen-enter">
       <div className="col gap-16 stagger">
-        <Header date={d} streak={streak} isToday={isToday} onToday={() => setDate(today)} nickname={settings.nickname} onProfile={onOpenProfile} />
+        <Header date={d} streak={streak} isToday={isToday} onToday={() => setDate(today)} nickname={settings.nickname} avatar={settings.avatar} onProfile={onOpenProfile} />
         {needsKey && (
           <button className="card pad-16 pressable row gap-14" onClick={onSetupAi}
             style={{ textAlign: 'left', border: '1.5px solid color-mix(in srgb, var(--primary) 50%, transparent)', background: 'color-mix(in srgb, var(--primary) 12%, var(--surface))' }}>
@@ -184,8 +185,8 @@ export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOp
   )
 }
 
-function Header({ date, streak, isToday, onToday, nickname, onProfile }: {
-  date: Date; streak: number; isToday: boolean; onToday: () => void; nickname: string; onProfile: () => void
+function Header({ date, streak, isToday, onToday, nickname, avatar, onProfile }: {
+  date: Date; streak: number; isToday: boolean; onToday: () => void; nickname: string; avatar: string; onProfile: () => void
 }) {
   return (
     <div className="row gap-8">
@@ -198,9 +199,8 @@ function Header({ date, streak, isToday, onToday, nickname, onProfile }: {
       )}
       {!isToday && <button className="chip primary pressable" onClick={onToday}>Сегодня</button>}
       <button className="pressable" aria-label="Профиль и настройки" onClick={onProfile}
-        style={{ width: 44, height: 44, borderRadius: 22, flex: 'none', display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 18,
-          background: 'linear-gradient(135deg, var(--brand-from), var(--secondary))', color: 'var(--on-brand)', boxShadow: 'var(--shadow-1)' }}>
-        {nickname.trim() ? nickname.trim()[0].toUpperCase() : <IcUser size={21} />}
+        style={{ borderRadius: 22, flex: 'none', boxShadow: 'var(--shadow-1)' }}>
+        <Avatar src={avatar} nickname={nickname} size={44} />
       </button>
     </div>
   )

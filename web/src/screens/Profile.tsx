@@ -6,17 +6,24 @@ import { macroGoals } from '../data/insights'
 import { dailyResetTime, usageToday } from '../ai/gemini'
 import { activeProvider, hasSelectedKey } from '../ai'
 import { KeyField, ProviderCards } from '../ui/AiSetup'
+import { Avatar, avatarFromFile } from '../ui/Avatar'
+import { schedulePush } from '../data/leaderboard'
 import { Badge, Sheet, useData, useSheetClose, useToast } from '../ui/kit'
-import { IcChevronL, IcChevronR, IcDownload, IcInfo, IcKey, IcShare, IcTarget, IcTrophy, IcUpload, IcUser } from '../ui/icons'
+import { IcCamera, IcChevronL, IcChevronR, IcDownload, IcInfo, IcKey, IcShare, IcTarget, IcTrophy, IcUpload, IcUser } from '../ui/icons'
 
 type Section = 'goals' | 'about' | 'ai' | 'data' | 'install' | 'leaderboard' | null
 
 export function ProfileScreen({ openAi = 0, onOpenLeaderboard, onBack }: { openAi?: number; onOpenLeaderboard: () => void; onBack: () => void }) {
   const [open, setOpen] = useState<Section>(openAi ? 'ai' : null)
+  const avatarRef = useRef<HTMLInputElement>(null)
   useEffect(() => { if (openAi) setOpen('ai') }, [openAi])
   const data = useData(async () => ({ s: await getSettings(), w: (await latestWeight())?.weight ?? null }), [], null)
   if (!data) return <div className="screen" />
   const { s, w } = data
+  const pickAvatar = async (f?: File) => {
+    if (!f) return
+    try { await saveSettings({ avatar: await avatarFromFile(f) }); schedulePush(500) } catch { /* не картинка */ }
+  }
   const g = macroGoals(s.proteinGoal, s.fatGoal, s.carbsGoal, s.dailyGoal, w)
 
   const groups: [string, [Section, React.ReactNode, string, string, string][]][] = [
@@ -36,6 +43,7 @@ export function ProfileScreen({ openAi = 0, onOpenLeaderboard, onBack }: { openA
 
   return (
     <div className="screen screen-enter">
+      <input ref={avatarRef} type="file" accept="image/*" hidden onChange={(e) => { pickAvatar(e.target.files?.[0]); e.target.value = '' }} />
       <div className="col gap-16 stagger">
         <div className="row gap-12">
           <button className="icon-btn" aria-label="Назад" onClick={onBack}><IcChevronL size={20} /></button>
@@ -50,8 +58,10 @@ export function ProfileScreen({ openAi = 0, onOpenLeaderboard, onBack }: { openA
           </button>
         )}
         <button className="card pad-18 pressable row gap-16" style={{ textAlign: 'left', marginTop: 4 }} onClick={() => setOpen('about')}>
-          <span className="badge" style={{ width: 60, height: 60, borderRadius: 30, fontSize: 24, fontWeight: 800, background: 'linear-gradient(135deg, var(--brand-from), var(--secondary))', color: 'var(--on-brand)' }}>
-            {(s.nickname.trim()[0] ?? 'N').toUpperCase()}
+          <span style={{ position: 'relative', flex: 'none' }} role="button" aria-label="Сменить фото"
+            onClick={(e) => { e.stopPropagation(); avatarRef.current?.click() }}>
+            <Avatar src={s.avatar} nickname={s.nickname} size={60} />
+            <span style={{ position: 'absolute', right: -2, bottom: -2, width: 22, height: 22, borderRadius: 11, display: 'grid', placeItems: 'center', background: 'var(--primary)', color: 'var(--on-brand)' }}><IcCamera size={13} /></span>
           </span>
           <div className="grow">
             <div className="h2 ellipsis">{s.nickname.trim() || 'Без ника'}</div>

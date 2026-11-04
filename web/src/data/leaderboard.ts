@@ -12,11 +12,11 @@ export const LEADERBOARD_API = (import.meta.env.VITE_LEADERBOARD_API as string |
 export const leaderboardConfigured = () => !!LEADERBOARD_API
 
 export interface LbDay { calories: number; goal: number }
-export interface LbEntry { id: string; nickname: string; days: Record<string, LbDay>; updatedAt: number }
+export interface LbEntry { id: string; nickname: string; days: Record<string, LbDay>; updatedAt: number; avatar?: string }
 export type LbPeriod = 'day' | 'week' | 'month'
 export interface LbRow {
   id: string; nickname: string; score: number; percent: number
-  calories: number; goal: number; daysCounted: number; isOver: boolean; isSelf: boolean
+  calories: number; goal: number; daysCounted: number; isOver: boolean; isSelf: boolean; avatar: string
 }
 
 /** Старые файлы без id (Android до 3.0), не обновлявшиеся столько дней, скрываются. */
@@ -61,7 +61,7 @@ export async function pushOwn(): Promise<boolean> {
   days[iso(today)] = { calories: days[iso(today)]?.calories ?? 0, goal: s.dailyGoal }
   for (const d of Object.values(days)) d.calories = Math.round(d.calories * 10) / 10
 
-  const payload = JSON.stringify({ secret: s.playerSecret, nickname, days })
+  const payload = JSON.stringify({ secret: s.playerSecret, nickname, days, avatar: s.avatar || '' })
   if (payload === lastPushed) return true
   const r = await fetch(`${LEADERBOARD_API}/entries/${s.playerId}`, {
     method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: payload
@@ -110,7 +110,7 @@ export function rows(entries: LbEntry[], period: LbPeriod, selfId: string): LbRo
       id: e.id, nickname: e.nickname,
       score: scores.length ? Math.floor(scores.reduce((a, b) => a + b, 0) / scores.length) : 0,
       percent: percentOf(calories, goal), calories, goal,
-      daysCounted: counted.length, isOver: calories > goal, isSelf: !!selfId && e.id === selfId
+      daysCounted: counted.length, isOver: calories > goal, isSelf: !!selfId && e.id === selfId, avatar: e.avatar ?? ''
     }
   }).sort((a, b) => b.score - a.score || b.daysCounted - a.daysCounted || a.nickname.localeCompare(b.nickname))
 }

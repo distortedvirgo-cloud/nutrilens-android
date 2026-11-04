@@ -1721,21 +1721,7 @@ private fun TodayHeader(
         }
         Spacer(Modifier.width(8.dp))
         // Профиль — кружком-аватаром: его вкладку в доке заняли «Рецепты».
-        Surface(
-            onClick = onProfile,
-            shape = CircleShape,
-            color = Color.Transparent,
-            modifier = Modifier.size(44.dp)
-        ) {
-            Box(
-                Modifier.fillMaxSize().background(Brush.linearGradient(listOf(NutriTheme.colors.brandFrom, MaterialTheme.colorScheme.secondary))),
-                contentAlignment = Alignment.Center
-            ) {
-                val initial = nickname.trim().firstOrNull()?.uppercase()
-                if (initial != null) Text(initial, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold, color = NutriTheme.colors.onBrand)
-                else Icon(Icons.Rounded.Person, contentDescription = "Профиль и настройки", tint = NutriTheme.colors.onBrand)
-            }
-        }
+        UserAvatar(nickname = nickname, size = 44.dp, modifier = Modifier.clickableNoRipple(onProfile))
     }
 }
 
