@@ -79,6 +79,7 @@ import com.nutrilens.app.data.NutriLensDatabase
 import com.nutrilens.app.data.Recipe
 import com.nutrilens.app.data.RecipeFormat
 import com.nutrilens.app.data.RecipeRepository
+import com.nutrilens.app.ui.theme.NutriTheme
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
