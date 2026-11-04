@@ -6,7 +6,8 @@ name: Web (iPhone PWA)
 on:
   push:
     branches: [main, claude/nutrilens-redesign-zslzmy]
-    paths: ['web/**', '.github/workflows/web.yml']
+    # build.gradle.kts — оттуда берётся номер версии веба.
+    paths: ['web/**', 'app/build.gradle.kts', '.github/workflows/web.yml']
   workflow_dispatch:
 
 permissions:
@@ -33,6 +34,11 @@ jobs:
 
       - run: npm ci
       - run: npm run build
+        env:
+          # Адрес прокси лидерборда (Cloudflare Worker): Settings → Secrets and
+          # variables → Actions → Variables → LEADERBOARD_API_URL. Не задан —
+          # веб-лидерборд показывает «не подключён».
+          VITE_LEADERBOARD_API: ${{ vars.LEADERBOARD_API_URL }}
 
       - name: Publish to gh-pages
         run: |

@@ -194,6 +194,7 @@ export async function exportBackup(): Promise<Blob> {
     workouts: await d.getAll('workouts'),
     habits: (await d.getAll('habits')).map((h) => ({ date: h.date, habitId: h.habitId })),
     chat_history: (await d.getAll('chat')).map((c) => ({ role: c.role, text: c.text })),
+    web_player: s.playerId ? { id: s.playerId, secret: s.playerSecret } : null,
     source: 'nutrilens-web'
   }
   return new Blob([JSON.stringify(data)], { type: 'application/json' })
@@ -258,7 +259,7 @@ export async function importBackup(file: Blob): Promise<number> {
   if (s) {
     const current = await tx.objectStore('settings').get(1)
     await tx.objectStore('settings').put({
-      ...(current ?? { id: 1, apiKey: '', nanoApiKey: '', nanoEndpoint: '', provider: 'nanogpt' as const, userContext: '', nickname: '', onboarded: true, proteinGoal: null, fatGoal: null, carbsGoal: null, dailyGoal: 2000 }),
+      ...(current ?? { id: 1, apiKey: '', nanoApiKey: '', nanoEndpoint: '', provider: 'nanogpt' as const, playerId: '', playerSecret: '', userContext: '', nickname: '', onboarded: true, proteinGoal: null, fatGoal: null, carbsGoal: null, dailyGoal: 2000 }),
       id: 1,
       apiKey: String(s.apiKey || current?.apiKey || ''),
       nanoApiKey: String(s.nanoApiKey || current?.nanoApiKey || ''),
@@ -270,6 +271,10 @@ export async function importBackup(file: Blob): Promise<number> {
       carbsGoal: s.carbsGoal == null ? null : Number(s.carbsGoal),
       userContext: String(s.userContext ?? ''),
       nickname: String(s.leaderboardNickname ?? current?.nickname ?? ''),
+      // Место в лидерборде переезжает вместе с бэкапом веб-версии. Android-id
+      // не берём: его файл пишет само Android-приложение, вебу туда нельзя.
+      playerId: String((root.web_player as { id?: string } | null)?.id || current?.playerId || ''),
+      playerSecret: String((root.web_player as { secret?: string } | null)?.secret || current?.playerSecret || ''),
       onboarded: true
     })
   }

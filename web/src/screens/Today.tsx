@@ -17,12 +17,13 @@ import {
 
 const WEEK = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 
-export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOpenProgress, needsKey, onSetupAi }: {
+export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOpenLeaderboard, needsKey, onSetupAi }: {
   onOpenMeal: (m: Meal) => void
   onAddPhoto: () => void
   onOpenCoach: () => void
   onWeigh: () => void
   onOpenProgress: () => void
+  onOpenLeaderboard: () => void
   needsKey: boolean
   onSetupAi: () => void
 }) {
@@ -86,7 +87,7 @@ export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOp
           </button>
         )}
         <WeekStrip date={d} weekKcal={data.weekKcal} goal={settings.dailyGoal} onSelect={(x) => setDate(iso(x))} />
-        <Hero meals={meals} goal={settings.dailyGoal} goals={goals} onLeaderboard={onOpenProgress} />
+        <Hero meals={meals} goal={settings.dailyGoal} goals={goals} onLeaderboard={onOpenLeaderboard} />
 
         {active.length > 0 && <Processing count={active.length} note={active[0].note} />}
         {failed.map((j) => (
@@ -271,7 +272,7 @@ function Hero({ meals, goal, goals, onLeaderboard }: {
         <MacroBar label="Жиры" v={t.fat} g={goals.fat} color="var(--fat)" />
         <MacroBar label="Углеводы" v={t.carbs} g={goals.carbs} color="var(--carbs)" />
       </div>
-      <button aria-label="Прогресс и лидерборд" onClick={onLeaderboard}
+      <button aria-label="Лидерборд" onClick={onLeaderboard}
         style={{ position: 'absolute', top: 6, right: 6, width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--warn-to)' }}>
         <IcTrophy size={20} />
       </button>

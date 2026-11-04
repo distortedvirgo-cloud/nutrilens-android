@@ -134,18 +134,26 @@ object LeaderboardMath {
     private fun isSelf(entry: LeaderboardEntry, selfId: String, selfNickname: String): Boolean =
         if (entry.id.isNotEmpty()) entry.id == selfId else entry.nickname == selfNickname
 
+    /** Старый файл без id, не обновлявшийся столько дней, скрывается из таблицы. */
+    private const val STALE_LEGACY_DAYS = 14L
+
     /**
      * Убирает дубликаты: по каждому id остаётся самая свежая запись; старый
      * файл без id скрывается, если есть запись с id и тем же ником (игрок уже
-     * обновил приложение, а старый файл ещё не удалён).
+     * обновил приложение, а старый файл ещё не удалён) или если он давно не
+     * обновлялся — игрок сменил ник до появления id, и старый файл не слился
+     * (так было с «Дианой» → «Дишка»). Та же логика — в веб-версии.
      */
     fun dedupe(entries: List<LeaderboardEntry>): List<LeaderboardEntry> {
         val withId = entries.filter { it.id.isNotEmpty() }
             .groupBy { it.id }
             .map { (_, list) -> list.maxBy { it.updatedAt } }
         val knownNames = withId.map { it.nickname.trim().lowercase() }.toSet()
+        val cutoff = LocalDate.now().minusDays(STALE_LEGACY_DAYS).toString()
         val legacy = entries.filter { it.id.isEmpty() }
             .filter { it.nickname.trim().lowercase() !in knownNames }
+            // Ключи «yyyy-MM-dd» сравниваются как строки.
+            .filter { (it.days.keys.maxOrNull() ?: "") >= cutoff }
             .groupBy { it.nickname.trim().lowercase() }
             .map { (_, list) -> list.maxBy { it.updatedAt } }
         return withId + legacy

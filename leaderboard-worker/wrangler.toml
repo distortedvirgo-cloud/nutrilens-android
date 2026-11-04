@@ -1,0 +1,10 @@
+name = "nutrilens-leaderboard"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+
+[vars]
+REPO = "distortedvirgo-cloud/nutrilens-leaderboard"
+ALLOWED_ORIGINS = "https://distortedvirgo-cloud.github.io,http://localhost:5173,http://localhost:4173"
+
+# Секрет задаётся отдельно и в git не попадает:
+#   npx wrangler secret put GITHUB_TOKEN

@@ -11,7 +11,9 @@ import { ProfileScreen } from './screens/Profile'
 import { ComposeSheet, QuickAddSheet, WeightSheet } from './screens/AddFlow'
 import { MealSheet } from './screens/MealSheet'
 import { Onboarding } from './screens/Onboarding'
-import { hasAnyKey } from './ai'
+import { LeaderboardScreen } from './screens/Leaderboard'
+import { schedulePush } from './data/leaderboard'
+import { hasSelectedKey } from './ai'
 import { Sheet, ToastHost, useSheetClose, useToast } from './ui/kit'
 import { IcChart, IcHome, IcPlus, IcSpark, IcUser } from './ui/icons'
 
@@ -35,6 +37,7 @@ export default function App() {
 function Shell() {
   const [tab, setTab] = useState<Tab>('today')
   const [chat, setChat] = useState<{ q?: string } | null>(null)
+  const [board, setBoard] = useState(false)
   const [overlay, setOverlay] = useState<Overlay>(null)
   const toast = useToast()
 
@@ -57,9 +60,10 @@ function Shell() {
   useEffect(() => {
     const load = () => getSettings().then(setSettings)
     load()
-    return onDataChanged(load)
+    schedulePush(1500)
+    return onDataChanged(() => { load(); schedulePush() })
   }, [])
-  const openAiSetup = () => { setChat(null); setTab('profile'); setProfileAi((n) => n + 1) }
+  const openAiSetup = () => { setChat(null); setBoard(false); setTab('profile'); setProfileAi((n) => n + 1) }
 
   // Новая версия на сервере — окно со сводкой. Проверяем при входе и при
   // возвращении в приложение (на iPhone PWA часто не перезапускается неделями).
@@ -92,7 +96,9 @@ function Shell() {
   return (
     <div className="app">
       <div className="aurora" />
-      {chat ? (
+      {board ? (
+        <LeaderboardScreen onBack={() => setBoard(false)} />
+      ) : chat ? (
         <ChatScreen initial={chat.q} onBack={() => setChat(null)} />
       ) : (
         <>
@@ -103,13 +109,14 @@ function Shell() {
               onOpenCoach={() => setTab('coach')}
               onWeigh={() => setOverlay({ kind: 'weight' })}
               onOpenProgress={() => setTab('progress')}
-              needsKey={!!settings && !hasAnyKey(settings)}
+              onOpenLeaderboard={() => setBoard(true)}
+              needsKey={!!settings && !hasSelectedKey(settings)}
               onSetupAi={openAiSetup}
             />
           )}
           {tab === 'progress' && <ProgressScreen />}
           {tab === 'coach' && <CoachScreen onOpenChat={(q) => setChat({ q })} />}
-          {tab === 'profile' && <ProfileScreen openAi={profileAi} />}
+          {tab === 'profile' && <ProfileScreen openAi={profileAi} onOpenLeaderboard={() => setBoard(true)} />}
           <TabBar tab={tab} onTab={setTab} onAdd={() => setOverlay({ kind: 'add' })} />
         </>
       )}

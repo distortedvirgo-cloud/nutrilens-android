@@ -50,6 +50,9 @@ export interface Settings {
   userContext: string
   nickname: string
   onboarded: boolean
+  /** Постоянный id в лидерборде (не зависит от ника) и секрет устройства для записи. */
+  playerId: string
+  playerSecret: string
 }
 
 export interface Favorite {
@@ -91,7 +94,9 @@ export const DEFAULT_SETTINGS: Settings = {
   carbsGoal: null,
   userContext: '',
   nickname: '',
-  onboarded: false
+  onboarded: false,
+  playerId: '',
+  playerSecret: ''
 }
 
 interface NutriSchema extends DBSchema {

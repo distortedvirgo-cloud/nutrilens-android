@@ -4,14 +4,14 @@ import { type Settings, getSettings, latestWeight, saveSettings } from '../data/
 import { exportBackup, importBackup } from '../data/actions'
 import { macroGoals } from '../data/insights'
 import { dailyResetTime, usageToday } from '../ai/gemini'
-import { activeProvider, hasAnyKey } from '../ai'
+import { activeProvider, hasSelectedKey } from '../ai'
 import { KeyField, ProviderCards } from '../ui/AiSetup'
 import { Badge, Sheet, useData, useSheetClose, useToast } from '../ui/kit'
-import { IcChevronR, IcDownload, IcInfo, IcKey, IcShare, IcTarget, IcUpload, IcUser } from '../ui/icons'
+import { IcChevronR, IcDownload, IcInfo, IcKey, IcShare, IcTarget, IcTrophy, IcUpload, IcUser } from '../ui/icons'
 
-type Section = 'goals' | 'about' | 'ai' | 'data' | 'install' | null
+type Section = 'goals' | 'about' | 'ai' | 'data' | 'install' | 'leaderboard' | null
 
-export function ProfileScreen({ openAi = 0 }: { openAi?: number }) {
+export function ProfileScreen({ openAi = 0, onOpenLeaderboard }: { openAi?: number; onOpenLeaderboard: () => void }) {
   const [open, setOpen] = useState<Section>(openAi ? 'ai' : null)
   useEffect(() => { if (openAi) setOpen('ai') }, [openAi])
   const data = useData(async () => ({ s: await getSettings(), w: (await latestWeight())?.weight ?? null }), [], null)
@@ -22,10 +22,11 @@ export function ProfileScreen({ openAi = 0 }: { openAi?: number }) {
   const groups: [string, [Section, React.ReactNode, string, string, string][]][] = [
     ['Питание', [
       ['goals', <IcTarget size={19} />, 'var(--primary)', 'Цели и макросы', `${Math.round(s.dailyGoal)} ккал`],
-      ['about', <IcUser size={19} />, 'var(--protein)', 'О себе', s.nickname || '']
+      ['about', <IcUser size={19} />, 'var(--protein)', 'О себе', s.nickname || ''],
+      ['leaderboard', <IcTrophy size={19} />, 'var(--warn-to)', 'Лидерборд', s.nickname.trim() || 'нет ника']
     ]],
     ['ИИ и данные', [
-      ['ai', <IcKey size={19} />, 'var(--secondary)', 'Нейросеть', !hasAnyKey(s) ? 'добавить ключ' : activeProvider(s) === 'gemini' ? 'Gemini' : 'NanoGPT'],
+      ['ai', <IcKey size={19} />, 'var(--secondary)', 'Нейросеть', !hasSelectedKey(s) ? 'добавить ключ' : activeProvider(s) === 'gemini' ? 'Gemini' : 'NanoGPT'],
       ['data', <IcDownload size={19} />, 'var(--carbs)', 'Экспорт и импорт', '']
     ]],
     ['Приложение', [
@@ -36,7 +37,7 @@ export function ProfileScreen({ openAi = 0 }: { openAi?: number }) {
   return (
     <div className="screen screen-enter">
       <div className="col gap-16 stagger">
-        {!hasAnyKey(s) && (
+        {!hasSelectedKey(s) && (
           <button className="card pad-16 pressable row gap-14" onClick={() => setOpen('ai')}
             style={{ textAlign: 'left', marginTop: 4, border: '1.5px solid color-mix(in srgb, var(--primary) 50%, transparent)', background: 'color-mix(in srgb, var(--primary) 12%, var(--surface))' }}>
             <span className="badge" style={{ width: 44, height: 44, borderRadius: 14, background: 'var(--primary)', color: 'var(--on-brand)' }}><IcKey size={22} /></span>
@@ -66,7 +67,7 @@ export function ProfileScreen({ openAi = 0 }: { openAi?: number }) {
             <div className="overline" style={{ margin: '10px 4px 0' }}>{title}</div>
             <div className="card r24" style={{ overflow: 'hidden' }}>
               {rows.map(([key, icon, tint, label, value], i) => (
-                <button key={label} className="row gap-14" onClick={() => setOpen(key)}
+                <button key={label} className="row gap-14" onClick={() => key === 'leaderboard' ? onOpenLeaderboard() : setOpen(key)}
                   style={{ width: '100%', minHeight: 60, padding: '0 14px', textAlign: 'left', borderTop: i ? '1px solid var(--hairline)' : 'none' }}>
                   <Badge tint={tint} size={36}>{icon}</Badge>
                   <span className="grow" style={{ fontWeight: 700 }}>{label}</span>
@@ -181,13 +182,13 @@ function AiForm({ s }: { s: Settings }) {
   return (
     <div className="col gap-14">
       <div className="h1">Нейросеть</div>
-      {!hasAnyKey(s) && <div className="small" style={{ fontSize: 14, color: 'var(--tertiary)', fontWeight: 700 }}>Ключ ещё не добавлен — без него ИИ не посчитает калории. Выбери сервис, получи ключ по ссылке и вставь его ниже.</div>}
+      {!hasSelectedKey(s) && <div className="small" style={{ fontSize: 14, color: 'var(--tertiary)', fontWeight: 700 }}>Ключ ещё не добавлен — без него ИИ не посчитает калории. Выбери сервис, получи ключ по ссылке и вставь его ниже.</div>}
       <ProviderCards value={provider} onChange={setProvider} />
       {provider === 'gemini' && <FreeTierCard />}
       <KeyField key={provider} s={s} provider={provider} onError={(m) => toast(m)}
         onSaved={() => { close(); toast(provider === 'gemini' ? 'Gemini подключён' : 'NanoGPT подключён') }} />
       <div className="small">
-        Ключи хранятся только на этом телефоне. Можно добавить оба: если основной сервис не ответит, приложение возьмёт второй.
+        Ключи хранятся только на этом телефоне. Работает только выбранный сервис — без тихих переключений на другой.
       </div>
     </div>
   )

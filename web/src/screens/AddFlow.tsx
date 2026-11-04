@@ -1,7 +1,7 @@
 // Добавление: лист «+» (фото, галерея, текст, вода, вес, тренировка,
 // избранное) и лист составления запроса к ИИ.
 import { useEffect, useRef, useState } from 'react'
-import { hasAnyKey } from '../ai'
+import { hasSelectedKey } from '../ai'
 import { type Favorite, type Meal, addWater, favorites, getSettings, putMeal, setWeight, toggleWorkout, uid } from '../data/db'
 import { enqueueAnalysis, runQueue, storePhoto } from '../data/actions'
 import { iso, nowTime } from '../data/insights'
@@ -141,7 +141,7 @@ function ComposeBody({ initialPhotos, focusText, refineMeal, onSent, onSetupAi }
   const textRef = useRef<HTMLTextAreaElement>(null)
   const { inputs, camera, gallery } = usePhotoPickers((ids) => setPhotos((p) => [...p, ...ids].slice(0, 6)))
 
-  useEffect(() => { getSettings().then((s) => setHasKey(hasAnyKey(s))) }, [])
+  useEffect(() => { getSettings().then((s) => setHasKey(hasSelectedKey(s))) }, [])
   useEffect(() => {
     if (focusText || refineMeal) setTimeout(() => textRef.current?.focus(), 350)
   }, [focusText, refineMeal])
