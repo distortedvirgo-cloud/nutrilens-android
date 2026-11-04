@@ -5,6 +5,7 @@ import type { MealItem } from '../data/db'
 
 const MODEL = 'gemini-3.1-flash-lite'
 const BASE = 'https://generativelanguage.googleapis.com/v1beta/models'
+import { fetchText } from './net'
 
 export interface AnalysisResult {
   name: string
@@ -20,7 +21,7 @@ export interface AnalysisResult {
   items: MealItem[]
 }
 
-const SAFETY = ['HARM_CATEGORY_HATE_SPEECH', 'HARM_CATEGORY_SEXUALLY_EXPLICIT', 'HARM_CATEGORY_DANGEROUS_CONTENT', 'HARM_CATEGORY_HARASSMENT']
+export const SAFETY = ['HARM_CATEGORY_HATE_SPEECH', 'HARM_CATEGORY_SEXUALLY_EXPLICIT', 'HARM_CATEGORY_DANGEROUS_CONTENT', 'HARM_CATEGORY_HARASSMENT']
   .map((category) => ({ category, threshold: 'BLOCK_NONE' }))
 
 const S = { type: 'STRING' }, N = { type: 'NUMBER' }
@@ -105,18 +106,13 @@ function friendly(status: number, text: string): string {
 async function postModel(model: string, apiKey: string, body: unknown, signal?: AbortSignal): Promise<string> {
   let minuteRetries = 0, serverRetries = 0
   for (;;) {
-    let resp: Response
-    try {
-      resp = await fetch(`${BASE}/${model}:generateContent`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey.trim() },
-        body: JSON.stringify(body),
-        signal
-      })
-    } catch {
-      throw new Error('Нет связи с Gemini — проверь интернет')
-    }
-    const text = await resp.text()
+    const resp = await fetchText(`${BASE}/${model}:generateContent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey.trim() },
+      body: JSON.stringify(body),
+      signal
+    }, 150_000, 'Gemini')
+    const text = resp.text
     if (resp.ok) { countRequest(); return text }
     if (resp.status === 429) {
       const perDay = /PerDay/i.test(text) && !/PerMinute/i.test(text)
@@ -130,7 +126,8 @@ async function postModel(model: string, apiKey: string, body: unknown, signal?: 
   }
 }
 
-async function post(apiKey: string, body: unknown, signal?: AbortSignal): Promise<string> {
+/** Общий вызов generateContent с учётом лимитов бесплатного тира (рецепты, анализ, чат). */
+export async function post(apiKey: string, body: unknown, signal?: AbortSignal): Promise<string> {
   if (!apiKey.trim()) throw new Error('Укажи ключ Gemini в Профиле → Нейросеть')
   const today = pacificDate()
   let exhausted = false
@@ -267,7 +264,7 @@ export async function chatGemini(opts: {
 /** Быстрая проверка ключа: список моделей. */
 export async function checkKey(apiKey: string): Promise<boolean> {
   try {
-    const r = await fetch(`${BASE}?pageSize=1`, { headers: { 'x-goog-api-key': apiKey.trim() } })
+    const r = await fetchText(`${BASE}?pageSize=1`, { headers: { 'x-goog-api-key': apiKey.trim() } }, 20_000, 'Gemini')
     return r.ok
   } catch {
     return false

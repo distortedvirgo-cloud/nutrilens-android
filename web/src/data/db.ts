@@ -99,7 +99,52 @@ export const DEFAULT_SETTINGS: Settings = {
   playerSecret: ''
 }
 
+// ---------- Книга рецептов ----------
+
+export type RecipeCategory = 'breakfast' | 'lunch' | 'dinner' | 'snack' | 'dessert' | 'drink'
+export type RecipeSourceKind = 'youtube' | 'tiktok' | 'instagram' | 'web' | 'video' | 'photo' | 'text'
+
+export interface RecipeIngredient {
+  name: string
+  /** Количество на исходное число порций; null — «по вкусу». */
+  amount: number | null
+  unit: string
+  /** Примерный вес в граммах на исходное число порций. */
+  grams: number | null
+  /** Калории этого ингредиента на весь рецепт. */
+  calories: number | null
+  emoji: string
+  group: string
+  note: string
+}
+
+export interface RecipeStep { text: string; minutes: number | null }
+
+export interface Recipe {
+  id: string
+  title: string
+  description: string
+  emoji: string
+  /** Превью из видео или страницы (URL) либо id фото в хранилище photos (photo:<id>). */
+  cover: string | null
+  servings: number
+  totalMinutes: number | null
+  difficulty: 'easy' | 'medium' | 'hard'
+  category: RecipeCategory
+  tags: string[]
+  ingredients: RecipeIngredient[]
+  steps: RecipeStep[]
+  /** КБЖУ на одну порцию. */
+  nutrition: { calories: number; protein: number; fat: number; carbs: number }
+  tips: string[]
+  source: { kind: RecipeSourceKind; url: string; author: string }
+  favorite: boolean
+  createdAt: number
+  cookedCount: number
+}
+
 interface NutriSchema extends DBSchema {
+  recipes: { key: string; value: Recipe; indexes: { byTime: number } }
   meals: { key: string; value: Meal; indexes: { byDate: string } }
   photos: { key: string; value: { id: string; full: Blob; thumb: Blob } }
   water: { key: string; value: { date: string; ml: number } }
@@ -116,8 +161,11 @@ let dbPromise: Promise<IDBPDatabase<NutriSchema>> | null = null
 
 export function db(): Promise<IDBPDatabase<NutriSchema>> {
   if (!dbPromise) {
-    dbPromise = openDB<NutriSchema>('nutrilens', 1, {
-      upgrade(d) {
+    dbPromise = openDB<NutriSchema>('nutrilens', 2, {
+      upgrade(d, oldVersion) {
+        // v2: книга рецептов. Хранилища v1 создаются только на свежей базе.
+        if (oldVersion < 2) d.createObjectStore('recipes', { keyPath: 'id' }).createIndex('byTime', 'createdAt')
+        if (oldVersion >= 1) return
         const meals = d.createObjectStore('meals', { keyPath: 'id' })
         meals.createIndex('byDate', 'date')
         d.createObjectStore('photos', { keyPath: 'id' })
@@ -322,4 +370,24 @@ export async function addChat(msg: ChatMessage): Promise<void> {
 export async function clearChat(): Promise<void> {
   await (await db()).clear('chat')
   notifyChanged()
+}
+
+// ---------- Рецепты ----------
+
+export async function allRecipes(): Promise<Recipe[]> {
+  return (await (await db()).getAll('recipes')).sort((a, b) => b.createdAt - a.createdAt)
+}
+export async function getRecipe(id: string): Promise<Recipe | undefined> {
+  return (await db()).get('recipes', id)
+}
+export async function putRecipe(r: Recipe): Promise<void> {
+  await (await db()).put('recipes', r)
+  notifyChanged()
+}
+export async function deleteRecipe(id: string): Promise<Recipe | undefined> {
+  const d = await db()
+  const r = await d.get('recipes', id)
+  await d.delete('recipes', id)
+  notifyChanged()
+  return r
 }

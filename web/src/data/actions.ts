@@ -1,8 +1,7 @@
 // Действия приложения: фото, очередь ИИ-анализа, чат, бэкапы.
 import {
   type Job, type Meal, addChat, chatHistory, db, deleteJob, getMeal, getPhoto, getSettings,
-  jobs, latestWeight, mealsBetween, mealsOn, notifyChanged, putJob, putMeal, putPhoto, recentMeals, uid
-} from './db'
+  jobs, latestWeight, mealsBetween, mealsOn, notifyChanged, putJob, putMeal, putPhoto, recentMeals, uid, type Recipe } from './db'
 import { analyzeMeal, chat } from '../ai'
 import { addDays, dayTotals, iso, macroGoals, nowTime } from './insights'
 
@@ -45,7 +44,7 @@ export async function storePhoto(file: Blob): Promise<string> {
   return id
 }
 
-async function blobToBase64(b: Blob): Promise<string> {
+export async function blobToBase64(b: Blob): Promise<string> {
   const buf = new Uint8Array(await b.arrayBuffer())
   let s = ''
   for (let i = 0; i < buf.length; i += 0x8000) s += String.fromCharCode(...buf.subarray(i, i + 0x8000))
@@ -194,6 +193,9 @@ export async function exportBackup(): Promise<Blob> {
     workouts: await d.getAll('workouts'),
     habits: (await d.getAll('habits')).map((h) => ({ date: h.date, habitId: h.habitId })),
     chat_history: (await d.getAll('chat')).map((c) => ({ role: c.role, text: c.text })),
+    // Рецепты — тем же форматом читает и Android-приложение. Обложки-фото не
+    // переносятся (фото живут отдельно), ссылки-превью остаются.
+    recipes: (await d.getAll('recipes')).map((r) => ({ ...r, cover: r.cover?.startsWith('photo:') ? null : r.cover })),
     web_player: s.playerId ? { id: s.playerId, secret: s.playerSecret } : null,
     source: 'nutrilens-web'
   }
@@ -220,6 +222,10 @@ export async function importBackup(file: Blob): Promise<number> {
       breakdown: String(raw.breakdown ?? '')
     })
     items.set(id, list)
+  }
+  // Рецепты добавляются к книге (а не заменяют её): по id совпадающие обновятся.
+  if (Array.isArray(root.recipes)) {
+    for (const r of root.recipes as Recipe[]) if (r && r.id && r.title && Array.isArray(r.ingredients)) await d.put('recipes', r)
   }
   const tx = d.transaction(['meals', 'favorites', 'weights', 'water', 'workouts', 'habits', 'settings', 'chat'], 'readwrite')
   await Promise.all(['meals', 'favorites', 'weights', 'water', 'workouts', 'habits', 'chat'].map((s) => tx.objectStore(s as 'meals').clear()))

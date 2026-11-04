@@ -1,54 +1,55 @@
 // NanoGPT из браузера: OpenAI-совместимый chat/completions, те же модели,
 // промпт и маршрутизатор сложности, что в Android (NanoGptApi.kt + AnalysisCascade.kt).
 import { buildMealAnalysisPrompt } from './prompt'
+import { fetchText } from './net'
 import { finalize, stripFence, type AnalysisResult } from './gemini'
 
 export const NANO_SENIOR = 'google/gemini-3.8-flash'
 export const NANO_JUNIOR = 'openai/gpt-6-luna'
 const SENIOR_THRESHOLD = 7
 
-export interface Msg { role: 'system' | 'user' | 'assistant'; text: string; images?: string[] }
+/** images — base64 JPEG; videos — https-URL (YouTube через прямой Gemini-маршрут) или data:video/*;base64. */
+export interface Msg { role: 'system' | 'user' | 'assistant'; text: string; images?: string[]; videos?: string[] }
 
 const base = (endpoint: string) => (endpoint.trim() || 'https://nano-gpt.com').replace(/\/+$/, '')
 
-async function complete(opts: {
+export async function complete(opts: {
   apiKey: string; endpoint: string; model: string; messages: Msg[]; jsonMode: boolean
-  reasoningEffort?: string; signal?: AbortSignal
+  reasoningEffort?: string; signal?: AbortSignal; timeoutMs?: number
 }): Promise<string> {
   const msgs = opts.messages.map((m, i) => {
     const text = opts.jsonMode && i === opts.messages.length - 1
       ? `${m.text}\n\nIMPORTANT: Return ONLY valid JSON without any markdown formatting wrappers like \`\`\`json.`
       : m.text
-    if (!m.images?.length) return { role: m.role, content: text }
+    if (!m.images?.length && !m.videos?.length) return { role: m.role, content: text }
     return {
       role: m.role,
       content: [
         { type: 'text', text },
-        ...m.images.map((b64) => ({ type: 'image_url', image_url: { url: `data:image/jpeg;base64,${b64}` } }))
+        ...(m.images ?? []).map((b64) => ({ type: 'image_url', image_url: { url: `data:image/jpeg;base64,${b64}` } })),
+        ...(m.videos ?? []).map((url) => ({ type: 'video_url', video_url: { url, detail: 'auto' } }))
       ]
     }
   })
-  let resp: Response
-  try {
-    resp = await fetch(`${base(opts.endpoint)}/api/v1/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${opts.apiKey.trim()}` },
-      body: JSON.stringify({
-        model: opts.model,
-        service_tier: 'flex',
-        ...(opts.reasoningEffort ? { reasoning_effort: opts.reasoningEffort } : {}),
-        messages: msgs
-      }),
-      signal: opts.signal
-    })
-  } catch {
-    throw new Error('Нет связи с NanoGPT — проверь интернет')
-  }
-  const raw = await resp.text()
+  // Видео и flex-очередь NanoGPT могут думать долго — 3 минуты, затем понятная ошибка.
+  const resp = await fetchText(`${base(opts.endpoint)}/api/v1/chat/completions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${opts.apiKey.trim()}` },
+    body: JSON.stringify({
+      model: opts.model,
+      service_tier: 'flex',
+      ...(opts.reasoningEffort ? { reasoning_effort: opts.reasoningEffort } : {}),
+      messages: msgs
+    }),
+    signal: opts.signal
+  }, opts.timeoutMs ?? 180_000, 'NanoGPT')
+  const raw = resp.text
   if (!resp.ok) {
     if (resp.status === 401 || resp.status === 403) throw new Error('Ключ NanoGPT не подходит — проверь его в Профиле → Нейросеть')
     if (resp.status === 402 || /balance|insufficient|credit/i.test(raw)) throw new Error('На балансе NanoGPT закончились средства — пополни на nano-gpt.com')
     if (resp.status === 429) throw new Error('NanoGPT: слишком много запросов — подожди минуту')
+    const code = /"code"\s*:\s*"([a-z_]+)"/.exec(raw)?.[1]
+    if (code && /video|youtube/.test(code)) throw new Error(`video:${code}`)
     throw new Error(`NanoGPT ${resp.status}: ${raw.slice(0, 200)}`)
   }
   const text = (JSON.parse(raw).choices?.[0]?.message?.content ?? '').toString()
@@ -63,7 +64,7 @@ async function complexity(o: { apiKey: string; endpoint: string; images: string[
       '1 — просто (одно-два очевидных продукта), 10 — очень сложно (много компонентов, составные блюда, соусы, неизвестные рецепты, упаковки без состава). ' +
       'Калории и БЖУ НЕ считай, продуктов не перечисляй. Верни ровно такой JSON: {"complexity": <целое 1-10>}' +
       (o.note ? `\n\nЗаметка пользователя: ${o.note}` : '')
-    const t = await complete({ apiKey: o.apiKey, endpoint: o.endpoint, model: NANO_JUNIOR, jsonMode: true, messages: [{ role: 'user', text: prompt, images: o.images }] })
+    const t = await complete({ apiKey: o.apiKey, endpoint: o.endpoint, model: NANO_JUNIOR, jsonMode: true, timeoutMs: 40_000, messages: [{ role: 'user', text: prompt, images: o.images }] })
     const n = Number(JSON.parse(t).complexity)
     return Number.isFinite(n) ? Math.min(10, Math.max(1, Math.round(n))) : null
   } catch {
@@ -121,7 +122,7 @@ export async function chatNano(opts: {
 /** Проверка ключа: самый дешёвый запрос — одно слово. */
 export async function checkNanoKey(apiKey: string, endpoint: string): Promise<true | string> {
   try {
-    await complete({ apiKey, endpoint, model: NANO_JUNIOR, jsonMode: false, reasoningEffort: 'low', messages: [{ role: 'user', text: 'Ответь одним словом: ок' }] })
+    await complete({ apiKey, endpoint, model: NANO_JUNIOR, jsonMode: false, reasoningEffort: 'low', timeoutMs: 45_000, messages: [{ role: 'user', text: 'Ответь одним словом: ок' }] })
     return true
   } catch (e) {
     return (e as Error).message

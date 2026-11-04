@@ -12,18 +12,19 @@ import {
 import { retryJob, runQueue } from '../data/actions'
 import { Bar, Badge, Photo, Ring, useCountUp, useData, useToast } from '../ui/kit'
 import {
-  IcCamera, IcChevronR, IcKey, IcDrop, IcFire, IcPlus, IcRefresh, IcScale, IcSpark, IcStar, IcTrophy, IcAlert, IcClose
+  IcCamera, IcChevronR, IcKey, IcUser, IcDrop, IcFire, IcPlus, IcRefresh, IcScale, IcSpark, IcStar, IcTrophy, IcAlert, IcClose
 } from '../ui/icons'
 
 const WEEK = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 
-export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOpenLeaderboard, needsKey, onSetupAi }: {
+export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOpenLeaderboard, onOpenProfile, needsKey, onSetupAi }: {
   onOpenMeal: (m: Meal) => void
   onAddPhoto: () => void
   onOpenCoach: () => void
   onWeigh: () => void
   onOpenProgress: () => void
   onOpenLeaderboard: () => void
+  onOpenProfile: () => void
   needsKey: boolean
   onSetupAi: () => void
 }) {
@@ -74,7 +75,7 @@ export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOp
   return (
     <div className="screen screen-enter">
       <div className="col gap-16 stagger">
-        <Header date={d} streak={streak} isToday={isToday} onToday={() => setDate(today)} />
+        <Header date={d} streak={streak} isToday={isToday} onToday={() => setDate(today)} nickname={settings.nickname} onProfile={onOpenProfile} />
         {needsKey && (
           <button className="card pad-16 pressable row gap-14" onClick={onSetupAi}
             style={{ textAlign: 'left', border: '1.5px solid color-mix(in srgb, var(--primary) 50%, transparent)', background: 'color-mix(in srgb, var(--primary) 12%, var(--surface))' }}>
@@ -183,7 +184,9 @@ export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOp
   )
 }
 
-function Header({ date, streak, isToday, onToday }: { date: Date; streak: number; isToday: boolean; onToday: () => void }) {
+function Header({ date, streak, isToday, onToday, nickname, onProfile }: {
+  date: Date; streak: number; isToday: boolean; onToday: () => void; nickname: string; onProfile: () => void
+}) {
   return (
     <div className="row gap-8">
       <div className="grow">
@@ -194,6 +197,11 @@ function Header({ date, streak, isToday, onToday }: { date: Date; streak: number
         <span className="chip warm num" aria-label={`Серия ${streak} ${daysWord(streak)} подряд`}><IcFire size={17} />{streak}</span>
       )}
       {!isToday && <button className="chip primary pressable" onClick={onToday}>Сегодня</button>}
+      <button className="pressable" aria-label="Профиль и настройки" onClick={onProfile}
+        style={{ width: 44, height: 44, borderRadius: 22, flex: 'none', display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 18,
+          background: 'linear-gradient(135deg, var(--brand-from), var(--secondary))', color: 'var(--on-brand)', boxShadow: 'var(--shadow-1)' }}>
+        {nickname.trim() ? nickname.trim()[0].toUpperCase() : <IcUser size={21} />}
+      </button>
     </div>
   )
 }

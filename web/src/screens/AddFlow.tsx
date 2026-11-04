@@ -6,7 +6,7 @@ import { type Favorite, type Meal, addWater, favorites, getSettings, putMeal, se
 import { enqueueAnalysis, runQueue, storePhoto } from '../data/actions'
 import { iso, nowTime } from '../data/insights'
 import { Badge, Photo, Sheet, useData, useSheetClose, useToast } from '../ui/kit'
-import { IcCamera, IcChevronR, IcClose, IcDrop, IcDumbbell, IcGallery, IcScale, IcSpark, IcText } from '../ui/icons'
+import { IcCamera, IcChevronR, IcClose, IcDrop, IcDumbbell, IcGallery, IcScale, IcSpark, IcText, IcBook } from '../ui/icons'
 
 /** Скрытые input'ы: камера и галерея iOS открываются только из жеста пользователя. */
 export function usePhotoPickers(onPicked: (ids: string[]) => void) {
@@ -34,21 +34,22 @@ export function usePhotoPickers(onPicked: (ids: string[]) => void) {
   return { inputs, camera: () => camRef.current?.click(), gallery: () => galRef.current?.click() }
 }
 
-export function QuickAddSheet({ onClose, onCompose, onWeigh }: {
+export function QuickAddSheet({ onClose, onCompose, onWeigh, onRecipe }: {
   onClose: () => void
   onCompose: (photoIds: string[], focusText?: boolean) => void
   onWeigh: () => void
+  onRecipe: () => void
 }) {
   const favs = useData(favorites, [], [] as Favorite[])
   return (
     <Sheet onClose={onClose} label="Добавить">
-      <QuickAddBody favs={favs} onCompose={onCompose} onWeigh={onWeigh} />
+      <QuickAddBody favs={favs} onCompose={onCompose} onWeigh={onWeigh} onRecipe={onRecipe} />
     </Sheet>
   )
 }
 
-function QuickAddBody({ favs, onCompose, onWeigh }: {
-  favs: Favorite[]; onCompose: (ids: string[], focusText?: boolean) => void; onWeigh: () => void
+function QuickAddBody({ favs, onCompose, onWeigh, onRecipe }: {
+  favs: Favorite[]; onCompose: (ids: string[], focusText?: boolean) => void; onWeigh: () => void; onRecipe: () => void
 }) {
   const close = useSheetClose()
   const toast = useToast()
@@ -93,6 +94,7 @@ function QuickAddBody({ favs, onCompose, onWeigh }: {
           close()
           toast(done ? 'Тренировка отмечена: +500 мл к норме воды' : 'Отметка тренировки снята')
         }} />
+        <Tile icon={<IcBook size={22} />} label="Рецепт" tint="var(--tertiary)" onClick={() => { close(); setTimeout(onRecipe, 220) }} />
       </div>
       {favs.length > 0 && (
         <div className="col gap-10">

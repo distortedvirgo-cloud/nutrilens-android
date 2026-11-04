@@ -7,11 +7,11 @@ import { dailyResetTime, usageToday } from '../ai/gemini'
 import { activeProvider, hasSelectedKey } from '../ai'
 import { KeyField, ProviderCards } from '../ui/AiSetup'
 import { Badge, Sheet, useData, useSheetClose, useToast } from '../ui/kit'
-import { IcChevronR, IcDownload, IcInfo, IcKey, IcShare, IcTarget, IcTrophy, IcUpload, IcUser } from '../ui/icons'
+import { IcChevronL, IcChevronR, IcDownload, IcInfo, IcKey, IcShare, IcTarget, IcTrophy, IcUpload, IcUser } from '../ui/icons'
 
 type Section = 'goals' | 'about' | 'ai' | 'data' | 'install' | 'leaderboard' | null
 
-export function ProfileScreen({ openAi = 0, onOpenLeaderboard }: { openAi?: number; onOpenLeaderboard: () => void }) {
+export function ProfileScreen({ openAi = 0, onOpenLeaderboard, onBack }: { openAi?: number; onOpenLeaderboard: () => void; onBack: () => void }) {
   const [open, setOpen] = useState<Section>(openAi ? 'ai' : null)
   useEffect(() => { if (openAi) setOpen('ai') }, [openAi])
   const data = useData(async () => ({ s: await getSettings(), w: (await latestWeight())?.weight ?? null }), [], null)
@@ -37,6 +37,10 @@ export function ProfileScreen({ openAi = 0, onOpenLeaderboard }: { openAi?: numb
   return (
     <div className="screen screen-enter">
       <div className="col gap-16 stagger">
+        <div className="row gap-12">
+          <button className="icon-btn" aria-label="Назад" onClick={onBack}><IcChevronL size={20} /></button>
+          <div className="h1">Профиль</div>
+        </div>
         {!hasSelectedKey(s) && (
           <button className="card pad-16 pressable row gap-14" onClick={() => setOpen('ai')}
             style={{ textAlign: 'left', marginTop: 4, border: '1.5px solid color-mix(in srgb, var(--primary) 50%, transparent)', background: 'color-mix(in srgb, var(--primary) 12%, var(--surface))' }}>

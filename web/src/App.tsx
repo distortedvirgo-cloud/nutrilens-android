@@ -12,12 +12,14 @@ import { ComposeSheet, QuickAddSheet, WeightSheet } from './screens/AddFlow'
 import { MealSheet } from './screens/MealSheet'
 import { Onboarding } from './screens/Onboarding'
 import { LeaderboardScreen } from './screens/Leaderboard'
+import { RecipesScreen } from './screens/Recipes'
+import { RecipeDetail } from './screens/RecipeDetail'
 import { schedulePush } from './data/leaderboard'
 import { hasSelectedKey } from './ai'
 import { Sheet, ToastHost, useSheetClose, useToast } from './ui/kit'
-import { IcChart, IcHome, IcPlus, IcSpark, IcUser } from './ui/icons'
+import { IcBook, IcChart, IcHome, IcPlus, IcSpark } from './ui/icons'
 
-type Tab = 'today' | 'progress' | 'coach' | 'profile'
+type Tab = 'today' | 'progress' | 'recipes' | 'coach' | 'profile'
 type Overlay =
   | { kind: 'add' }
   | { kind: 'compose'; photos: string[]; focusText?: boolean; refine?: Meal }
@@ -38,6 +40,7 @@ function Shell() {
   const [tab, setTab] = useState<Tab>('today')
   const [chat, setChat] = useState<{ q?: string } | null>(null)
   const [board, setBoard] = useState(false)
+  const [recipeId, setRecipeId] = useState<string | null>(null)
   const [overlay, setOverlay] = useState<Overlay>(null)
   const toast = useToast()
 
@@ -63,7 +66,7 @@ function Shell() {
     schedulePush(1500)
     return onDataChanged(() => { load(); schedulePush() })
   }, [])
-  const openAiSetup = () => { setChat(null); setBoard(false); setTab('profile'); setProfileAi((n) => n + 1) }
+  const openAiSetup = () => { setChat(null); setBoard(false); setRecipeId(null); setTab('profile'); setProfileAi((n) => n + 1) }
 
   // Новая версия на сервере — окно со сводкой. Проверяем при входе и при
   // возвращении в приложение (на iPhone PWA часто не перезапускается неделями).
@@ -96,7 +99,9 @@ function Shell() {
   return (
     <div className="app">
       <div className="aurora" />
-      {board ? (
+      {recipeId ? (
+        <RecipeDetail id={recipeId} onBack={() => setRecipeId(null)} />
+      ) : board ? (
         <LeaderboardScreen onBack={() => setBoard(false)} />
       ) : chat ? (
         <ChatScreen initial={chat.q} onBack={() => setChat(null)} />
@@ -110,13 +115,15 @@ function Shell() {
               onWeigh={() => setOverlay({ kind: 'weight' })}
               onOpenProgress={() => setTab('progress')}
               onOpenLeaderboard={() => setBoard(true)}
+              onOpenProfile={() => setTab('profile')}
               needsKey={!!settings && !hasSelectedKey(settings)}
               onSetupAi={openAiSetup}
             />
           )}
           {tab === 'progress' && <ProgressScreen />}
+          {tab === 'recipes' && <RecipesScreen onOpen={setRecipeId} />}
           {tab === 'coach' && <CoachScreen onOpenChat={(q) => setChat({ q })} />}
-          {tab === 'profile' && <ProfileScreen openAi={profileAi} onOpenLeaderboard={() => setBoard(true)} />}
+          {tab === 'profile' && <ProfileScreen openAi={profileAi} onOpenLeaderboard={() => setBoard(true)} onBack={() => setTab('today')} />}
           <TabBar tab={tab} onTab={setTab} onAdd={() => setOverlay({ kind: 'add' })} />
         </>
       )}
@@ -124,7 +131,7 @@ function Shell() {
       {overlay?.kind === 'add' && (
         <QuickAddSheet onClose={close}
           onCompose={(photos, focusText) => setOverlay({ kind: 'compose', photos, focusText })}
-          onWeigh={() => setOverlay({ kind: 'weight' })} />
+          onWeigh={() => setOverlay({ kind: 'weight' })} onRecipe={() => { setChat(null); setBoard(false); setTab('recipes') }} />
       )}
       {overlay?.kind === 'compose' && (
         <ComposeSheet initialPhotos={overlay.photos} focusText={overlay.focusText} refineMeal={overlay.refine}
@@ -152,8 +159,8 @@ function TabBar({ tab, onTab, onAdd }: { tab: Tab; onTab: (t: Tab) => void; onAd
       {item('today', 'Сегодня', <IcHome size={24} />)}
       {item('progress', 'Прогресс', <IcChart size={24} />)}
       <button className="fab" aria-label="Добавить" onClick={onAdd}><IcPlus size={28} strokeWidth={2.6} /></button>
+      {item('recipes', 'Рецепты', <IcBook size={24} />)}
       {item('coach', 'Коуч', <IcSpark size={24} />)}
-      {item('profile', 'Профиль', <IcUser size={24} />)}
     </nav>
   )
 }
