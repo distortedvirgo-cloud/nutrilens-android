@@ -32,7 +32,9 @@ export function dismissImport(id: string) {
 }
 
 /** Запускает разбор в фоне; onDone — id готового рецепта. */
-function runImport(label: string, kind: RecipeSourceKind, prepare: () => Promise<{ input: RecipeInput; cover: string | null }>, onDone?: (id: string) => void) {
+type Prepared = { input: RecipeInput; cover: string | null; videoFile?: File }
+
+function runImport(label: string, kind: RecipeSourceKind, prepare: () => Promise<Prepared>, onDone?: (id: string) => void) {
   const id = uid()
   const job: ImportJob = { id, label, kind, error: null, retry: () => { dismissImport(id); runImport(label, kind, prepare, onDone) } }
   importJobs = [job, ...importJobs]
@@ -40,10 +42,14 @@ function runImport(label: string, kind: RecipeSourceKind, prepare: () => Promise
   ;(async () => {
     try {
       const settings = await getSettings()
-      const { input, cover } = await prepare()
-      const draft = await extractRecipe(settings, input)
+      const { input, cover, videoFile } = await prepare()
+      const { coverTimeSec, ...draft } = await extractRecipe(settings, input)
+      // Обложка — кадр с готовым блюдом, который назвал ИИ; не вышло — первый кадр.
+      const best = videoFile && coverTimeSec != null
+        ? await videoFrame(videoFile, coverTimeSec).then(storePhoto).then((pid) => `photo:${pid}`).catch(() => null)
+        : null
       const recipe: Recipe = {
-        ...draft, id: uid(), cover: cover || input.thumbnail || null, favorite: false, createdAt: Date.now(), cookedCount: 0,
+        ...draft, id: uid(), cover: best || cover || input.thumbnail || null, favorite: false, createdAt: Date.now(), cookedCount: 0,
         source: { kind, url: input.url, author: input.author ?? '' }
       }
       await putRecipe(recipe)
@@ -65,7 +71,7 @@ async function resolveLink(url: string): Promise<RecipeInput> {
     const r = await fetchText(`${LEADERBOARD_API}/resolve?url=${encodeURIComponent(url)}`, { cache: 'no-store' }, 25_000, 'Сервер рецептов')
     if (!r.ok) return base
     const j = JSON.parse(r.text)
-    return { ...base, title: j.title, description: j.description, author: j.author, thumbnail: j.thumbnail, jsonLd: j.jsonLd, pageText: j.pageText }
+    return { ...base, title: j.title, description: j.description, author: j.author, thumbnail: j.thumbnail, jsonLd: j.jsonLd, pageText: j.pageText, videoUrl: j.videoUrl || undefined }
   } catch {
     return base
   }
@@ -108,18 +114,21 @@ export function importFromVideo(file: File, note: string, onDone?: (id: string) 
     const cover = await videoFrame(file).then(storePhoto).then((pid) => `photo:${pid}`).catch(() => null)
     // iPhone пишет .mov (video/quicktime); Gemini знает этот формат как video/mov.
     const mime = !file.type || file.type === 'video/quicktime' ? 'video/mov' : file.type
-    return { input: { kind: 'video', url: '', note, video: { base64: await blobToBase64(file), mime } }, cover }
+    return { input: { kind: 'video', url: '', note, video: { base64: await blobToBase64(file), mime } }, cover, videoFile: file }
   }, onDone)
 }
 
-/** Кадр из середины первой секунды ролика — обложка рецепта. */
-function videoFrame(file: File): Promise<Blob> {
+/** Кадр ролика на секунде at (по умолчанию ~1,2 с) — обложка рецепта. */
+function videoFrame(file: File, at?: number): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const v = document.createElement('video')
     const url = URL.createObjectURL(file)
     const done = (f: () => void) => { URL.revokeObjectURL(url); f() }
     v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = url
-    v.onloadeddata = () => { v.currentTime = Math.min(1.2, (v.duration || 2) / 2) }
+    v.onloadeddata = () => {
+      const d = v.duration || 2
+      v.currentTime = at != null ? Math.min(Math.max(0, at), Math.max(0, d - 0.1)) : Math.min(1.2, d / 2)
+    }
     v.onseeked = () => {
       const c = document.createElement('canvas')
       c.width = v.videoWidth; c.height = v.videoHeight

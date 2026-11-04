@@ -24,12 +24,17 @@ export interface RecipeInput {
   thumbnail?: string
   jsonLd?: string
   pageText?: string
+  /** Прямая ссылка на ролик (TikTok/Instagram/og:video), если страница её отдала. */
+  videoUrl?: string
   note?: string
   images?: string[]
   video?: { base64: string; mime: string }
 }
 
-export type RecipeDraft = Omit<Recipe, 'id' | 'cover' | 'favorite' | 'createdAt' | 'cookedCount' | 'source'>
+export type RecipeDraft = Omit<Recipe, 'id' | 'cover' | 'favorite' | 'createdAt' | 'cookedCount' | 'source'> & {
+  /** Секунда видео с лучшим кадром готового блюда — для обложки. */
+  coverTimeSec: number | null
+}
 
 const CATEGORIES: RecipeCategory[] = ['breakfast', 'lunch', 'dinner', 'snack', 'dessert', 'drink']
 
@@ -57,16 +62,17 @@ const SCHEMA = {
       type: 'OBJECT', properties: { calories: N, protein: N, fat: N, carbs: N },
       required: ['calories', 'protein', 'fat', 'carbs']
     },
-    tips: { type: 'ARRAY', items: S }
+    tips: { type: 'ARRAY', items: S },
+    cover_time_sec: NN
   },
-  propertyOrdering: ['is_recipe', 'reason', 'title', 'description', 'emoji', 'servings', 'total_minutes', 'difficulty', 'category', 'tags', 'ingredients', 'steps', 'nutrition_per_serving', 'tips'],
+  propertyOrdering: ['is_recipe', 'reason', 'title', 'description', 'emoji', 'servings', 'total_minutes', 'difficulty', 'category', 'tags', 'ingredients', 'steps', 'nutrition_per_serving', 'tips', 'cover_time_sec'],
   required: ['is_recipe', 'title', 'servings', 'ingredients', 'steps', 'nutrition_per_serving']
 }
 
 const JSON_SHAPE = `{"is_recipe": true, "reason": "", "title": "", "description": "", "emoji": "🍝", "servings": 2, "total_minutes": 30,
 "difficulty": "easy|medium|hard", "category": "breakfast|lunch|dinner|snack|dessert|drink", "tags": [""],
 "ingredients": [{"name": "", "emoji": "🍅", "amount": 2, "unit": "шт", "grams": 240, "calories": 43, "group": "", "note": ""}],
-"steps": [{"text": "", "minutes": 5}], "nutrition_per_serving": {"calories": 0, "protein": 0, "fat": 0, "carbs": 0}, "tips": [""]}`
+"steps": [{"text": "", "minutes": 5}], "nutrition_per_serving": {"calories": 0, "protein": 0, "fat": 0, "carbs": 0}, "tips": [""], "cover_time_sec": 42}`
 
 const KIND_LABEL: Record<RecipeSourceKind, string> = {
   youtube: 'видео YouTube', tiktok: 'видео TikTok', instagram: 'пост Instagram', web: 'страница сайта',
@@ -90,6 +96,9 @@ export function buildRecipePrompt(src: RecipeInput, hasVideo: boolean): string {
     '- tips — 0–3 полезных совета из источника, без воды.',
     '- Нет граммовок в источнике — оцени реалистично по видео или описанию. Ничего не выдумывай сверх нужного: если продукт не упомянут, не добавляй его.',
     hasVideo ? '- Главный источник — видео: смотри, что и в каком порядке делают, и слушай, что говорят.' : '',
+    hasVideo
+      ? '- cover_time_sec — секунда видео, где готовое блюдо видно лучше всего: крупно, аппетитно, без рук и текста поверх (обычно ближе к концу).'
+      : '- cover_time_sec — null (видео нет).',
     '- Если в материале нет рецепта еды — is_recipe false, reason — коротко почему; остальные поля можно заполнить пустыми значениями.',
     '',
     `ИСТОЧНИК: ${KIND_LABEL[src.kind]}${src.url ? ` — ${src.url}` : ''}`
@@ -134,7 +143,9 @@ const hasText = (s: RecipeInput) => !!(s.title || s.description || s.jsonLd || s
 async function callModel(settings: Settings, src: RecipeInput, withVideo: boolean): Promise<string> {
   const yt = withVideo && src.kind === 'youtube' ? youtubeWatchUrl(src.url) : null
   const file = withVideo ? src.video : undefined
-  const prompt = buildRecipePrompt(src, !!(yt || file))
+  // Прямую ссылку на ролик TikTok/Instagram NanoGPT скачает сам; Gemini по URL видео не берёт.
+  const direct = withVideo && !yt && !file && settings.provider !== 'gemini' ? src.videoUrl : undefined
+  const prompt = buildRecipePrompt(src, !!(yt || file || direct))
   if (settings.provider === 'gemini') {
     const parts: unknown[] = [{ text: prompt }]
     if (yt) parts.push({ file_data: { file_uri: yt } })
@@ -146,7 +157,7 @@ async function callModel(settings: Settings, src: RecipeInput, withVideo: boolea
       safetySettings: SAFETY
     })
   }
-  const videos = [...(yt ? [yt] : []), ...(file ? [`data:${file.mime};base64,${file.base64}`] : [])]
+  const videos = [...(yt ? [yt] : []), ...(direct ? [direct] : []), ...(file ? [`data:${file.mime};base64,${file.base64}`] : [])]
   return complete({
     apiKey: settings.nanoApiKey, endpoint: settings.nanoEndpoint, model: NANO_RECIPE_MODEL, jsonMode: true,
     messages: [{ role: 'user', text: `${prompt}\n\nФормат ответа — JSON строго такой формы:\n${JSON_SHAPE}`, images: src.images, videos }]
@@ -156,7 +167,7 @@ async function callModel(settings: Settings, src: RecipeInput, withVideo: boolea
 export async function extractRecipe(settings: Settings, src: RecipeInput): Promise<RecipeDraft> {
   const key = settings.provider === 'gemini' ? settings.apiKey : settings.nanoApiKey
   if (!key.trim()) throw new Error(`Нет ключа ${settings.provider === 'gemini' ? 'Gemini' : 'NanoGPT'} — добавь его в Профиле → Нейросеть`)
-  const wantsVideo = src.kind === 'youtube' || !!src.video
+  const wantsVideo = src.kind === 'youtube' || !!src.video || (!!src.videoUrl && settings.provider !== 'gemini')
   let raw: string
   try {
     raw = await callModel(settings, src, wantsVideo)
@@ -228,6 +239,7 @@ export function parseRecipe(text: string): RecipeDraft {
     ingredients,
     steps,
     nutrition: { calories: Math.round(calories), protein: Math.round(protein), fat: Math.round(fat), carbs: Math.round(carbs) },
-    tips: (Array.isArray(j.tips) ? j.tips : []).map((t) => str(t, 300)).filter(Boolean).slice(0, 3)
+    tips: (Array.isArray(j.tips) ? j.tips : []).map((t) => str(t, 300)).filter(Boolean).slice(0, 3),
+    coverTimeSec: (() => { const t = num(j.cover_time_sec); return t != null && t >= 0 ? t : null })()
   }
 }

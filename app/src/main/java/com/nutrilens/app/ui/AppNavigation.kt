@@ -49,8 +49,8 @@ import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Insights
-import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
+import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import androidx.compose.material.icons.rounded.Add
@@ -113,9 +113,10 @@ private val leftTabs = listOf(
     DockTab("report", "Прогресс", Icons.Outlined.Insights, Icons.Rounded.Insights)
 )
 
+// Профиль открывается аватаром в шапке «Сегодня» — его место в доке заняли «Рецепты».
 private val rightTabs = listOf(
-    DockTab("coach", "Коуч", Icons.Outlined.AutoAwesome, Icons.Rounded.AutoAwesome),
-    DockTab("profile", "Профиль", Icons.Outlined.Person, Icons.Rounded.Person)
+    DockTab("recipes", "Рецепты", Icons.AutoMirrored.Outlined.MenuBook, Icons.AutoMirrored.Rounded.MenuBook),
+    DockTab("coach", "Коуч", Icons.Outlined.AutoAwesome, Icons.Rounded.AutoAwesome)
 )
 
 /** Маршруты верхнего уровня: на них виден док, между ними — «fade through». */
@@ -242,12 +243,20 @@ fun NutriLensAppRoot(initialDate: String? = null, navigateTo: String? = null) {
                         onOpenLeaderboard = { navigate("leaderboard") },
                         onOpenCoach = { navigate("coach") },
                         onAddMeal = { navigate("add/camera") },
-                        onSetupAi = { navigate("settings/ai") }
+                        onSetupAi = { navigate("settings/ai") },
+                        onOpenProfile = { navigate("profile") }
                     )
                 }
                 composable("report") { ReportScreen(onOpenLeaderboard = { navigate("leaderboard") }) }
                 composable("coach") { CoachScreen(onNavigate = navigate) }
-                composable("profile") { ProfileScreen(onNavigate = navigate) }
+                composable("profile") { ProfileScreen(onNavigate = navigate, onBack = back) }
+                composable("recipes") { RecipesScreen(onOpen = { id -> navigate("recipe/$id") }) }
+                composable("recipe/{id}") {
+                    RecipeDetailScreen(
+                        onBack = back,
+                        onMessage = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } }
+                    )
+                }
                 composable("add") {
                     AddMealScreen(
                         snackbarHostState = snackbarHostState,

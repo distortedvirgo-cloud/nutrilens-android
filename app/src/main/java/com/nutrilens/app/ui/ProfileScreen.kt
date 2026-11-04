@@ -94,7 +94,7 @@ private data class ProfileRow(
  * длинного экрана.
  */
 @Composable
-fun ProfileScreen(onNavigate: (String) -> Unit, viewModel: ProfileViewModel = viewModel()) {
+fun ProfileScreen(onNavigate: (String) -> Unit, onBack: () -> Unit = {}, viewModel: ProfileViewModel = viewModel()) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val lastWeight by viewModel.lastWeight.collectAsStateWithLifecycle()
     val c = NutriTheme.colors
@@ -135,11 +135,11 @@ fun ProfileScreen(onNavigate: (String) -> Unit, viewModel: ProfileViewModel = vi
             .padding(horizontal = Space.Screen)
             .padding(bottom = 120.dp)
     ) {
-        AiKeyBanner(onClick = { onNavigate("settings/ai") }, modifier = Modifier.padding(top = 16.dp))
+        ScreenHeader(title = "Профиль", onBack = onBack)
+        AiKeyBanner(onClick = { onNavigate("settings/ai") }, modifier = Modifier.padding(bottom = 16.dp))
         FreshCard(
             Modifier
                 .fillMaxWidth()
-                .padding(top = 16.dp)
                 .staggeredIn(0),
             onClick = { onNavigate("settings/profile") }
         ) {

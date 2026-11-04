@@ -32,7 +32,12 @@ class MainActivity : ComponentActivity() {
 
         // "navigate" = "dashboard" — дашборд, который и так является стартовой
         // точкой навигации; также приходит необязательный "date" ("yyyy-MM-dd").
-        val navigateTo = intent.getStringExtra("navigate")
+        // «Поделиться» ссылкой из другого приложения — сразу в разбор рецепта.
+        val shared = if (intent.action == android.content.Intent.ACTION_SEND) {
+            intent.getStringExtra(android.content.Intent.EXTRA_TEXT)?.let { com.nutrilens.app.ai.RecipeAi.findUrl(it) }
+        } else null
+        if (shared != null && savedInstanceState == null) com.nutrilens.app.bg.RecipeImporter.fromLink(this, shared)
+        val navigateTo = if (shared != null) "recipes" else intent.getStringExtra("navigate")
         val dateExtra = intent.getStringExtra("date")
 
         setContent {
@@ -49,7 +54,7 @@ class MainActivity : ComponentActivity() {
                     true -> OnboardingScreen(onFinish = { onboarding = false })
                     false -> NutriLensAppRoot(
                         initialDate = dateExtra?.takeIf { it.isNotBlank() },
-                        navigateTo = navigateTo?.takeIf { it in DEEP_LINK_ROUTES }
+                        navigateTo = navigateTo?.takeIf { it in DEEP_LINK_ROUTES || it.startsWith("recipe/") }
                     )
                 }
             }
@@ -63,7 +68,7 @@ class MainActivity : ComponentActivity() {
 private val DEEP_LINK_ROUTES = setOf(
     "settings", "settings/updates", "dashboard", "add",
     "chat", "ideas", "fridge", "menu", "grocery", "waterTool", "habitTool",
-    "leaderboard", "coach", "profile", "report", "add/camera"
+    "leaderboard", "coach", "profile", "report", "add/camera", "recipes"
 )
 
 }

@@ -26,6 +26,7 @@ import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.EmojiEvents
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.LocalFireDepartment
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.MonitorWeight
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.RestaurantMenu
@@ -398,6 +399,7 @@ fun DashboardScreen(
     onOpenCoach: () -> Unit = {},
     onAddMeal: () -> Unit = {},
     onSetupAi: () -> Unit = {},
+    onOpenProfile: () -> Unit = {},
     viewModel: DashboardViewModel = viewModel()
 ) {
     val scope = rememberCoroutineScope()
@@ -460,7 +462,9 @@ fun DashboardScreen(
                 TodayHeader(
                     selected = selectedDate,
                     streak = streak,
-                    onToday = viewModel::goToday
+                    onToday = viewModel::goToday,
+                    nickname = settings.leaderboardNickname,
+                    onProfile = onOpenProfile
                 )
             }
         }
@@ -1661,7 +1665,9 @@ private fun Modifier.introIn(index: Int, introDone: Boolean): Modifier =
 private fun TodayHeader(
     selected: LocalDate,
     streak: Int,
-    onToday: () -> Unit
+    onToday: () -> Unit,
+    nickname: String = "",
+    onProfile: () -> Unit = {}
 ) {
     val isToday = selected == LocalDate.now()
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -1712,6 +1718,23 @@ private fun TodayHeader(
                 textColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 onClick = onToday
             )
+        }
+        Spacer(Modifier.width(8.dp))
+        // Профиль — кружком-аватаром: его вкладку в доке заняли «Рецепты».
+        Surface(
+            onClick = onProfile,
+            shape = CircleShape,
+            color = Color.Transparent,
+            modifier = Modifier.size(44.dp)
+        ) {
+            Box(
+                Modifier.fillMaxSize().background(Brush.linearGradient(listOf(NutriTheme.colors.brandFrom, MaterialTheme.colorScheme.secondary))),
+                contentAlignment = Alignment.Center
+            ) {
+                val initial = nickname.trim().firstOrNull()?.uppercase()
+                if (initial != null) Text(initial, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold, color = NutriTheme.colors.onBrand)
+                else Icon(Icons.Rounded.Person, contentDescription = "Профиль и настройки", tint = NutriTheme.colors.onBrand)
+            }
         }
     }
 }

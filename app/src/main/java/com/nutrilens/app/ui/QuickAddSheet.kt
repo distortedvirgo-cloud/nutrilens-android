@@ -27,6 +27,7 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.automirrored.rounded.Notes
 import androidx.compose.material.icons.rounded.FitnessCenter
+import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.MonitorWeight
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.PhotoLibrary
@@ -258,6 +259,12 @@ fun QuickAddSheet(
                         onMessage(if (done) "Тренировка отмечена: +500 мл к норме воды" else "Отметка тренировки снята")
                     }
                     close()
+                }
+            }
+            // Книга рецептов: ссылка на видео/сайт, видео, фото или текст.
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                SheetAction(Icons.Rounded.Link, "Рецепт по ссылке или видео", MaterialTheme.colorScheme.tertiary, Modifier.weight(1f)) {
+                    close { onNavigate("recipes") }
                 }
             }
 

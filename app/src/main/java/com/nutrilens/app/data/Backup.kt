@@ -63,6 +63,7 @@ object Backup {
                     com.nutrilens.app.leaderboard.PlayerIdentity.id(context)
                 )
             )
+            put("recipes", recipesForBackup(db))
             put(
                 "grocery",
                 groceryRaw?.let { raw -> runCatching { json.parseToJsonElement(raw) }.getOrNull() }
@@ -79,6 +80,9 @@ object Backup {
         }
 
         // Бэкап из веб-версии — поля хранятся JSON-строками: конвертируем.
+        // Рецепты — в обоих форматах одинаковые: добавляются к книге, а не заменяют её.
+        importRecipesFromBackup(db, root["recipes"])
+
         if (WebBackupImport.isWebFormat(root)) {
             WebBackupImport.import(context, db, root)
             return

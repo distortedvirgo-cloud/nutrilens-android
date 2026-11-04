@@ -37,7 +37,9 @@ object NanoGptApi {
     data class Msg(
         val role: String,
         val text: String,
-        val imagesBase64: List<String> = emptyList()
+        val imagesBase64: List<String> = emptyList(),
+        /** Видео: https-URL (YouTube — через прямой Gemini-маршрут) или data:video/*;base64. */
+        val videoUrls: List<String> = emptyList()
     )
 
     private val client = OkHttpClient.Builder()
@@ -85,7 +87,7 @@ object NanoGptApi {
                         } else {
                             msg.text
                         }
-                        if (msg.imagesBase64.isEmpty()) {
+                        if (msg.imagesBase64.isEmpty() && msg.videoUrls.isEmpty()) {
                             put("content", text)
                         } else {
                             putJsonArray("content") {
@@ -98,6 +100,15 @@ object NanoGptApi {
                                         put("type", "image_url")
                                         putJsonObject("image_url") {
                                             put("url", "data:image/jpeg;base64,$b64")
+                                        }
+                                    }
+                                }
+                                msg.videoUrls.forEach { url ->
+                                    addJsonObject {
+                                        put("type", "video_url")
+                                        putJsonObject("video_url") {
+                                            put("url", url)
+                                            put("detail", "auto")
                                         }
                                     }
                                 }

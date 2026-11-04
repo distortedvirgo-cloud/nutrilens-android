@@ -64,6 +64,16 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
     }
 }
 
+/** v8: книга рецептов (рецепт целиком JSON-строкой). */
+val MIGRATION_7_8 = object : Migration(7, 8) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS recipes (id TEXT NOT NULL, json TEXT NOT NULL, " +
+                "createdAt INTEGER NOT NULL, favorite INTEGER NOT NULL, PRIMARY KEY(id))"
+        )
+    }
+}
+
 @Database(
     entities = [
         MealEntity::class,
@@ -77,9 +87,10 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
         SettingsEntity::class,
         AnalysisJobEntity::class,
         RefinementJobEntity::class,
-        ToolJobEntity::class
+        ToolJobEntity::class,
+        RecipeEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class NutriLensDatabase : RoomDatabase() {
@@ -93,6 +104,7 @@ abstract class NutriLensDatabase : RoomDatabase() {
     abstract fun analysisJobDao(): AnalysisJobDao
     abstract fun refinementJobDao(): RefinementJobDao
     abstract fun toolJobDao(): ToolJobDao
+    abstract fun recipeDao(): RecipeDao
 
     companion object {
         @Volatile
@@ -107,7 +119,7 @@ abstract class NutriLensDatabase : RoomDatabase() {
                 )
                     .addMigrations(
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
-                        MIGRATION_5_6, MIGRATION_6_7
+                        MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8
                     )
                     .build().also { INSTANCE = it }
             }

@@ -178,7 +178,7 @@ async function resolveLink(url, ctx, cors) {
   const hit = await caches.default.match(cacheKey)
   if (hit) return withHeaders(hit, { ...cors, 'Cache-Control': 'no-store' })
 
-  const out = { url: target, kind: 'web', title: '', description: '', author: '', thumbnail: '', jsonLd: '', pageText: '' }
+  const out = { url: target, kind: 'web', title: '', description: '', author: '', thumbnail: '', jsonLd: '', pageText: '', videoUrl: '' }
   const host = u.hostname.replace(/^(www|m)\./, '')
   try {
     const yt = youtubeId(u, host)
@@ -193,6 +193,10 @@ async function resolveLink(url, ctx, cors) {
       out.kind = 'tiktok'
       const o = await fetchJson(`https://www.tiktok.com/oembed?url=${encodeURIComponent(target)}`)
       if (o) { out.description = o.title || ''; out.author = o.author_name || ''; out.thumbnail = o.thumbnail_url || '' }
+      // Прямая ссылка на ролик — из данных страницы (подписанный адрес CDN; может не открыться).
+      const html = await fetchText(target)
+      const m = html && /"playAddr":"(https:[^"]+)"/.exec(html)
+      if (m) { try { out.videoUrl = JSON.parse(`"${m[1]}"`) } catch { /* битая строка */ } }
     } else {
       if (/(^|\.)instagram\.com$/.test(host)) out.kind = 'instagram'
       const html = await fetchText(target)
@@ -261,6 +265,7 @@ function parsePage(html, out) {
     title: meta(html, 'og:title') || decodeEntities((/<title[^>]*>([^<]*)<\/title>/i.exec(html) || [])[1] || ''),
     description: meta(html, 'og:description') || meta(html, 'description'),
     thumbnail: meta(html, 'og:image'),
+    videoUrl: meta(html, 'og:video:secure_url') || meta(html, 'og:video:url') || meta(html, 'og:video'),
     author: out.author,
     jsonLd: '',
     pageText: ''
