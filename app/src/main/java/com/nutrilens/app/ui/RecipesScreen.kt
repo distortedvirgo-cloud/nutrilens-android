@@ -43,7 +43,7 @@ import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.Subject
+import androidx.compose.material.icons.automirrored.rounded.Notes
 import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -190,7 +190,7 @@ private fun ImportCard(onText: () -> Unit, modifier: Modifier = Modifier) {
     val c = NutriTheme.colors
     var link by remember { mutableStateOf("") }
     var hint by remember { mutableStateOf<String?>(null) }
-    val submit = { text: String ->
+    val submit: (String) -> Unit = { text ->
         val url = RecipeAi.findUrl(text)
         if (url == null) hint = "Вставьте ссылку на видео или страницу с рецептом"
         else { RecipeImporter.fromLink(context, url); link = ""; hint = "Разбираю рецепт — это займёт до минуты" }
@@ -251,7 +251,7 @@ private fun ImportCard(onText: () -> Unit, modifier: Modifier = Modifier) {
                 SourceButton(Icons.Rounded.PhotoCamera, "Фото", Modifier.weight(1f)) {
                     photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                 }
-                SourceButton(Icons.Rounded.Subject, "Текст", Modifier.weight(1f), onText)
+                SourceButton(Icons.AutoMirrored.Rounded.Notes, "Текст", Modifier.weight(1f), onText)
             }
             hint?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
         }

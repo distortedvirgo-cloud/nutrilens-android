@@ -153,8 +153,8 @@ object RecipeAi {
         return http.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful) return null
             val source = resp.body?.source() ?: return null
-            source.request(1_500_000)
-            val n = minOf(source.buffer.size, 1_500_000)
+            source.request(1_500_000L)
+            val n = minOf(source.buffer.size, 1_500_000L)
             source.buffer.readUtf8(n)
         }
     }

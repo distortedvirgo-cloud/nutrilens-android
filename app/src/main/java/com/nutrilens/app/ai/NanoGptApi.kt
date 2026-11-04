@@ -38,7 +38,7 @@ object NanoGptApi {
         val role: String,
         val text: String,
         val imagesBase64: List<String> = emptyList(),
-        /** Видео: https-URL (YouTube — через прямой Gemini-маршрут) или data:video/*;base64. */
+        /** Видео: https-URL (YouTube — через прямой Gemini-маршрут) или data:video/…;base64. */
         val videoUrls: List<String> = emptyList()
     )
 

@@ -124,7 +124,7 @@ fun RecipeDetailScreen(onBack: () -> Unit, onMessage: (String) -> Unit, viewMode
                     Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).padding(horizontal = 16.dp, vertical = 10.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    GlassButton(Icons.AutoMirrored.Rounded.ArrowBack, "Назад", onBack)
+                    GlassButton(Icons.AutoMirrored.Rounded.ArrowBack, "Назад", onClick = onBack)
                     Spacer(Modifier.weight(1f))
                     GlassButton(Icons.Rounded.Share, "Список покупок") {
                         val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, RecipeFormat.shoppingText(recipe, servings))
@@ -351,6 +351,7 @@ private fun StepNumber(n: Int) {
 }
 
 /** Пошаговый режим: крупный шрифт, таймер шага, экран не гаснет. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CookMode(r: Recipe, factor: Double, onClose: () -> Unit, onFinish: () -> Unit) {
     val context = LocalContext.current
@@ -397,7 +398,6 @@ private fun CookMode(r: Recipe, factor: Double, onClose: () -> Unit, onFinish: (
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(22.dp, Alignment.CenterVertically)) {
                 Text(step.text, fontSize = 26.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                 if (used.isNotEmpty()) {
-                    @OptIn(ExperimentalLayoutApi::class)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         used.forEach { SmallTag("${it.emoji} ${it.name} · ${RecipeFormat.ingredientAmount(it, factor)}") }
                     }

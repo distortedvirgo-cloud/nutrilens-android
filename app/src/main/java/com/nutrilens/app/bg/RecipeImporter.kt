@@ -109,7 +109,7 @@ object RecipeImporter {
             ?: throw RuntimeException("Не удалось открыть видео")
         if (bytes.size > RecipeAi.MAX_VIDEO_BYTES) throw RuntimeException("Видео больше 14 МБ — обрежьте ролик или пришлите ссылку")
         val type = context.contentResolver.getType(uri) ?: "video/mp4"
-        // Gemini знает .mov как video/mov; NanoGPT принимает любой video/*.
+        // Gemini знает .mov как video/mov; NanoGPT принимает любой видеоформат.
         val mime = if (type == "video/quicktime") "video/mov" else type
         val cover = runCatching { videoFrame(context, uri, null) }.getOrNull()
         Prepared(RecipeAi.Input(kind = "video", video = bytes to mime), cover = cover, frameFrom = uri)
@@ -125,7 +125,7 @@ object RecipeImporter {
                 else -> return null
             }
             val durationMs = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-            val atUs = if (at != null) (at * 1_000_000).toLong().coerceIn(0, maxOf(0, durationMs * 1000 - 100_000)) else 1_200_000L
+            val atUs = if (at != null) (at * 1_000_000).toLong().coerceIn(0L, maxOf(0L, durationMs * 1000 - 100_000)) else 1_200_000L
             val frame = r.getFrameAtTime(atUs, MediaMetadataRetriever.OPTION_CLOSEST) ?: return null
             val dir = File(context.filesDir, "recipes").apply { mkdirs() }
             val file = File(dir, "cover_${UUID.randomUUID()}.jpg")
