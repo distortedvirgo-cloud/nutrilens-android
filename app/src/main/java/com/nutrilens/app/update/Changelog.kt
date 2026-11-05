@@ -19,6 +19,15 @@ data class ChangelogEntry(
  */
 val CHANGELOG: List<ChangelogEntry> = listOf(
     ChangelogEntry(
+        versionCode = 74,
+        versionName = "3.17",
+        title = "Рилсы Instagram",
+        items = listOf(
+            "Если Instagram не отдаёт ролик без аккаунта — кнопка «Войти в Instagram» прямо в книге рецептов",
+            "Вход хранится только на телефоне, после него рилсы скачиваются и с VPN"
+        )
+    ),
+    ChangelogEntry(
         versionCode = 73,
         versionName = "3.16",
         title = "Instagram",

@@ -129,7 +129,14 @@ object VideoDownloader {
             addOption("--max-filesize", "${RecipeAi.MAX_VIDEO_BYTES / (1024 * 1024)}M")
             addOption("-o", File(dir, "video.%(ext)s").absolutePath)
         }
-        YoutubeDL.getInstance().execute(request)
+        // Instagram без аккаунта часто отвечает «login required» — передаём куки входа, если он есть.
+        val cookies = if (RecipeAi.kindOf(url) == "instagram") InstagramSession.cookieFile(context) else null
+        cookies?.let { request.addOption("--cookies", it.absolutePath) }
+        try {
+            YoutubeDL.getInstance().execute(request)
+        } finally {
+            cookies?.delete()
+        }
         val file = dir.listFiles()?.filter { it.isFile && it.length() > 0 }?.maxByOrNull { it.length() }
             ?: throw RuntimeException("Ролик слишком большой (больше 14 МБ) или недоступен")
         if (file.length() > RecipeAi.MAX_VIDEO_BYTES) throw RuntimeException("Ролик слишком большой (больше 14 МБ)")
@@ -146,14 +153,20 @@ object VideoDownloader {
         return runCatching { YoutubeDL.getInstance().updateYoutubeDL(context.applicationContext) }.isSuccess
     }
 
+    /** Метка ошибки входа в Instagram: экран книги показывает по ней кнопку «Войти в Instagram». */
+    const val IG_LOGIN_HINT = "🔐"
+
     private fun readable(e: Exception): RuntimeException {
         val m = e.message.orEmpty()
         // Точный ответ yt-dlp — чтобы по скриншоту было видно настоящую причину.
         val raw = m.lineSequence().lastOrNull { it.contains("ERROR") }?.substringAfter("ERROR:")?.trim()?.take(160) ?: m.take(160)
         return RuntimeException(
             when {
+                (m.contains("[Instagram]") || m.contains("instagram", true)) && (m.contains("login", true) || m.contains("rate-limit", true) || m.contains("cookies", true)) ->
+                    if (InstagramSession.isLoggedIn()) "$IG_LOGIN_HINT Вход устарел — войдите в Instagram ещё раз ($raw)"
+                    else "$IG_LOGIN_HINT Instagram не отдаёт ролик без входа в аккаунт — нажмите «Войти в Instagram» (можно запасной аккаунт), потом «Повторить»"
                 m.contains("login", true) || m.contains("cookies", true) || m.contains("rate-limit", true) ->
-                    "Instagram/TikTok не отдал ролик без входа в аккаунт ($raw). Попробуйте другой сервер VPN или сохраните видео и загрузите кнопкой «Видео»"
+                    "TikTok не отдал ролик без входа в аккаунт ($raw). Попробуйте другой сервер VPN или сохраните видео и загрузите кнопкой «Видео»"
                 m.contains("Private", true) || m.contains("unavailable", true) -> "Ролик недоступен (закрыт или удалён)"
                 m.contains("14 МБ") -> m
                 else -> "Не удалось скачать видео (${m.lineSequence().lastOrNull { it.contains("ERROR") }?.substringAfter("ERROR:")?.trim()?.take(120) ?: m.take(120)}). Сохраните ролик и загрузите его кнопкой «Видео»"

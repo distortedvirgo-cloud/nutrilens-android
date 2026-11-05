@@ -52,6 +52,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -275,9 +276,13 @@ private fun JobCard(job: RecipeImporter.Job) {
         if (job.error != null) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("${job.label.replaceFirstChar { it.uppercase() }}: не получилось", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                Text(job.error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(job.error.removePrefix(com.nutrilens.app.bg.VideoDownloader.IG_LOGIN_HINT).trim(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val needsLogin = job.error.startsWith(com.nutrilens.app.bg.VideoDownloader.IG_LOGIN_HINT)
+                var login by remember { mutableStateOf(false) }
+                if (login) InstagramLoginDialog(onDismiss = { login = false }, onLoggedIn = { login = false; job.retry() })
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    NutriChip("Повторить", onClick = job.retry, primary = true, icon = Icons.Rounded.Refresh)
+                    if (needsLogin) NutriChip("Войти в Instagram", onClick = { login = true }, primary = true)
+                    NutriChip("Повторить", onClick = job.retry, primary = !needsLogin, icon = Icons.Rounded.Refresh)
                     NutriChip("Скрыть", onClick = { RecipeImporter.dismiss(job.id) })
                 }
             }
@@ -365,5 +370,48 @@ fun plural(n: Int, one: String, few: String, many: String): String {
         m10 == 1 && m100 != 11 -> one
         m10 in 2..4 && (m100 < 12 || m100 > 14) -> few
         else -> many
+    }
+}
+
+/** Вход на instagram.com во встроенном браузере. Как только появилась сессия — закрываем и повторяем разбор. */
+@Composable
+private fun InstagramLoginDialog(onDismiss: () -> Unit, onLoggedIn: () -> Unit) {
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
+            Column(Modifier.fillMaxSize()) {
+                Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Вход в Instagram", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                        Text("Нужен, чтобы скачивать рилсы. Пароль вводится на сайте Instagram, вход хранится только на телефоне. Можно запасной аккаунт.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    NutriChip("Закрыть", onClick = onDismiss)
+                }
+                LaunchedEffect(Unit) {
+                    while (true) {
+                        if (com.nutrilens.app.bg.InstagramSession.isLoggedIn()) {
+                            android.webkit.CookieManager.getInstance().flush()
+                            onLoggedIn(); break
+                        }
+                        kotlinx.coroutines.delay(1000)
+                    }
+                }
+                androidx.compose.ui.viewinterop.AndroidView(
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    factory = { ctx ->
+                        android.webkit.WebView(ctx).apply {
+                            settings.javaScriptEnabled = true
+                            settings.domStorageEnabled = true
+                            android.webkit.CookieManager.getInstance().setAcceptCookie(true)
+                            android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+                            webViewClient = android.webkit.WebViewClient()
+                            loadUrl("https://www.instagram.com/accounts/login/")
+                        }
+                    },
+                    onRelease = { it.destroy() }
+                )
+            }
+        }
     }
 }
