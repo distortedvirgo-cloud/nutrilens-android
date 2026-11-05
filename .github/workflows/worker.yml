@@ -37,11 +37,11 @@ jobs:
       - name: KV namespace for videos
         run: |
           npx --yes wrangler@3.80.0 kv namespace list > ns.json
-          id=$(node -e "const l=require('./ns.json');const n=l.find(x=>x.title==='nutrilens-videos');process.stdout.write(n?n.id:'')")
+          id=$(node -e "const t=require('fs').readFileSync('ns.json','utf8');const l=JSON.parse(t.slice(t.indexOf('['),t.lastIndexOf(']')+1));const n=l.find(x=>x.title==='nutrilens-videos');process.stdout.write(n?n.id:'')")
           if [ -z "$id" ]; then
             npx --yes wrangler@3.80.0 kv namespace create nutrilens-videos > /dev/null
             npx --yes wrangler@3.80.0 kv namespace list > ns.json
-            id=$(node -e "const l=require('./ns.json');process.stdout.write(l.find(x=>x.title==='nutrilens-videos').id)")
+            id=$(node -e "const t=require('fs').readFileSync('ns.json','utf8');const l=JSON.parse(t.slice(t.indexOf('['),t.lastIndexOf(']')+1));process.stdout.write(l.find(x=>x.title==='nutrilens-videos').id)")
           fi
           printf '\n[[kv_namespaces]]\nbinding = "VIDEOS"\nid = "%s"\n' "$id" >> wrangler.toml
           echo "KV nutrilens-videos: $id"
