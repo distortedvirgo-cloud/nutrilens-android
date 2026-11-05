@@ -95,7 +95,9 @@ export function buildRecipePrompt(src: RecipeInput, hasVideo: boolean): string {
     '- total_minutes — общее время; category — к какому приёму пищи блюдо подходит больше всего; tags — 2–4 коротких метки («быстро», «без глютена», «на ужин»).',
     '- tips — 0–3 полезных совета из источника, без воды.',
     '- Нет граммовок в источнике — оцени реалистично по видео или описанию. Ничего не выдумывай сверх нужного: если продукт не упомянут, не добавляй его.',
-    hasVideo ? '- Главный источник — видео: смотри, что и в каком порядке делают, и слушай, что говорят.' : '',
+    hasVideo ? '- Главный и единственный источник — ВИДЕО: смотри, что и в каком порядке делают, читай надписи на экране и слушай, что говорят.' : '',
+    hasVideo ? '- Перечисли ВСЕ ингредиенты, которые появляются в кадре или называются вслух/текстом, включая специи, подсластители, жидкости и посыпки. Не пропускай ничего, что кладут в блюдо.' : '',
+    hasVideo ? '- НИКОГДА не добавляй продукты, которых нет в видео, даже если они типичны для такого блюда. Название и описание ролика — только чтобы уточнить граммовки уже увиденных продуктов.' : '',
     hasVideo
       ? '- cover_time_sec — секунда видео, где готовое блюдо видно лучше всего: крупно, аппетитно, без рук и текста поверх (обычно ближе к концу).'
       : '- cover_time_sec — null (видео нет).',
@@ -137,7 +139,6 @@ export function sourceKindOf(url: string): RecipeSourceKind {
 }
 
 const isHardError = (e: unknown) => /Ключ|ключ|баланс|интернет|Дневной лимит|слишком много/.test((e as Error).message)
-const hasText = (s: RecipeInput) => !!(s.title || s.description || s.jsonLd || s.pageText || s.note || s.images?.length)
 
 /** Один вызов выбранного сервиса; withVideo=false — без видео (запасной путь). */
 async function callModel(settings: Settings, src: RecipeInput, withVideo: boolean): Promise<string> {
@@ -167,17 +168,21 @@ async function callModel(settings: Settings, src: RecipeInput, withVideo: boolea
 export async function extractRecipe(settings: Settings, src: RecipeInput): Promise<RecipeDraft> {
   const key = settings.provider === 'gemini' ? settings.apiKey : settings.nanoApiKey
   if (!key.trim()) throw new Error(`Нет ключа ${settings.provider === 'gemini' ? 'Gemini' : 'NanoGPT'} — добавь его в Профиле → Нейросеть`)
-  const wantsVideo = src.kind === 'youtube' || !!src.video || (!!src.videoUrl && settings.provider !== 'gemini')
+  // Ролики разбираются только по самому видео — никаких догадок по названию и описанию.
+  const isVideoSource = ['youtube', 'tiktok', 'instagram', 'video'].includes(src.kind)
+  if ((src.kind === 'tiktok' || src.kind === 'instagram') && !src.video) {
+    throw new Error('В веб-версии ролики TikTok и Instagram по ссылке не скачать. Сохрани видео и загрузи его кнопкой «Видео»')
+  }
   let raw: string
   try {
-    raw = await callModel(settings, src, wantsVideo)
+    raw = await callModel(settings, { ...src, videoUrl: undefined }, isVideoSource)
   } catch (e) {
-    // Видео не приняли (маршрут без YouTube, закрытый ролик) — пробуем по тексту.
-    if (!wantsVideo || isHardError(e) || !hasText(src)) {
-      if ((e as Error).message.startsWith('video:')) throw new Error('Этот сервис не смог открыть видео. Попробуй загрузить ролик файлом или вставить текст рецепта')
-      throw e
+    const m = (e as Error).message
+    if (src.kind === 'youtube' && settings.provider !== 'gemini' && (m.startsWith('video:') || /youtube/i.test(m))) {
+      throw new Error('NanoGPT не открыл ролик YouTube. Переключись на Gemini в Профиле → Нейросеть или загрузи видео файлом')
     }
-    raw = await callModel(settings, src, false)
+    if (isVideoSource && !isHardError(e)) throw new Error(`ИИ не смог посмотреть видео: ${m.slice(0, 120)}`)
+    throw e
   }
   return parseRecipe(raw)
 }

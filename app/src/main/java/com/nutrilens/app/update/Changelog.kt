@@ -19,6 +19,16 @@ data class ChangelogEntry(
  */
 val CHANGELOG: List<ChangelogEntry> = listOf(
     ChangelogEntry(
+        versionCode = 64,
+        versionName = "3.7",
+        title = "Рецепты по видео",
+        items = listOf(
+            "Рецепты из TikTok, Instagram и YouTube теперь разбираются по самому видео: приложение скачивает ролик, и ИИ смотрит, что реально кладут в блюдо",
+            "Больше никаких догадок по названию ролика: если видео получить не удалось, будет понятная ошибка",
+            "ИИ строже к составу: перечисляет всё, что видно и звучит в ролике, и не добавляет продукты «от себя»"
+        )
+    ),
+    ChangelogEntry(
         versionCode = 63,
         versionName = "3.6",
         title = "Аватарки",

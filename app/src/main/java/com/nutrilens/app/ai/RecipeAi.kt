@@ -254,7 +254,11 @@ object RecipeAi {
         add("- total_minutes — общее время; category — к какому приёму пищи блюдо подходит больше всего; tags — 2–4 коротких метки («быстро», «без глютена», «на ужин»).")
         add("- tips — 0–3 полезных совета из источника, без воды.")
         add("- Нет граммовок в источнике — оцени реалистично по видео или описанию. Ничего не выдумывай сверх нужного: если продукт не упомянут, не добавляй его.")
-        if (hasVideo) add("- Главный источник — видео: смотри, что и в каком порядке делают, и слушай, что говорят.")
+        if (hasVideo) {
+            add("- Главный и единственный источник — ВИДЕО: смотри, что и в каком порядке делают, читай надписи на экране и слушай, что говорят.")
+            add("- Перечисли ВСЕ ингредиенты, которые появляются в кадре или называются вслух/текстом, включая специи, подсластители, жидкости и посыпки. Не пропускай ничего, что кладут в блюдо.")
+            add("- НИКОГДА не добавляй продукты, которых нет в видео, даже если они типичны для такого блюда. Название и описание ролика — только чтобы уточнить граммовки уже увиденных продуктов.")
+        }
         add(
             if (hasVideo) "- cover_time_sec — секунда видео, где готовое блюдо видно лучше всего: крупно, аппетитно, без рук и текста поверх (обычно ближе к концу)."
             else "- cover_time_sec — null (видео нет)."
@@ -317,7 +321,7 @@ object RecipeAi {
     }
 
     private suspend fun call(settings: SettingsEntity, src: Input, withVideo: Boolean): String {
-        val yt = if (withVideo && src.kind == "youtube") youtubeWatchUrl(src.url) else null
+        val yt = if (withVideo && src.kind == "youtube" && src.video == null) youtubeWatchUrl(src.url) else null
         val file = if (withVideo) src.video else null
         // Ролик не скачался на телефон — NanoGPT может скачать его по ссылке сам; Gemini по URL видео не берёт.
         val direct = if (withVideo && yt == null && file == null && settings.aiProvider != "gemini") src.videoUrl.ifBlank { null } else null
@@ -366,18 +370,16 @@ object RecipeAi {
     suspend fun extract(settings: SettingsEntity, src: Input): Pair<Recipe, Double?> {
         val key = if (settings.aiProvider == "gemini") settings.apiKey else settings.nanoApiKey
         if (key.isBlank()) throw RuntimeException(if (settings.aiProvider == "gemini") NO_GEMINI_KEY_ERROR else NO_NANO_KEY_ERROR)
-        val wantsVideo = src.kind == "youtube" || src.video != null || (src.videoUrl.isNotBlank() && settings.aiProvider != "gemini")
-        val hasText = listOf(src.title, src.description, src.jsonLd, src.pageText, src.note).any { it.isNotBlank() } || src.imagesJpeg.isNotEmpty()
+        // Ролики разбираются только по самому видео — никаких догадок по названию и описанию.
+        val isVideoSource = src.kind in setOf("youtube", "tiktok", "instagram", "video")
+        if (isVideoSource && src.video == null && !(src.kind == "youtube" && settings.aiProvider == "gemini")) {
+            throw RuntimeException("Не удалось получить видео. Сохраните ролик и загрузите его кнопкой «Видео»")
+        }
         val raw = try {
-            call(settings, src, wantsVideo)
+            call(settings, src, isVideoSource)
         } catch (e: Exception) {
-            if (!wantsVideo || isHard(e) || !hasText) {
-                if (e.message.orEmpty().contains("video", ignoreCase = true)) {
-                    throw RuntimeException("Этот сервис не смог открыть видео. Попробуйте загрузить ролик файлом или вставить текст рецепта")
-                }
-                throw e
-            }
-            call(settings, src, false)
+            if (isVideoSource && !isHard(e)) throw RuntimeException("ИИ не смог посмотреть видео: ${e.message?.take(120)}")
+            throw e
         }
         return parse(raw, src)
     }

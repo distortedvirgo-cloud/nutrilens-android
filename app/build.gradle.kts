@@ -46,12 +46,18 @@ android {
     namespace = "com.nutrilens.app"
     compileSdk = 35
 
+    packaging {
+        jniLibs { useLegacyPackaging = true }
+    }
+
     defaultConfig {
+        // yt-dlp тянет Python под каждую ABI — оставляем ARM (почти все телефоны).
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
         applicationId = "com.nutrilens.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 63
-        versionName = "3.6"
+        versionCode = 64
+        versionName = "3.7"
         buildConfigField("String", "LEADERBOARD_REPO", "\"${leaderboardProp("LEADERBOARD_REPO")}\"")
         buildConfigField("String", "LEADERBOARD_TOKEN", "\"${leaderboardProp("LEADERBOARD_TOKEN")}\"")
     }
@@ -111,6 +117,8 @@ dependencies {
     ksp(libs.androidx.room.compiler)
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.okhttp)
+    // yt-dlp: скачивание роликов по ссылке для книги рецептов.
+    implementation(libs.ytdl.library)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.coil.compose)
     implementation(libs.androidx.exifinterface)

@@ -82,9 +82,15 @@ object RecipeImporter {
     }
 
     fun fromLink(context: Context, url: String, note: String = "") = run(context, RecipeAi.kindOf(url)) {
-        val resolved = RecipeAi.resolve(url).copy(note = note)
-        // TikTok/Instagram отдали прямую ссылку на ролик — пробуем скачать: тогда ИИ смотрит само видео.
-        val bytes = resolved.videoUrl.takeIf { it.isNotBlank() && resolved.kind != "youtube" }?.let { RecipeAi.downloadVideo(it, url) }
+        val resolved = RecipeAi.resolve(url).copy(note = note, videoUrl = "")
+        if (resolved.kind == "web") return@run Prepared(resolved) // сайт с рецептом — текст и разметка Recipe
+        // Ролик (YouTube/TikTok/Instagram) скачиваем на телефон: ИИ смотрит само видео, без догадок по описанию.
+        val bytes = try {
+            VideoDownloader.download(context, url)
+        } catch (e: Exception) {
+            // YouTube в режиме Gemini Google смотрит по ссылке сам — это тоже видео.
+            if (resolved.kind == "youtube") null else throw e
+        }
         if (bytes != null) {
             val tmp = File(context.cacheDir, "recipe_${UUID.randomUUID()}.mp4").apply { writeBytes(bytes) }
             Prepared(resolved.copy(video = bytes to "video/mp4"), frameFrom = tmp)
