@@ -53,6 +53,8 @@ object RecipeAi {
         val thumbnail: String = "",
         val jsonLd: String = "",
         val pageText: String = "",
+        /** Почему не скачался ролик — покажем, если и ссылка не сработала. */
+        val downloadError: String = "",
         /** Прямая ссылка на ролик (TikTok playAddr / og:video), если страница её отдала. */
         val videoUrl: String = "",
         val note: String = "",
@@ -321,6 +323,7 @@ object RecipeAi {
     }
 
     private suspend fun call(settings: SettingsEntity, src: Input, withVideo: Boolean): String {
+        // YouTube без скачанного файла — по ссылке: Gemini открывает её сам, NanoGPT — через Gemini-маршрут.
         val yt = if (withVideo && src.kind == "youtube" && src.video == null) youtubeWatchUrl(src.url) else null
         val file = if (withVideo) src.video else null
         // Ролик не скачался на телефон — NanoGPT может скачать его по ссылке сам; Gemini по URL видео не берёт.
@@ -374,12 +377,15 @@ object RecipeAi {
         if (key.isBlank()) throw RuntimeException(if (settings.aiProvider == "gemini") NO_GEMINI_KEY_ERROR else NO_NANO_KEY_ERROR)
         // Ролики разбираются только по самому видео — никаких догадок по названию и описанию.
         val isVideoSource = src.kind in setOf("youtube", "tiktok", "instagram", "video")
-        if (isVideoSource && src.video == null && !(src.kind == "youtube" && settings.aiProvider == "gemini")) {
+        if (isVideoSource && src.video == null && src.kind != "youtube") {
             throw RuntimeException("Не удалось получить видео. Сохраните ролик и загрузите его кнопкой «Видео»")
         }
         val raw = try {
             call(settings, src, isVideoSource)
         } catch (e: Exception) {
+            if (src.kind == "youtube" && src.video == null && !isHard(e)) {
+                throw RuntimeException(src.downloadError.ifBlank { "Не удалось открыть ролик YouTube: ${e.message?.take(100)}" })
+            }
             if (isVideoSource && !isHard(e)) throw RuntimeException("ИИ не смог посмотреть видео: ${e.message?.take(120)}")
             throw e
         }

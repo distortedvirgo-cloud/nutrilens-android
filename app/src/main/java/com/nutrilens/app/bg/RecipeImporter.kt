@@ -85,16 +85,17 @@ object RecipeImporter {
         val resolved = RecipeAi.resolve(url).copy(note = note, videoUrl = "")
         if (resolved.kind == "web") return@run Prepared(resolved) // сайт с рецептом — текст и разметка Recipe
         // Ролик (YouTube/TikTok/Instagram) скачиваем на телефон: ИИ смотрит само видео, без догадок по описанию.
+        var downloadError = ""
         val bytes = try {
             VideoDownloader.download(context, url)
         } catch (e: Exception) {
-            // YouTube в режиме Gemini Google смотрит по ссылке сам — это тоже видео.
-            if (resolved.kind == "youtube") null else throw e
+            // YouTube не скачался — модель посмотрит ролик по ссылке (Gemini — сам Google, NanoGPT — Gemini-маршрут).
+            if (resolved.kind == "youtube") { downloadError = e.message.orEmpty(); null } else throw e
         }
         if (bytes != null) {
             val tmp = File(context.cacheDir, "recipe_${UUID.randomUUID()}.mp4").apply { writeBytes(bytes) }
             Prepared(resolved.copy(video = bytes to "video/mp4"), frameFrom = tmp)
-        } else Prepared(resolved)
+        } else Prepared(resolved.copy(downloadError = downloadError))
     }
 
     fun fromText(context: Context, text: String) =

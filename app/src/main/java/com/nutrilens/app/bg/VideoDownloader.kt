@@ -32,19 +32,39 @@ object VideoDownloader {
     suspend fun download(context: Context, url: String): ByteArray = withContext(Dispatchers.IO) {
         lock.withLock {
             init(context)
+            val youtube = RecipeAi.kindOf(url) == "youtube"
             try {
-                fetch(context, url)
+                attempts(context, url, youtube)
             } catch (first: Exception) {
                 if (!updateIfDue(context)) throw readable(first)
-                try { fetch(context, url) } catch (e: Exception) { throw readable(e) }
+                try { attempts(context, url, youtube) } catch (e: Exception) { throw readable(e) }
             }
         }
     }
 
-    private fun fetch(context: Context, url: String): ByteArray {
+    /**
+     * YouTube часто не отдаёт обычный клиент без JS-проверок — пробуем клиенты, которым
+     * они не нужны (android_vr, tv); если нет файла со звуком — берём видео без звука:
+     * ингредиенты и надписи ИИ всё равно увидит.
+     */
+    private fun attempts(context: Context, url: String, youtube: Boolean): ByteArray {
+        if (!youtube) return fetch(context, url, null, FORMAT)
+        var last: Exception? = null
+        for ((client, format) in listOf(null to FORMAT, "android_vr,tv" to FORMAT, "android_vr,tv,web_safari" to FORMAT_ANY)) {
+            try { return fetch(context, url, client, format) } catch (e: Exception) { last = e }
+        }
+        throw last ?: RuntimeException("Не удалось скачать видео")
+    }
+
+    private const val FORMAT = "best[height<=480][ext=mp4]/best[height<=480]/best[height<=720][ext=mp4]/best[height<=720]/best"
+    /** Последняя попытка: допускаем видео без звука. */
+    private const val FORMAT_ANY = "$FORMAT/bv*[height<=480][ext=mp4]/bv*[height<=480]/bv*[height<=720]"
+
+    private fun fetch(context: Context, url: String, client: String?, format: String): ByteArray {
         val dir = File(context.cacheDir, "recipe_dl").apply { deleteRecursively(); mkdirs() }
         val request = YoutubeDLRequest(url).apply {
-            addOption("-f", "best[height<=480][ext=mp4]/best[height<=480]/best[height<=720][ext=mp4]/best[height<=720]/best")
+            addOption("-f", format)
+            if (client != null) addOption("--extractor-args", "youtube:player_client=$client")
             addOption("--no-playlist")
             addOption("--no-part")
             addOption("--max-filesize", "${RecipeAi.MAX_VIDEO_BYTES / (1024 * 1024)}M")
@@ -73,7 +93,7 @@ object VideoDownloader {
                     "Instagram/TikTok не отдал ролик без входа в аккаунт. Сохраните видео и загрузите его кнопкой «Видео»"
                 m.contains("Private", true) || m.contains("unavailable", true) -> "Ролик недоступен (закрыт или удалён)"
                 m.contains("14 МБ") -> m
-                else -> "Не удалось скачать видео. Сохраните ролик и загрузите его кнопкой «Видео»"
+                else -> "Не удалось скачать видео (${m.lineSequence().lastOrNull { it.contains("ERROR") }?.substringAfter("ERROR:")?.trim()?.take(120) ?: m.take(120)}). Сохраните ролик и загрузите его кнопкой «Видео»"
             }
         )
     }
