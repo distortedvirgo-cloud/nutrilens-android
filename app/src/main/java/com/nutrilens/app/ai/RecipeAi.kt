@@ -386,7 +386,9 @@ object RecipeAi {
     }
 
     /** Gemini-модели NanoGPT для ссылок YouTube — от дешёвой к старшей. */
-    private val NANO_YOUTUBE_MODELS = listOf(NANO_RECIPE_MODEL, "google/gemini-flash-latest", "google/gemini-2.5-flash", NANO_MODEL_SENIOR)
+    // Проверено тестом (Actions → Probe): ссылку YouTube на NanoGPT принимают эти маршруты,
+    // у остальных Gemini-моделей — 503 all_fallbacks_failed.
+    private val NANO_YOUTUBE_MODELS = listOf("google/gemini-flash-latest", "google/gemini-3.5-flash")
 
     private const val NANO_INLINE_MAX = 3 * 1024 * 1024
 

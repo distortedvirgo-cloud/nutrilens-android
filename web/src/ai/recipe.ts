@@ -178,8 +178,9 @@ async function callModel(settings: Settings, src: RecipeInput, withVideo: boolea
   // большие ролики кладём во временное хранилище Worker и отдаём ссылкой (до 20 МБ).
   const fileUrl = file ? (file.base64.length <= NANO_INLINE_MAX ? `data:${file.mime};base64,${file.base64}` : await uploadVideo(file)) : null
   const videos = [...(yt ? [yt] : []), ...(direct ? [direct] : []), ...(fileUrl ? [fileUrl] : [])]
+  // Ссылку YouTube на NanoGPT принимают только эти маршруты (проверено тестом).
   return complete({
-    apiKey: settings.nanoApiKey, endpoint: settings.nanoEndpoint, model: NANO_RECIPE_MODEL, jsonMode: true,
+    apiKey: settings.nanoApiKey, endpoint: settings.nanoEndpoint, model: yt ? 'google/gemini-flash-latest' : NANO_RECIPE_MODEL, jsonMode: true,
     messages: [{ role: 'user', text: `${prompt}\n\nФормат ответа — JSON строго такой формы:\n${JSON_SHAPE}`, images: src.images, videos }]
   })
 }

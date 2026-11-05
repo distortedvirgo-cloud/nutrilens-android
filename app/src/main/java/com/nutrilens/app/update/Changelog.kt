@@ -19,6 +19,15 @@ data class ChangelogEntry(
  */
 val CHANGELOG: List<ChangelogEntry> = listOf(
     ChangelogEntry(
+        versionCode = 71,
+        versionName = "3.14",
+        title = "YouTube через NanoGPT",
+        items = listOf(
+            "Рецепты по ссылкам YouTube работают через NanoGPT и с VPN: ролик смотрит модель по ссылке, скачивать ничего не нужно",
+            "Быстрее: без попыток скачать ролик на телефон"
+        )
+    ),
+    ChangelogEntry(
         versionCode = 70,
         versionName = "3.13",
         title = "YouTube: ещё способы",
