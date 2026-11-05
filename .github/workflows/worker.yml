@@ -1,0 +1,49 @@
+name: Worker (Cloudflare)
+
+# Выкладывает leaderboard-worker в Cloudflare при каждом изменении — без ручного
+# копирования кода. Хранилище роликов KV «nutrilens-videos» создаётся само.
+# Нужен один секрет репозитория: CLOUDFLARE_API_TOKEN (шаблон «Edit Cloudflare Workers»).
+# Секрет GITHUB_TOKEN самого Worker хранится в Cloudflare и при деплое не меняется.
+on:
+  push:
+    branches: [main, claude/nutrilens-redesign-zslzmy]
+    paths: ['leaderboard-worker/**', '.github/workflows/worker.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: worker-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: leaderboard-worker
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 839922861eac8f86353ce73f7c8ab44b
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check token
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::error::Нет секрета CLOUDFLARE_API_TOKEN — см. leaderboard-worker/README.md"
+            exit 1
+          fi
+      - name: KV namespace for videos
+        run: |
+          npx --yes wrangler@3.80.0 kv namespace list > ns.json
+          id=$(node -e "const l=require('./ns.json');const n=l.find(x=>x.title==='nutrilens-videos');process.stdout.write(n?n.id:'')")
+          if [ -z "$id" ]; then
+            npx --yes wrangler@3.80.0 kv namespace create nutrilens-videos > /dev/null
+            npx --yes wrangler@3.80.0 kv namespace list > ns.json
+            id=$(node -e "const l=require('./ns.json');process.stdout.write(l.find(x=>x.title==='nutrilens-videos').id)")
+          fi
+          printf '\n[[kv_namespaces]]\nbinding = "VIDEOS"\nid = "%s"\n' "$id" >> wrangler.toml
+          echo "KV nutrilens-videos: $id"
+      - name: Deploy
+        run: npx --yes wrangler@3.80.0 deploy

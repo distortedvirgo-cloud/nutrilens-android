@@ -53,6 +53,19 @@
 2. **Actions** → **Web (iPhone PWA)** → **Run workflow**. После сборки
    лидерборд в веб-версии заработает.
 
+## Автодеплой (рекомендуется)
+
+Код Worker и хранилище роликов выкладываются сами через GitHub Actions
+(`.github/workflows/worker.yml`) при каждом изменении этой папки. Один раз:
+
+1. dash.cloudflare.com → аватар → **My Profile** → **API Tokens** → **Create Token** →
+   шаблон **Edit Cloudflare Workers** → **Use template** → Account Resources: свой аккаунт →
+   **Continue** → **Create Token** → скопировать.
+2. GitHub → `nutrilens-android` → **Settings** → **Secrets and variables** → **Actions** →
+   **New repository secret**: `CLOUDFLARE_API_TOKEN` = токен.
+
+Секрет `GITHUB_TOKEN` самого Worker (доступ к лидерборду) остаётся в Cloudflare.
+
 ## Хранилище роликов для NanoGPT (KV «VIDEOS»)
 
 NanoGPT принимает видео внутри запроса только до ~4,5 МБ. Ролики крупнее приложение
