@@ -57,8 +57,61 @@ object VideoDownloader {
         )) {
             try { return fetch(context, url, client, format) } catch (e: Exception) { last = e }
         }
+        // Открытые зеркала (Invidious/Piped) отдают ролик со своих серверов — мимо проверки «not a bot».
+        val id = RecipeAi.youtubeWatchUrl(url)?.substringAfter("v=")
+        if (id != null) mirrorDownload(id)?.let { return it }
         throw last ?: RuntimeException("Не удалось скачать видео")
     }
+
+    private val INVIDIOUS = listOf("https://inv.nadeko.net", "https://invidious.nerdvpn.de", "https://yewtu.be", "https://invidious.privacyredirect.com")
+    private val PIPED = listOf("https://pipedapi.kavin.rocks", "https://pipedapi.adminforge.de", "https://api.piped.private.coffee")
+    private val http = okhttp3.OkHttpClient.Builder()
+        .connectTimeout(8, java.util.concurrent.TimeUnit.SECONDS).readTimeout(40, java.util.concurrent.TimeUnit.SECONDS).build()
+
+    private fun str(o: kotlinx.serialization.json.JsonObject, k: String): String? =
+        (o[k] as? kotlinx.serialization.json.JsonPrimitive)?.content
+
+    /** Ролик через зеркало: файл со звуком, от меньшего разрешения к большему, до лимита размера. */
+    private fun mirrorDownload(id: String): ByteArray? {
+        val candidates = mutableListOf<String>()
+        for (base in INVIDIOUS) runCatching {
+            val j = getJson("$base/api/v1/videos/$id?local=true") ?: return@runCatching
+            (j["formatStreams"] as? kotlinx.serialization.json.JsonArray).orEmpty()
+                .mapNotNull { it as? kotlinx.serialization.json.JsonObject }
+                .sortedBy { str(it, "resolution")?.filter(Char::isDigit)?.toIntOrNull() ?: 9999 }
+                .mapNotNull { str(it, "url") }
+                .forEach { u -> candidates += if (u.startsWith("/")) base + u else u }
+        }
+        for (base in PIPED) runCatching {
+            val j = getJson("$base/streams/$id") ?: return@runCatching
+            (j["videoStreams"] as? kotlinx.serialization.json.JsonArray).orEmpty()
+                .mapNotNull { it as? kotlinx.serialization.json.JsonObject }
+                .filter { str(it, "videoOnly") == "false" }
+                .mapNotNull { str(it, "url") }
+                .forEach { candidates += it }
+        }
+        for (u in candidates) {
+            val bytes = runCatching {
+                http.newCall(okhttp3.Request.Builder().url(u).build()).execute().use { resp ->
+                    val body = resp.body
+                    if (body == null || !resp.isSuccessful || body.contentLength() > RecipeAi.MAX_VIDEO_BYTES) null
+                    else {
+                        val src = body.source()
+                        src.request(RecipeAi.MAX_VIDEO_BYTES + 1)
+                        if (src.buffer.size > RecipeAi.MAX_VIDEO_BYTES || src.buffer.size < 50_000) null else src.buffer.readByteArray()
+                    }
+                }
+            }.getOrNull()
+            if (bytes != null) return bytes
+        }
+        return null
+    }
+
+    private fun getJson(url: String): kotlinx.serialization.json.JsonObject? =
+        http.newCall(okhttp3.Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()).execute().use { resp ->
+            if (!resp.isSuccessful) null
+            else kotlinx.serialization.json.Json.parseToJsonElement(resp.body?.string().orEmpty()) as? kotlinx.serialization.json.JsonObject
+        }
 
     private const val FORMAT = "best[height<=480][ext=mp4]/best[height<=480]/best[height<=720][ext=mp4]/best[height<=720]/best"
     /** Последняя попытка: допускаем видео без звука. */

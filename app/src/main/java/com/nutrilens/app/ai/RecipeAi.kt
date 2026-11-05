@@ -376,7 +376,10 @@ object RecipeAi {
             } catch (e: Exception) {
                 last = e
                 val m = e.message.orEmpty()
-                if (!(m.contains("youtube", true) || m.contains("video", true) || m.contains("HTTP 400") || m.contains("HTTP 404"))) throw e
+                // Маршрут не принял ссылку (400/404) или все его провайдеры упали (5xx) — следующая модель.
+                val retryable = m.contains("youtube", true) || m.contains("video", true) ||
+                    Regex("HTTP (400|404|5\\d\\d)").containsMatchIn(m) || m.contains("fallback", true)
+                if (!retryable) throw e
             }
         }
         throw RuntimeException("NanoGPT не открыл ссылку YouTube: ${last?.message?.take(140)}")
