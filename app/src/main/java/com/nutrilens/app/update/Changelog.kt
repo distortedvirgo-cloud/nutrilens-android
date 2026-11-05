@@ -19,6 +19,15 @@ data class ChangelogEntry(
  */
 val CHANGELOG: List<ChangelogEntry> = listOf(
     ChangelogEntry(
+        versionCode = 66,
+        versionName = "3.9",
+        title = "Обновления снова сами",
+        items = listOf(
+            "Один APK для всех телефонов — встроенное обновление снова скачивает и ставит новую версию само",
+            "Внутри всё из 3.8: лидерборд через защищённый сервер, рецепты из видео дешевле, экономнее анализ и чат"
+        )
+    ),
+    ChangelogEntry(
         versionCode = 65,
         versionName = "3.8",
         title = "Быстрее, дешевле, надёжнее",

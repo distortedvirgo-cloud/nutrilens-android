@@ -50,23 +50,14 @@ android {
         jniLibs { useLegacyPackaging = true }
     }
 
-    // yt-dlp тянет Python под каждую ABI — собираем отдельные APK под arm64 и arm32:
-    // каждый вдвое легче универсального. Обновлялка выбирает файл под свой телефон.
-    splits {
-        abi {
-            isEnable = true
-            reset()
-            include("arm64-v8a", "armeabi-v7a")
-            isUniversalApk = false
-        }
-    }
-
     defaultConfig {
+        // Один APK для всех телефонов (ARM): yt-dlp тянет Python под каждую ABI.
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
         applicationId = "com.nutrilens.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 65
-        versionName = "3.8"
+        versionCode = 66
+        versionName = "3.9"
         // Лидерборд — через прокси (Cloudflare Worker): токена GitHub в APK больше нет.
         buildConfigField("String", "LEADERBOARD_API", "\"https://nutrilens-leaderboard.distortedvirgo.workers.dev\"")
     }
