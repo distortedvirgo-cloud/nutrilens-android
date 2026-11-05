@@ -365,12 +365,25 @@ object RecipeAi {
             if (bytes.size <= NANO_INLINE_MAX) "data:$mime;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
             else uploadVideo(bytes, mime)
         })
-        return NanoGptApi.complete(
-            settings.nanoApiKey, settings.nanoApiEndpoint, NANO_RECIPE_MODEL, null,
-            listOf(NanoGptApi.Msg("user", "$p\n\nФормат ответа — JSON строго такой формы:\n$JSON_SHAPE", images, videos)),
-            jsonMode = true
-        )
+        val msgs = listOf(NanoGptApi.Msg("user", "$p\n\nФормат ответа — JSON строго такой формы:\n$JSON_SHAPE", images, videos))
+        if (yt == null) return NanoGptApi.complete(settings.nanoApiKey, settings.nanoApiEndpoint, NANO_RECIPE_MODEL, null, msgs, jsonMode = true)
+        // Ссылку YouTube NanoGPT принимает только на прямых Gemini-маршрутах, а они у моделей
+        // разные. Неподходящую модель NanoGPT отклоняет до списания денег — перебираем.
+        var last: Exception? = null
+        for (model in NANO_YOUTUBE_MODELS) {
+            try {
+                return NanoGptApi.complete(settings.nanoApiKey, settings.nanoApiEndpoint, model, null, msgs, jsonMode = true)
+            } catch (e: Exception) {
+                last = e
+                val m = e.message.orEmpty()
+                if (!(m.contains("youtube", true) || m.contains("video", true) || m.contains("HTTP 400") || m.contains("HTTP 404"))) throw e
+            }
+        }
+        throw RuntimeException("NanoGPT не открыл ссылку YouTube: ${last?.message?.take(140)}")
     }
+
+    /** Gemini-модели NanoGPT для ссылок YouTube — от дешёвой к старшей. */
+    private val NANO_YOUTUBE_MODELS = listOf(NANO_RECIPE_MODEL, "google/gemini-flash-latest", "google/gemini-2.5-flash", NANO_MODEL_SENIOR)
 
     private const val NANO_INLINE_MAX = 3 * 1024 * 1024
 
@@ -409,7 +422,7 @@ object RecipeAi {
             call(settings, src, isVideoSource)
         } catch (e: Exception) {
             if (src.kind == "youtube" && src.video == null && !isHard(e)) {
-                throw RuntimeException(src.downloadError.ifBlank { "Не удалось открыть ролик YouTube: ${e.message?.take(100)}" })
+                throw RuntimeException(listOf(src.downloadError, e.message.orEmpty().take(160)).filter { it.isNotBlank() }.joinToString("\n\n"))
             }
             if (isVideoSource && !isHard(e)) throw RuntimeException("ИИ не смог посмотреть видео: ${e.message?.take(120)}")
             throw e

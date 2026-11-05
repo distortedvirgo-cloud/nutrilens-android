@@ -50,7 +50,11 @@ object VideoDownloader {
     private fun attempts(context: Context, url: String, youtube: Boolean): ByteArray {
         if (!youtube) return fetch(context, url, null, FORMAT)
         var last: Exception? = null
-        for ((client, format) in listOf(null to FORMAT, "android_vr,tv" to FORMAT, "android_vr,tv,web_safari" to FORMAT_ANY)) {
+        // Проверка «not a bot» на адресах VPN включается не для всех клиентов YouTube.
+        for ((client, format) in listOf(
+            null to FORMAT, "android_vr,tv" to FORMAT, "tv_simply,web_embedded" to FORMAT,
+            "mweb,ios" to FORMAT, "android_vr,tv,web_safari,tv_simply,web_embedded,mweb" to FORMAT_ANY
+        )) {
             try { return fetch(context, url, client, format) } catch (e: Exception) { last = e }
         }
         throw last ?: RuntimeException("Не удалось скачать видео")
