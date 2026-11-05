@@ -9,9 +9,9 @@
 //                        это браузеру напрямую из-за CORS). Наружу — только эти поля.
 //
 // Защита записи: при первом PUT файл получает keyHash = SHA-256(secret)
-// устройства, дальше писать в него может только тот же secret. Файлы без
-// keyHash принадлежат Android-приложению (оно пишет в репозиторий напрямую) —
-// через прокси их не перезаписать.
+// устройства, дальше писать в него может только тот же secret. Наружу GET
+// отдаёт не настоящий id, а его хеш (publicId), поэтому старый файл без keyHash
+// может «привязать» только владелец — лишь он знает свой настоящий id.
 //
 // Переменные окружения (wrangler.toml / настройки Worker):
 //   GITHUB_TOKEN    — секрет: fine-grained токен, Contents: Read and write
@@ -65,18 +65,12 @@ async function listEntries(request, env, ctx, cors) {
   const hit = await cache.match(cacheKey)
   if (hit) return withHeaders(hit, { ...cors, 'Cache-Control': 'no-store' })
 
-  const list = await gh(env, `contents/${DATA_DIR}`)
-  let files = []
-  if (list.status === 200) files = (await list.json()).filter((f) => f.type === 'file' && f.name.endsWith('.json'))
-  else if (list.status !== 404) throw new Error(`GitHub list ${list.status}`)
-
-  const entries = (await Promise.all(files.map(async (f) => {
-    const r = await gh(env, `contents/${DATA_DIR}/${encodeURIComponent(f.name)}`, { raw: true })
-    if (r.status !== 200) return null
+  const raw = await readAllFiles(env)
+  const entries = (await Promise.all(raw.map(async (text) => {
     try {
-      const e = JSON.parse(await r.text())
+      const e = JSON.parse(text)
       return {
-        id: String(e.id || ''),
+        id: e.id ? await publicId(String(e.id)) : '',
         nickname: String(e.nickname || ''),
         days: e.days && typeof e.days === 'object' ? e.days : {},
         updatedAt: Number(e.updatedAt || 0),
@@ -93,6 +87,39 @@ async function listEntries(request, env, ctx, cors) {
   const type = { 'Content-Type': 'application/json; charset=utf-8' }
   ctx.waitUntil(cache.put(cacheKey, new Response(body, { headers: { ...type, 'Cache-Control': `public, max-age=${CACHE_SECONDS}` } })))
   return new Response(body, { status: 200, headers: { ...type, ...cors, 'Cache-Control': 'no-store' } })
+}
+
+/** Все файлы data/*.json одним GraphQL-запросом (вместо запроса на каждого игрока). */
+async function readAllFiles(env) {
+  const [owner, name] = env.REPO.split('/')
+  const r = await fetch('https://api.github.com/graphql', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${env.GITHUB_TOKEN}`, 'User-Agent': 'nutrilens-leaderboard-worker', 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      query: 'query($o:String!,$n:String!,$e:String!){repository(owner:$o,name:$n){object(expression:$e){... on Tree{entries{name type object{... on Blob{text}}}}}}}',
+      variables: { o: owner, n: name, e: `HEAD:${DATA_DIR}` }
+    })
+  })
+  if (r.ok) {
+    const j = await r.json()
+    const list = j?.data?.repository?.object?.entries
+    if (Array.isArray(list)) return list.filter((f) => f.type === 'blob' && f.name.endsWith('.json') && f.object?.text).map((f) => f.object.text)
+    if (j?.data?.repository && j.data.repository.object === null) return [] // каталога data/ ещё нет
+  }
+  // Запасной путь: REST, по файлу на запрос.
+  const list = await gh(env, `contents/${DATA_DIR}`)
+  if (list.status === 404) return []
+  if (list.status !== 200) throw new Error(`GitHub list ${list.status}`)
+  const files = (await list.json()).filter((f) => f.type === 'file' && f.name.endsWith('.json'))
+  return (await Promise.all(files.map(async (f) => {
+    const x = await gh(env, `contents/${DATA_DIR}/${encodeURIComponent(f.name)}`, { raw: true })
+    return x.status === 200 ? x.text() : null
+  }))).filter(Boolean)
+}
+
+/** Публичный id игрока: первые 16 hex от SHA-256 настоящего id. */
+async function publicId(id) {
+  return (await sha256(`nutrilens:${id}`)).slice(0, 16)
 }
 
 // ---------- PUT /entries/:id ----------
@@ -122,8 +149,9 @@ async function putEntry(request, env, ctx, cors, id, url) {
       const meta = await cur.json()
       sha = meta.sha
       prev = JSON.parse(fromBase64(meta.content || ''))
-      if (!prev.keyHash) return json({ error: 'owned_by_app' }, 403, cors)
-      if (prev.keyHash !== keyHash) return json({ error: 'forbidden' }, 403, cors)
+      // Файл без keyHash (создан старой версией приложения) привязывает первый,
+      // кто знает настоящий id — это сам владелец: наружу id не отдаётся.
+      if (prev.keyHash && prev.keyHash !== keyHash) return json({ error: 'forbidden' }, 403, cors)
     } else if (cur.status !== 404) {
       throw new Error(`GitHub get ${cur.status}`)
     }
@@ -137,7 +165,7 @@ async function putEntry(request, env, ctx, cors, id, url) {
       updatedAt: Date.now(),
       avatar,
       keyHash,
-      source: 'web'
+      source: typeof body.source === 'string' ? body.source.slice(0, 16) : 'web'
     }
     const put = await gh(env, path, {
       method: 'PUT',

@@ -592,7 +592,8 @@ private fun ChatInputBar(
 }
 
 /** Сколько последних реплик чата уходит в модель. */
-private const val CHAT_HISTORY_LIMIT = 20
+// Контекст диетолога — последние 12 сообщений: цифры дня он и так получает в системном промпте.
+private const val CHAT_HISTORY_LIMIT = 12
 
 /** У скольких последних реплик пересылаются фото (у остальных — только текст). */
 private const val CHAT_IMAGE_TURNS = 4

@@ -168,7 +168,7 @@ export async function sendChat(text: string): Promise<void> {
     '- Коротко: 2–6 предложений или короткий список. Markdown можно, таблицы — нет.',
     '- Не осуждай выбор еды. Не ставь диагнозов и не назначай лечение; при признаках расстройства пищевого поведения мягко посоветуй специалиста.'
   ].join('\n')
-  const history = (await chatHistory()).slice(-20).map((m) => ({ role: m.role, text: m.text }))
+  const history = (await chatHistory()).slice(-12).map((m) => ({ role: m.role, text: m.text }))
   const reply = await chat(settings, { system, history })
   await addChat({ id: uid(), role: 'model', text: reply, createdAt: Date.now() })
 }

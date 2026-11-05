@@ -68,13 +68,13 @@ import kotlin.math.roundToLong
 class LeaderboardViewModel(application: Application) : AndroidViewModel(application) {
 
     private val sync = LeaderboardSync(application)
-    val playerId: String = com.nutrilens.app.leaderboard.PlayerIdentity.id(application)
+    /** Свой id в том виде, в каком его отдаёт прокси (хеш). */
+    val playerId: String = LeaderboardSync.publicId(com.nutrilens.app.leaderboard.PlayerIdentity.id(application))
     private val settingsRepository =
         SettingsRepository(NutriLensDatabase.getInstance(application).settingsDao())
 
-    /** Сборка настроена, если заданы и репозиторий, и токен (leaderboard.properties → BuildConfig). */
-    val configured: Boolean =
-        BuildConfig.LEADERBOARD_REPO.isNotBlank() && BuildConfig.LEADERBOARD_TOKEN.isNotBlank()
+    /** Сборка настроена, если задан адрес прокси лидерборда. */
+    val configured: Boolean = LeaderboardSync.API.isNotBlank()
 
     /** Ник из настроек: без него в лидерборде участвовать нельзя. */
     val nickname: StateFlow<String> = settingsRepository.observe()

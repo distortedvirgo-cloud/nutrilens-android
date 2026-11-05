@@ -36,6 +36,23 @@ object PlayerIdentity {
         return id
     }
 
+    private const val KEY_SECRET = "player_secret"
+
+    /** Секрет устройства для записи в свой файл через прокси (не уходит никуда, кроме прокси). */
+    fun secret(context: Context): String {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        prefs.getString(KEY_SECRET, null)?.takeIf { it.length >= 32 }?.let { return it }
+        val bytes = ByteArray(24).also { java.security.SecureRandom().nextBytes(it) }
+        val s = bytes.joinToString("") { "%02x".format(it) }
+        prefs.edit().putString(KEY_SECRET, s).apply()
+        return s
+    }
+
+    fun restoreSecret(context: Context, secret: String) {
+        if (secret.length < 32) return
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_SECRET, secret).apply()
+    }
+
     /** Восстановление id из бэкапа (импорт данных на новом устройстве). */
     fun restore(context: Context, id: String) {
         if (id.isBlank()) return

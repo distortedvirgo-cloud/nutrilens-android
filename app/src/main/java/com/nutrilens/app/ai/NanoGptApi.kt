@@ -108,7 +108,8 @@ object NanoGptApi {
                                         put("type", "video_url")
                                         putJsonObject("video_url") {
                                             put("url", url)
-                                            put("detail", "auto")
+                                            // Видео шлют только рецепты: низкое разрешение кадров ~в 3 раза дешевле.
+                                            put("detail", "low")
                                         }
                                     }
                                 }

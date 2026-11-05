@@ -55,7 +55,8 @@ suspend fun analyzeMealCascade(
     return when (settings.aiProvider) {
         "nanogpt" -> {
             if (!hasNano) throw RuntimeException(NO_NANO_KEY_ERROR)
-            val complexity = estimateComplexity(settings, imagesJpeg, userNote)
+            // Без фото оценивать сложность «на глаз» нечего — сразу младшая модель, без лишнего запроса.
+            val complexity = if (imagesJpeg.isEmpty()) 1 else estimateComplexity(settings, imagesJpeg, userNote)
             when {
                 // Роутер не ответил — младшая модель с откатом на старшую.
                 complexity == null -> juniorThenSenior()

@@ -1,6 +1,6 @@
 // Корень NutriLens Web: вкладки «Сегодня · Прогресс · [+] · Коуч · Профиль»,
 // листы добавления и деталей, чат, онбординг для iPhone.
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { type Meal, type Settings, getSettings, onDataChanged } from './data/db'
 import { runQueue } from './data/actions'
 import { applyUpdate, checkUpdate, remindLater, skipVersion, type UpdateInfo } from './data/update'
@@ -10,10 +10,11 @@ import { CoachScreen, ChatScreen } from './screens/Coach'
 import { ProfileScreen } from './screens/Profile'
 import { ComposeSheet, QuickAddSheet, WeightSheet } from './screens/AddFlow'
 import { MealSheet } from './screens/MealSheet'
-import { Onboarding } from './screens/Onboarding'
-import { LeaderboardScreen } from './screens/Leaderboard'
-import { RecipesScreen } from './screens/Recipes'
-import { RecipeDetail } from './screens/RecipeDetail'
+// Редкие экраны грузятся отдельными кусками, когда их открыли: первый запуск быстрее.
+const Onboarding = lazy(() => import('./screens/Onboarding').then((m) => ({ default: m.Onboarding })))
+const LeaderboardScreen = lazy(() => import('./screens/Leaderboard').then((m) => ({ default: m.LeaderboardScreen })))
+const RecipesScreen = lazy(() => import('./screens/Recipes').then((m) => ({ default: m.RecipesScreen })))
+const RecipeDetail = lazy(() => import('./screens/RecipeDetail').then((m) => ({ default: m.RecipeDetail })))
 import { schedulePush } from './data/leaderboard'
 import { hasSelectedKey } from './ai'
 import { Sheet, ToastHost, useSheetClose, useToast } from './ui/kit'
@@ -91,7 +92,7 @@ function Shell() {
     return (
       <div className="app">
         <div className="aurora" />
-        <Onboarding settings={settings} onDone={(openAi) => { if (openAi) openAiSetup() }} />
+        <Suspense fallback={null}><Onboarding settings={settings} onDone={(openAi) => { if (openAi) openAiSetup() }} /></Suspense>
       </div>
     )
   }
@@ -99,6 +100,7 @@ function Shell() {
   return (
     <div className="app">
       <div className="aurora" />
+      <Suspense fallback={<div className="screen" />}>
       {recipeId ? (
         <RecipeDetail id={recipeId} onBack={() => setRecipeId(null)} />
       ) : board ? (
@@ -127,6 +129,7 @@ function Shell() {
           <TabBar tab={tab} onTab={setTab} onAdd={() => setOverlay({ kind: 'add' })} />
         </>
       )}
+      </Suspense>
 
       {overlay?.kind === 'add' && (
         <QuickAddSheet onClose={close}

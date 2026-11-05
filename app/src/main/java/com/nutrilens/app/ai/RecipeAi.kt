@@ -344,6 +344,8 @@ object RecipeAi {
                 putJsonObject("generationConfig") {
                     put("responseMimeType", "application/json")
                     put("responseSchema", schema())
+                    // Видео — в низком разрешении кадров: для рецепта хватает, а токенов ~в 3 раза меньше.
+                    if (yt != null || file != null) put("mediaResolution", "MEDIA_RESOLUTION_LOW")
                 }
             }.toString()
             val raw = GeminiTransport.generate(settings.apiKey, body)

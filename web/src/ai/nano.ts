@@ -27,7 +27,7 @@ export async function complete(opts: {
       content: [
         { type: 'text', text },
         ...(m.images ?? []).map((b64) => ({ type: 'image_url', image_url: { url: `data:image/jpeg;base64,${b64}` } })),
-        ...(m.videos ?? []).map((url) => ({ type: 'video_url', video_url: { url, detail: 'auto' } }))
+        ...(m.videos ?? []).map((url) => ({ type: 'video_url', video_url: { url, detail: 'low' } }))
       ]
     }
   })
@@ -92,7 +92,8 @@ export async function analyzeMealNano(opts: {
 }): Promise<AnalysisResult> {
   const prompt = buildMealAnalysisPrompt(opts.userContext, opts.note, opts.recentMealsContext, opts.images.length, opts.currentResultContext ?? '')
   const o = { apiKey: opts.apiKey, endpoint: opts.endpoint, images: opts.images, prompt, signal: opts.signal }
-  const score = await complexity({ apiKey: opts.apiKey, endpoint: opts.endpoint, images: opts.images, note: opts.note })
+  // Без фото оценивать сложность «на глаз» нечего — сразу младшая модель, без лишнего запроса.
+  const score = opts.images.length ? await complexity({ apiKey: opts.apiKey, endpoint: opts.endpoint, images: opts.images, note: opts.note }) : 1
   if (score != null && score >= SENIOR_THRESHOLD) return analyzeWith(NANO_SENIOR, o)
   try {
     const junior = await analyzeWith(NANO_JUNIOR, o)

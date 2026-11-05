@@ -2,7 +2,7 @@
 // цели (100 — ровно в цель), за неделю/месяц — среднее по дням с данными.
 import { useEffect, useState } from 'react'
 import { getSettings, saveSettings } from '../data/db'
-import { fetchEntries, leaderboardConfigured, pushOwn, rows, type LbEntry, type LbPeriod } from '../data/leaderboard'
+import { fetchEntries, leaderboardConfigured, publicIdOf, pushOwn, rows, type LbEntry, type LbPeriod } from '../data/leaderboard'
 import { Badge, Segmented, useToast } from '../ui/kit'
 import { Avatar } from '../ui/Avatar'
 import { IcChevronL, IcRefresh, IcTrophy } from '../ui/icons'
@@ -24,7 +24,7 @@ export function LeaderboardScreen({ onBack }: { onBack: () => void }) {
     setError(null)
     try {
       await pushOwn().catch(() => false)
-      setSelfId((await getSettings()).playerId)
+      setSelfId(await publicIdOf((await getSettings()).playerId))
       setEntries(await fetchEntries())
     } catch (e) {
       setError((e as Error).message)
@@ -34,7 +34,7 @@ export function LeaderboardScreen({ onBack }: { onBack: () => void }) {
   }
 
   useEffect(() => {
-    getSettings().then((s) => { setSelfId(s.playerId); setNick(s.nickname.trim()) })
+    getSettings().then(async (s) => { setSelfId(await publicIdOf(s.playerId)); setNick(s.nickname.trim()) })
     if (leaderboardConfigured()) load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

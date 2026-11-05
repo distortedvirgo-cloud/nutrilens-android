@@ -64,6 +64,7 @@ object Backup {
                 )
             )
             put("recipes", recipesForBackup(db))
+            put("leaderboard_player_secret", kotlinx.serialization.json.JsonPrimitive(com.nutrilens.app.leaderboard.PlayerIdentity.secret(context)))
             put(
                 "grocery",
                 groceryRaw?.let { raw -> runCatching { json.parseToJsonElement(raw) }.getOrNull() }
@@ -92,6 +93,9 @@ object Backup {
         (root["leaderboard_player_id"] as? kotlinx.serialization.json.JsonPrimitive)
             ?.content
             ?.let { com.nutrilens.app.leaderboard.PlayerIdentity.restore(context, it) }
+        (root["leaderboard_player_secret"] as? kotlinx.serialization.json.JsonPrimitive)
+            ?.content
+            ?.let { com.nutrilens.app.leaderboard.PlayerIdentity.restoreSecret(context, it) }
 
         db.withTransaction {
             db.settingsDao().deleteAll()

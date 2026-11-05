@@ -35,13 +35,12 @@ object UpdateChecker {
             var apkUrl: String? = null
             val assets = json.optJSONArray("assets")
             if (assets != null) {
-                for (i in 0 until assets.length()) {
-                    val asset = assets.getJSONObject(i)
-                    if (asset.optString("name", "").endsWith(".apk")) {
-                        apkUrl = asset.optString("browser_download_url", "").ifEmpty { null }
-                        break
-                    }
-                }
+                // С 3.8 в релизе два APK: -arm64 и -arm32. Берём под свой процессор, иначе первый.
+                val want = if (android.os.Build.SUPPORTED_ABIS.firstOrNull()?.startsWith("arm64") == true) "-arm64" else "-arm32"
+                val apks = (0 until assets.length()).map { assets.getJSONObject(it) }
+                    .filter { it.optString("name", "").endsWith(".apk") }
+                val pick = apks.firstOrNull { it.optString("name", "").contains(want) } ?: apks.firstOrNull()
+                apkUrl = pick?.optString("browser_download_url", "")?.ifEmpty { null }
             }
             ReleaseInfo(version, apkUrl ?: "", notes)
         }

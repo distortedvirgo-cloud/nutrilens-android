@@ -33,6 +33,13 @@ export async function ensurePlayer(): Promise<Settings> {
   return saveSettings({ playerId: random(8), playerSecret: random(24) })
 }
 
+/** Публичный id — как его отдаёт прокси: первые 16 hex SHA-256("nutrilens:" + id). */
+export async function publicIdOf(id: string): Promise<string> {
+  if (!id) return ''
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`nutrilens:${id}`))
+  return hex(new Uint8Array(buf)).slice(0, 16)
+}
+
 export async function fetchEntries(): Promise<LbEntry[]> {
   if (!LEADERBOARD_API) return []
   const r = await fetch(`${LEADERBOARD_API}/entries`, { cache: 'no-store' })

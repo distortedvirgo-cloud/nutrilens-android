@@ -154,7 +154,8 @@ async function callModel(settings: Settings, src: RecipeInput, withVideo: boolea
     for (const img of src.images ?? []) parts.push({ inline_data: { mime_type: 'image/jpeg', data: img } })
     return post(settings.apiKey, {
       contents: [{ parts }],
-      generationConfig: { responseMimeType: 'application/json', responseSchema: SCHEMA },
+      // Видео — в низком разрешении кадров: для рецепта хватает, а токенов ~в 3 раза меньше.
+      generationConfig: { responseMimeType: 'application/json', responseSchema: SCHEMA, ...(yt || file ? { mediaResolution: 'MEDIA_RESOLUTION_LOW' } : {}) },
       safetySettings: SAFETY
     })
   }

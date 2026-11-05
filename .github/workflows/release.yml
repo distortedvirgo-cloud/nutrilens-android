@@ -51,7 +51,9 @@ jobs:
         if: steps.version.outputs.exists == 'false'
         run: |
           ./gradlew --no-daemon assembleRelease
-          cp app/build/outputs/apk/release/app-release.apk "NutriLens-${{ steps.version.outputs.name }}.apk"
+          # arm64 — первым: старые версии приложения берут первый APK из релиза.
+          cp app/build/outputs/apk/release/app-arm64-v8a-release.apk "NutriLens-${{ steps.version.outputs.name }}-arm64.apk"
+          cp app/build/outputs/apk/release/app-armeabi-v7a-release.apk "NutriLens-${{ steps.version.outputs.name }}-arm32.apk"
       - name: Publish GitHub Release
         if: steps.version.outputs.exists == 'false'
         env:
@@ -61,7 +63,8 @@ jobs:
           notes=$(python3 .github/scripts/release_notes.py "${{ steps.version.outputs.name }}")
           [ -n "$notes" ] || notes=$(git log -1 --pretty=%B | head -40)
           gh release create "v${{ steps.version.outputs.name }}" \
-            "NutriLens-${{ steps.version.outputs.name }}.apk" \
+            "NutriLens-${{ steps.version.outputs.name }}-arm64.apk" \
+            "NutriLens-${{ steps.version.outputs.name }}-arm32.apk" \
             --title "NutriLens ${{ steps.version.outputs.name }}" \
             --notes "$notes" \
             --target "${{ github.sha }}"
