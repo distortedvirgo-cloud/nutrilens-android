@@ -200,35 +200,45 @@ fun LeaderboardScreen(onBack: () -> Unit, viewModel: LeaderboardViewModel = view
 // Цвета медалей топ-3 (золото / серебро / бронза) — семантические, одинаковые в обеих темах.
 private val MedalColors = listOf(Color(0xFFF2B53A), Color(0xFFA9B4C2), Color(0xFFCD8A57))
 
-/** Место: у топ-3 — круглая медаль с градиентом и номером, остальным — номер на тональной плашке. */
+/**
+ * Аватар с местом: у топ-3 — корона цвета медали над аватаром и такое же кольцо,
+ * у остальных — маленький номер в углу аватара. Отдельный кружок с местом не нужен:
+ * имени остаётся больше места.
+ */
 @Composable
-private fun PlaceBadge(place: Int) {
+private fun PlacedAvatar(place: Int, avatar: String, nickname: String) {
     val medal = MedalColors.getOrNull(place)
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier
-            .size(38.dp)
-            .clip(CircleShape)
-            .background(
-                if (medal != null) {
-                    Brush.linearGradient(listOf(medal.copy(alpha = 0.85f), medal))
-                } else {
-                    SolidColor(MaterialTheme.colorScheme.surfaceContainerHigh)
+    Box(Modifier.width(48.dp).height(if (medal != null) 60.dp else 48.dp)) {
+        Box(
+            Modifier.align(Alignment.BottomCenter).size(48.dp).clip(CircleShape)
+                .background(medal?.let { Brush.linearGradient(listOf(it, it.copy(alpha = 0.7f))) } ?: SolidColor(Color.Transparent))
+                .padding(if (medal != null) 2.5.dp else 2.dp),
+            contentAlignment = Alignment.Center
+        ) { LeaderAvatar(avatar, nickname, 43.dp) }
+        if (medal != null) {
+            androidx.compose.foundation.Canvas(Modifier.align(Alignment.TopCenter).width(26.dp).height(17.dp)) {
+                val w = size.width; val h = size.height
+                val crown = androidx.compose.ui.graphics.Path().apply {
+                    moveTo(w * 0.08f, h); lineTo(0f, h * 0.28f); lineTo(w * 0.3f, h * 0.58f); lineTo(w * 0.5f, h * 0.12f)
+                    lineTo(w * 0.7f, h * 0.58f); lineTo(w, h * 0.28f); lineTo(w * 0.92f, h); close()
                 }
-            )
-    ) {
-        Text(
-            text = "${place + 1}",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.ExtraBold,
-            color = if (medal != null) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
-        )
+                val brush = Brush.verticalGradient(listOf(medal.copy(alpha = 0.9f), medal))
+                drawPath(crown, brush)
+                listOf(0f to h * 0.28f, w * 0.5f to h * 0.12f, w to h * 0.28f).forEach { (x, y) ->
+                    drawCircle(medal, radius = w * 0.075f, center = androidx.compose.ui.geometry.Offset(x.coerceIn(w * 0.075f, w - w * 0.075f), y))
+                }
+            }
+        } else {
+            Box(
+                Modifier.align(Alignment.BottomEnd).size(20.dp).clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("${place + 1}", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurface)
+            }
+        }
     }
 }
-
-/** «84% плана» для вписавшихся, «+8% плана» для перееавших. */
-private fun percentLabel(percent: Int): String =
-    if (percent > 100) "+${percent - 100}% плана" else "$percent% плана"
 
 /** Вторичная строка: «1840 / 2100 ккал», для недели/месяца ещё «· 5/7 дней». */
 private fun secondaryLine(row: LeaderboardRow, period: LeaderboardPeriod): String {
@@ -259,9 +269,7 @@ private fun LeaderboardRowCard(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            PlaceBadge(place)
-            Spacer(Modifier.width(10.dp))
-            LeaderAvatar(row.avatar, row.nickname, 40.dp)
+            PlacedAvatar(place, row.avatar, row.nickname)
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -269,6 +277,7 @@ private fun LeaderboardRowCard(
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     color = if (row.isSelf) MaterialTheme.colorScheme.onPrimaryContainer
                     else MaterialTheme.colorScheme.onSurface
                 )
@@ -292,13 +301,17 @@ private fun LeaderboardRowCard(
                 }
             }
             Spacer(Modifier.width(10.dp))
-            Text(
-                text = percentLabel(row.percent),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.ExtraBold,
-                color = if (row.isOver) MaterialTheme.colorScheme.tertiary
-                else MaterialTheme.colorScheme.primary
-            )
+            // «68%» крупно и «плана» под ним — так справа уже, и имя влезает целиком.
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = if (row.percent > 100) "+${row.percent - 100}%" else "${row.percent}%",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = if (row.isOver) MaterialTheme.colorScheme.tertiary
+                    else MaterialTheme.colorScheme.primary
+                )
+                Text("плана", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }

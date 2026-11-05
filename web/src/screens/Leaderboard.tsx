@@ -9,6 +9,27 @@ import { IcChevronL, IcRefresh, IcTrophy } from '../ui/icons'
 
 const MEDAL = ['#F5B83D', '#B8C2CC', '#D08B5B']
 
+/** Аватар с местом: у топ-3 — корона и кольцо цвета медали, у остальных — номер в углу. */
+function PlacedAvatar({ place, src, nickname }: { place: number; src?: string; nickname: string }) {
+  const medal = MEDAL[place]
+  return (
+    <div style={{ position: 'relative', width: 46, height: medal ? 58 : 46, flex: 'none', display: 'flex', alignItems: 'flex-end' }}>
+      <div style={{ padding: medal ? 2.5 : 0, borderRadius: '50%', background: medal ? `linear-gradient(135deg, ${medal}, color-mix(in srgb, ${medal} 70%, transparent))` : undefined, lineHeight: 0 }}>
+        <Avatar src={src} nickname={nickname} size={medal ? 41 : 46} />
+      </div>
+      {medal ? (
+        <svg width="26" height="17" viewBox="0 0 26 17" style={{ position: 'absolute', top: 0, left: 10 }} aria-label={`${place + 1} место`}>
+          <path d="M2 17 L0.5 4.8 L7.8 9.9 L13 2 L18.2 9.9 L25.5 4.8 L24 17 Z" fill={medal} />
+          <circle cx="2" cy="4.8" r="2" fill={medal} /><circle cx="13" cy="2" r="2" fill={medal} /><circle cx="24" cy="4.8" r="2" fill={medal} />
+        </svg>
+      ) : (
+        <span className="num" style={{ position: 'absolute', right: -2, bottom: -2, width: 20, height: 20, borderRadius: 10, display: 'grid', placeItems: 'center',
+          fontSize: 11, fontWeight: 800, background: 'var(--surface-high)', color: 'var(--text)', border: '2px solid var(--surface)' }}>{place + 1}</span>
+      )}
+    </div>
+  )
+}
+
 export function LeaderboardScreen({ onBack }: { onBack: () => void }) {
   const toast = useToast()
   const [period, setPeriod] = useState<LbPeriod>('day')
@@ -83,9 +104,7 @@ export function LeaderboardScreen({ onBack }: { onBack: () => void }) {
               {list.map((r, i) => (
                 <div key={r.id || r.nickname} className="row gap-12"
                   style={{ padding: '12px 14px', borderTop: i ? '1px solid var(--hairline)' : 'none', background: r.isSelf ? 'color-mix(in srgb, var(--primary) 10%, transparent)' : undefined }}>
-                  <span className="num" style={{ width: 30, height: 30, borderRadius: 15, flex: 'none', display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 14,
-                    background: i < 3 ? MEDAL[i] : 'var(--surface-high)', color: i < 3 ? '#1a1a1a' : 'var(--text-2)' }}>{i + 1}</span>
-                  <Avatar src={r.avatar} nickname={r.nickname} size={40} />
+                  <PlacedAvatar place={i} src={r.avatar} nickname={r.nickname} />
                   <div className="grow" style={{ minWidth: 0 }}>
                     <div className="title ellipsis">{r.nickname || 'Без ника'}{r.isSelf ? ' · ты' : ''}</div>
                     <div className="small num">
