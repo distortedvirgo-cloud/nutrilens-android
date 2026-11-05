@@ -1,0 +1,61 @@
+name: Probe (video sources)
+
+# Диагностика: какие способы получить ролик по ссылке сейчас работают.
+# Запускается вручную (Actions → Probe → Run workflow) или агентом через API.
+# Секрет NANOGPT_API_KEY (необязательно) — проверить, принимает ли NanoGPT ссылку YouTube.
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Ссылка на ролик
+        default: https://www.youtube.com/shorts/QFwCbCmN5wY
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      URL: ${{ inputs.url }}
+      NANO: ${{ secrets.NANOGPT_API_KEY }}
+    steps:
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: pip install -q -U yt-dlp && yt-dlp --version
+      - name: yt-dlp clients
+        run: |
+          for c in "" "android_vr,tv" "tv_simply,web_embedded" "mweb,ios" "android_vr,tv,web_safari,tv_simply,web_embedded,mweb"; do
+            args=(--simulate --no-playlist -f "best[height<=480][ext=mp4]/best[height<=480]/best[height<=720]/best/bv*[height<=480]" --print "OK %(format_id)s %(ext)s %(height)sp ~%(filesize,filesize_approx)s")
+            [ -n "$c" ] && args+=(--extractor-args "youtube:player_client=$c")
+            echo "::group::client=${c:-default}"
+            yt-dlp "${args[@]}" "$URL" 2>&1 | tail -4 || true
+            echo "::endgroup::"
+          done
+      - name: Mirrors (Invidious / Piped)
+        run: |
+          ID=$(python3 -c "import re,os;u=os.environ['URL'];m=re.search(r'(?:v=|shorts/|youtu\.be/|embed/)([\w-]{6,20})',u);print(m.group(1) if m else '')")
+          echo "id=$ID"
+          for b in https://inv.nadeko.net https://invidious.nerdvpn.de https://yewtu.be https://invidious.privacyredirect.com; do
+            code=$(curl -s -m 15 -o inv.json -w "%{http_code}" "$b/api/v1/videos/$ID?local=true")
+            n=$(python3 -c "import json;d=json.load(open('inv.json'));print(len(d.get('formatStreams',[])))" 2>/dev/null || echo "-")
+            echo "invidious $b -> HTTP $code, formatStreams=$n"
+          done
+          for b in https://pipedapi.kavin.rocks https://pipedapi.adminforge.de https://api.piped.private.coffee; do
+            code=$(curl -s -m 15 -o p.json -w "%{http_code}" "$b/streams/$ID")
+            n=$(python3 -c "import json;d=json.load(open('p.json'));print(len([s for s in d.get('videoStreams',[]) if not s.get('videoOnly')]))" 2>/dev/null || echo "-")
+            echo "piped $b -> HTTP $code, muxed=$n"
+          done
+      - name: NanoGPT
+        if: env.NANO != ''
+        run: |
+          curl -s -m 30 -H "Authorization: Bearer $NANO" "https://nano-gpt.com/api/v1/models?detailed=true" -o models.json
+          python3 - <<'PY'
+          import json
+          d=json.load(open('models.json')); data=d.get('data',d if isinstance(d,list) else [])
+          vids=[m.get('id') for m in data if 'video' in json.dumps(m.get('architecture',{})) or (m.get('capabilities') or {}).get('video_input')]
+          print('video-capable models:', len(vids)); print('\n'.join(v for v in vids if 'gemini' in str(v).lower()))
+          PY
+          for m in google/gemini-3.1-flash-lite google/gemini-flash-latest google/gemini-2.5-flash google/gemini-3.8-flash; do
+            body=$(python3 -c "import json,os;print(json.dumps({'model':'$m','max_tokens':60,'messages':[{'role':'user','content':[{'type':'text','text':'Назови 3 ингредиента из видео одной строкой.'},{'type':'video_url','video_url':{'url':os.environ['URL'],'detail':'low'}}]}]}))")
+            out=$(curl -s -m 120 -w "\nHTTP %{http_code}" -H "Authorization: Bearer $NANO" -H "Content-Type: application/json" -d "$body" https://nano-gpt.com/api/v1/chat/completions)
+            echo "== $m"; echo "$out" | tail -c 400; echo
+          done
