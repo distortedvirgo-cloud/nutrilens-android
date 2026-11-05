@@ -179,10 +179,13 @@ async function callModel(settings: Settings, src: RecipeInput, withVideo: boolea
   const fileUrl = file ? (file.base64.length <= NANO_INLINE_MAX ? `data:${file.mime};base64,${file.base64}` : await uploadVideo(file)) : null
   const videos = [...(yt ? [yt] : []), ...(direct ? [direct] : []), ...(fileUrl ? [fileUrl] : [])]
   // Ссылку YouTube на NanoGPT принимают только эти маршруты (проверено тестом).
-  return complete({
-    apiKey: settings.nanoApiKey, endpoint: settings.nanoEndpoint, model: yt ? 'google/gemini-flash-latest' : NANO_RECIPE_MODEL, jsonMode: true, serviceTier: null,
+  const run = (model: string) => complete({
+    apiKey: settings.nanoApiKey, endpoint: settings.nanoEndpoint, model, jsonMode: true, serviceTier: null,
     messages: [{ role: 'user', text: `${prompt}\n\nФормат ответа — JSON строго такой формы:\n${JSON_SHAPE}`, images: src.images, videos }]
   })
+  if (!yt) return run(NANO_RECIPE_MODEL)
+  // Как в Android: если первый маршрут занят — пробуем второй.
+  try { return await run('google/gemini-flash-latest') } catch { return run('google/gemini-3.5-flash') }
 }
 
 export async function extractRecipe(settings: Settings, src: RecipeInput): Promise<RecipeDraft> {
