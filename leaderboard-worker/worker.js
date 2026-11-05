@@ -4,6 +4,10 @@
 //
 //   GET  /entries      — все участники (без служебных полей), кеш 30 с
 //   PUT  /entries/:id  — записать свой файл data/p_<id>.json
+//   POST /video        — временно (15 мин) сохранить ролик рецепта в KV и вернуть
+//                        https-ссылку: NanoGPT берёт видео внутри запроса только до
+//                        ~4,5 МБ, а по ссылке — до 20 МБ. Нужен KV-биндинг VIDEOS.
+//   GET  /video/:id    — отдать сохранённый ролик
 //   GET  /resolve?url= — данные для книги рецептов: подпись/описание ролика,
 //                        превью, разметка Recipe и текст страницы (сайты не отдают
 //                        это браузеру напрямую из-за CORS). Наружу — только эти поля.
@@ -35,7 +39,7 @@ export default {
     const allowed = (env.ALLOWED_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean)
     const cors = {
       'Access-Control-Allow-Origin': allowed.includes(origin) ? origin : allowed[0] || '*',
-      'Access-Control-Allow-Methods': 'GET, PUT, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, PUT, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type',
       'Access-Control-Max-Age': '86400',
       Vary: 'Origin'
@@ -43,6 +47,10 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors })
     if (origin && allowed.length && !allowed.includes(origin)) return json({ error: 'origin_not_allowed' }, 403, cors)
     const url = new URL(request.url)
+    // Ролик для NanoGPT забирает их сервер — без Origin, поэтому до проверки источника.
+    const vm = url.pathname.match(/^\/video\/([a-f0-9]{32})$/)
+    if (request.method === 'GET' && vm) return await getVideo(env, vm[1])
+    if (request.method === 'POST' && url.pathname === '/video') return await putVideo(request, env, url, cors)
     if (url.pathname !== '/resolve' && (!env.GITHUB_TOKEN || !env.REPO)) return json({ error: 'not_configured' }, 500, cors)
 
     try {
@@ -194,6 +202,31 @@ function cleanDays(days) {
     out[k] = { calories: Math.round(calories * 10) / 10, goal: Math.round(goal) }
   }
   return out
+}
+
+// ---------- Видео для NanoGPT ----------
+
+const MAX_VIDEO = 20 * 1024 * 1024
+const VIDEO_TTL = 15 * 60
+
+async function putVideo(request, env, url, cors) {
+  if (!env.VIDEOS) return json({ error: 'video_store_not_configured' }, 501, cors)
+  const type = (request.headers.get('Content-Type') || '').split(';')[0].trim()
+  if (!/^video\/[\w.+-]+$/.test(type)) return json({ error: 'not_video' }, 400, cors)
+  const len = Number(request.headers.get('Content-Length') || 0)
+  if (len > MAX_VIDEO) return json({ error: 'too_large' }, 413, cors)
+  const body = await request.arrayBuffer()
+  if (!body.byteLength || body.byteLength > MAX_VIDEO) return json({ error: 'too_large' }, 413, cors)
+  const id = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, '0')).join('')
+  await env.VIDEOS.put(id, body, { expirationTtl: VIDEO_TTL, metadata: { type } })
+  return json({ url: `${url.origin}/video/${id}` }, 200, cors)
+}
+
+async function getVideo(env, id) {
+  if (!env.VIDEOS) return new Response('not configured', { status: 501 })
+  const { value, metadata } = await env.VIDEOS.getWithMetadata(id, { type: 'arrayBuffer' })
+  if (!value) return new Response('not found', { status: 404 })
+  return new Response(value, { headers: { 'Content-Type': (metadata && metadata.type) || 'video/mp4', 'Cache-Control': 'no-store' } })
 }
 
 // ---------- GET /resolve ----------

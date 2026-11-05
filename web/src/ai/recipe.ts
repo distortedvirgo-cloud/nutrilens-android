@@ -9,6 +9,7 @@
 import type { Recipe, RecipeCategory, RecipeIngredient, RecipeSourceKind, Settings } from '../data/db'
 import { post, SAFETY, stripFence } from './gemini'
 import { complete } from './nano'
+import { LEADERBOARD_API } from '../data/leaderboard'
 
 /** У NanoGPT для рецептов — Gemini Flash Lite: документированно принимает видео. */
 const NANO_RECIPE_MODEL = 'google/gemini-3.1-flash-lite'
@@ -138,7 +139,21 @@ export function sourceKindOf(url: string): RecipeSourceKind {
   return 'web'
 }
 
-const isHardError = (e: unknown) => /Ключ|ключ|баланс|интернет|Дневной лимит|слишком много/.test((e as Error).message)
+/** base64 ~4 МБ ≈ файл 3 МБ: больше NanoGPT внутри запроса не принимает. */
+const NANO_INLINE_MAX = 4_000_000
+
+async function uploadVideo(file: { base64: string; mime: string }): Promise<string> {
+  if (!LEADERBOARD_API) throw new Error('Ролик больше 3 МБ: для NanoGPT нужен сервер приложения — переключись на Gemini или загрузи ролик короче')
+  const bin = atob(file.base64)
+  const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0))
+  const type = file.mime === 'video/mov' ? 'video/quicktime' : file.mime
+  const r = await fetch(`${LEADERBOARD_API}/video`, { method: 'POST', headers: { 'Content-Type': type }, body: bytes })
+  if (r.status === 501) throw new Error('Ролик больше 3 МБ: для NanoGPT нужно хранилище роликов в Cloudflare (KV «VIDEOS») — или переключись на Gemini')
+  if (!r.ok) throw new Error(`Не удалось передать ролик (HTTP ${r.status})`)
+  return (await r.json()).url
+}
+
+const isHardError = (e: unknown) => /хранилище роликов|сервер приложения|Ключ|ключ|баланс|интернет|Дневной лимит|слишком много/.test((e as Error).message)
 
 /** Один вызов выбранного сервиса; withVideo=false — без видео (запасной путь). */
 async function callModel(settings: Settings, src: RecipeInput, withVideo: boolean): Promise<string> {
@@ -159,7 +174,10 @@ async function callModel(settings: Settings, src: RecipeInput, withVideo: boolea
       safetySettings: SAFETY
     })
   }
-  const videos = [...(yt ? [yt] : []), ...(direct ? [direct] : []), ...(file ? [`data:${file.mime};base64,${file.base64}`] : [])]
+  // NanoGPT принимает видео внутри запроса только до ~4,5 МБ (лимит их хостинга):
+  // большие ролики кладём во временное хранилище Worker и отдаём ссылкой (до 20 МБ).
+  const fileUrl = file ? (file.base64.length <= NANO_INLINE_MAX ? `data:${file.mime};base64,${file.base64}` : await uploadVideo(file)) : null
+  const videos = [...(yt ? [yt] : []), ...(direct ? [direct] : []), ...(fileUrl ? [fileUrl] : [])]
   return complete({
     apiKey: settings.nanoApiKey, endpoint: settings.nanoEndpoint, model: NANO_RECIPE_MODEL, jsonMode: true,
     messages: [{ role: 'user', text: `${prompt}\n\nФормат ответа — JSON строго такой формы:\n${JSON_SHAPE}`, images: src.images, videos }]

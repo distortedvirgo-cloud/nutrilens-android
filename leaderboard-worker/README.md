@@ -52,3 +52,14 @@
    `LEADERBOARD_API_URL` = адрес Worker из шага 2.
 2. **Actions** → **Web (iPhone PWA)** → **Run workflow**. После сборки
    лидерборд в веб-версии заработает.
+
+## Хранилище роликов для NanoGPT (KV «VIDEOS»)
+
+NanoGPT принимает видео внутри запроса только до ~4,5 МБ. Ролики крупнее приложение
+кладёт в Worker на 15 минут и отдаёт NanoGPT ссылкой (до 20 МБ). Для этого:
+
+1. dash.cloudflare.com → **Storage & databases** → **Workers KV** → **Create** → имя `nutrilens-videos`.
+2. Worker `nutrilens-leaderboard` → **Settings** → **Bindings** → **Add** → **KV namespace**:
+   Variable name `VIDEOS`, namespace `nutrilens-videos` → **Deploy**.
+
+Бесплатного тарифа хватает (1000 роликов в день); файлы удаляются сами через 15 минут.

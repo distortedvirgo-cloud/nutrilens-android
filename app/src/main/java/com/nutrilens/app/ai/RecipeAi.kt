@@ -28,7 +28,9 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import okhttp3.OkHttpClient
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.net.URI
 import java.net.URLEncoder
 import java.util.UUID
@@ -357,7 +359,12 @@ object RecipeAi {
                 ?.joinToString("") { (it.jsonObject["text"] as? JsonPrimitive)?.contentOrNull.orEmpty() }
                 ?.takeIf { it.isNotBlank() } ?: throw RuntimeException("Пустой ответ модели")
         }
-        val videos = listOfNotNull(yt, direct, file?.let { (bytes, mime) -> "data:$mime;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP) })
+        // NanoGPT принимает видео внутри запроса только до ~4,5 МБ (лимит их хостинга):
+        // большие ролики кладём во временное хранилище Worker и отдаём ссылкой (до 20 МБ).
+        val videos = listOfNotNull(yt, direct, file?.let { (bytes, mime) ->
+            if (bytes.size <= NANO_INLINE_MAX) "data:$mime;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
+            else uploadVideo(bytes, mime)
+        })
         return NanoGptApi.complete(
             settings.nanoApiKey, settings.nanoApiEndpoint, NANO_RECIPE_MODEL, null,
             listOf(NanoGptApi.Msg("user", "$p\n\nФормат ответа — JSON строго такой формы:\n$JSON_SHAPE", images, videos)),
@@ -365,9 +372,27 @@ object RecipeAi {
         )
     }
 
+    private const val NANO_INLINE_MAX = 3 * 1024 * 1024
+
+    /** Ролик во временное хранилище Worker (15 мин) → https-ссылка для NanoGPT. */
+    private suspend fun uploadVideo(bytes: ByteArray, mime: String): String = withContext(Dispatchers.IO) {
+        val api = com.nutrilens.app.leaderboard.LeaderboardSync.API
+        val type = if (mime == "video/mov") "video/quicktime" else mime
+        val req = Request.Builder().url("$api/video")
+            .post(bytes.toRequestBody(type.toMediaType()))
+            .build()
+        OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).writeTimeout(120, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build()
+            .newCall(req).execute().use { resp ->
+                val body = resp.body?.string().orEmpty()
+                if (resp.code == 501) throw RuntimeException("Ролик больше 3 МБ: для NanoGPT нужно хранилище роликов в Cloudflare (KV «VIDEOS», см. инструкцию) — или переключитесь на Gemini")
+                if (!resp.isSuccessful) throw RuntimeException("Не удалось передать ролик (HTTP ${resp.code})")
+                json.parseToJsonElement(body).jsonObject["url"]?.jsonPrimitive?.contentOrNull ?: throw RuntimeException("Не удалось передать ролик")
+            }
+    }
+
     private fun isHard(e: Exception): Boolean {
         val m = e.message.orEmpty()
-        return listOf("ключ", "Ключ", "баланс", "Дневной лимит", "слишком много", "интернет", "таймаут", "401", "402", "403").any { it in m }
+        return listOf("хранилище роликов", "ключ", "Ключ", "баланс", "Дневной лимит", "слишком много", "интернет", "таймаут", "401", "402", "403").any { it in m }
     }
 
     /** Рецепт по выбранному сервису. Видео не приняли — повторяем по тексту, если он есть. */
