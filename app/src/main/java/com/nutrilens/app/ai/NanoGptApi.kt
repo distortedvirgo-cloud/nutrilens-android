@@ -60,14 +60,16 @@ object NanoGptApi {
         system: String?,
         messages: List<Msg>,
         jsonMode: Boolean,
-        reasoningEffort: String? = null
+        reasoningEffort: String? = null,
+        /** Очередь NanoGPT; null — обычная. У flex нет маршрутов для видео: 503 all_fallbacks_failed. */
+        serviceTier: String? = "flex"
     ): String {
         val base = endpoint.ifBlank { "https://nano-gpt.com" }.trimEnd('/')
         val body = buildJsonObject {
             put("model", model)
             // Сервисный тир NanoGPT: flex — дешевле за счёт более неторопливой
             // очереди (gpt-6 и gemini на NanoGPT поддерживают flex/priority).
-            put("service_tier", "flex")
+            serviceTier?.let { put("service_tier", it) }
             // Ускорение reasoning-моделей: "low" отключает фазу размышлений
             // (замер: 27 с против 40–70 с на полном промпте с фото).
             reasoningEffort?.let { put("reasoning_effort", it) }

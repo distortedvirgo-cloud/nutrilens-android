@@ -366,13 +366,13 @@ object RecipeAi {
             else uploadVideo(bytes, mime)
         })
         val msgs = listOf(NanoGptApi.Msg("user", "$p\n\nФормат ответа — JSON строго такой формы:\n$JSON_SHAPE", images, videos))
-        if (yt == null) return NanoGptApi.complete(settings.nanoApiKey, settings.nanoApiEndpoint, NANO_RECIPE_MODEL, null, msgs, jsonMode = true)
+        if (yt == null) return NanoGptApi.complete(settings.nanoApiKey, settings.nanoApiEndpoint, NANO_RECIPE_MODEL, null, msgs, jsonMode = true, serviceTier = null)
         // Ссылку YouTube NanoGPT принимает только на прямых Gemini-маршрутах, а они у моделей
         // разные. Неподходящую модель NanoGPT отклоняет до списания денег — перебираем.
         var last: Exception? = null
         for (model in NANO_YOUTUBE_MODELS) {
             try {
-                return NanoGptApi.complete(settings.nanoApiKey, settings.nanoApiEndpoint, model, null, msgs, jsonMode = true)
+                return NanoGptApi.complete(settings.nanoApiKey, settings.nanoApiEndpoint, model, null, msgs, jsonMode = true, serviceTier = null)
             } catch (e: Exception) {
                 last = e
                 val m = e.message.orEmpty()

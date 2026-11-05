@@ -180,7 +180,7 @@ async function callModel(settings: Settings, src: RecipeInput, withVideo: boolea
   const videos = [...(yt ? [yt] : []), ...(direct ? [direct] : []), ...(fileUrl ? [fileUrl] : [])]
   // Ссылку YouTube на NanoGPT принимают только эти маршруты (проверено тестом).
   return complete({
-    apiKey: settings.nanoApiKey, endpoint: settings.nanoEndpoint, model: yt ? 'google/gemini-flash-latest' : NANO_RECIPE_MODEL, jsonMode: true,
+    apiKey: settings.nanoApiKey, endpoint: settings.nanoEndpoint, model: yt ? 'google/gemini-flash-latest' : NANO_RECIPE_MODEL, jsonMode: true, serviceTier: null,
     messages: [{ role: 'user', text: `${prompt}\n\nФормат ответа — JSON строго такой формы:\n${JSON_SHAPE}`, images: src.images, videos }]
   })
 }

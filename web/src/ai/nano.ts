@@ -16,6 +16,8 @@ const base = (endpoint: string) => (endpoint.trim() || 'https://nano-gpt.com').r
 export async function complete(opts: {
   apiKey: string; endpoint: string; model: string; messages: Msg[]; jsonMode: boolean
   reasoningEffort?: string; signal?: AbortSignal; timeoutMs?: number
+  /** Очередь NanoGPT; null — обычная. У flex нет маршрутов для видео (503). */
+  serviceTier?: string | null
 }): Promise<string> {
   const msgs = opts.messages.map((m, i) => {
     const text = opts.jsonMode && i === opts.messages.length - 1
@@ -37,7 +39,7 @@ export async function complete(opts: {
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${opts.apiKey.trim()}` },
     body: JSON.stringify({
       model: opts.model,
-      service_tier: 'flex',
+      ...(opts.serviceTier === null ? {} : { service_tier: opts.serviceTier ?? 'flex' }),
       ...(opts.reasoningEffort ? { reasoning_effort: opts.reasoningEffort } : {}),
       messages: msgs
     }),
