@@ -19,6 +19,15 @@ data class ChangelogEntry(
  */
 val CHANGELOG: List<ChangelogEntry> = listOf(
     ChangelogEntry(
+        versionCode = 73,
+        versionName = "3.16",
+        title = "Instagram",
+        items = listOf(
+            "Загрузчик роликов обновляется сам заранее, а не только после ошибки — меньше сбоев с Instagram и TikTok",
+            "В ошибке скачивания видна точная причина"
+        )
+    ),
+    ChangelogEntry(
         versionCode = 72,
         versionName = "3.15",
         title = "Рецепты из видео через NanoGPT",

@@ -56,8 +56,8 @@ android {
         applicationId = "com.nutrilens.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 72
-        versionName = "3.15"
+        versionCode = 73
+        versionName = "3.16"
         // Лидерборд — через прокси (Cloudflare Worker): токена GitHub в APK больше нет.
         buildConfigField("String", "LEADERBOARD_API", "\"https://nutrilens-leaderboard.distortedvirgo.workers.dev\"")
     }

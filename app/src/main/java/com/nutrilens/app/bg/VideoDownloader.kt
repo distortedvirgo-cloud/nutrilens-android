@@ -32,11 +32,13 @@ object VideoDownloader {
     suspend fun download(context: Context, url: String): ByteArray = withContext(Dispatchers.IO) {
         lock.withLock {
             init(context)
+            // Instagram/TikTok часто меняют сайт: свежий yt-dlp — до первого скачивания и раз в 6 часов.
+            updateIfDue(context)
             val youtube = RecipeAi.kindOf(url) == "youtube"
             try {
                 attempts(context, url, youtube)
             } catch (first: Exception) {
-                if (!updateIfDue(context)) throw readable(first)
+                if (!updateIfDue(context, force = true)) throw readable(first)
                 try { attempts(context, url, youtube) } catch (e: Exception) { throw readable(e) }
             }
         }
@@ -135,19 +137,23 @@ object VideoDownloader {
     }
 
     /** Обновить yt-dlp, если не обновляли больше суток. true — обновили, есть смысл повторить. */
-    private fun updateIfDue(context: Context): Boolean {
+    private fun updateIfDue(context: Context, force: Boolean = false): Boolean {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        if (System.currentTimeMillis() - prefs.getLong(KEY_UPDATED, 0L) < 24 * 60 * 60 * 1000L) return false
+        // После сбоя — не чаще раза в час, планово — раз в 6 часов.
+        val minGap = if (force) 60 * 60 * 1000L else 6 * 60 * 60 * 1000L
+        if (System.currentTimeMillis() - prefs.getLong(KEY_UPDATED, 0L) < minGap) return false
         prefs.edit().putLong(KEY_UPDATED, System.currentTimeMillis()).apply()
         return runCatching { YoutubeDL.getInstance().updateYoutubeDL(context.applicationContext) }.isSuccess
     }
 
     private fun readable(e: Exception): RuntimeException {
         val m = e.message.orEmpty()
+        // Точный ответ yt-dlp — чтобы по скриншоту было видно настоящую причину.
+        val raw = m.lineSequence().lastOrNull { it.contains("ERROR") }?.substringAfter("ERROR:")?.trim()?.take(160) ?: m.take(160)
         return RuntimeException(
             when {
                 m.contains("login", true) || m.contains("cookies", true) || m.contains("rate-limit", true) ->
-                    "Instagram/TikTok не отдал ролик без входа в аккаунт. Сохраните видео и загрузите его кнопкой «Видео»"
+                    "Instagram/TikTok не отдал ролик без входа в аккаунт ($raw). Попробуйте другой сервер VPN или сохраните видео и загрузите кнопкой «Видео»"
                 m.contains("Private", true) || m.contains("unavailable", true) -> "Ролик недоступен (закрыт или удалён)"
                 m.contains("14 МБ") -> m
                 else -> "Не удалось скачать видео (${m.lineSequence().lastOrNull { it.contains("ERROR") }?.substringAfter("ERROR:")?.trim()?.take(120) ?: m.take(120)}). Сохраните ролик и загрузите его кнопкой «Видео»"
