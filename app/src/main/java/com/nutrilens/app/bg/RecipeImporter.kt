@@ -115,10 +115,13 @@ object RecipeImporter {
         runCatching { context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } }.getOrNull() ?: -1L
 
     fun fromVideo(context: Context, uri: Uri) = run(context, "video") {
-        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-            ?: throw RuntimeException("Не удалось открыть видео")
-        if (bytes.size > RecipeAi.MAX_VIDEO_BYTES) throw RuntimeException("Видео больше 14 МБ — обрежьте ролик или пришлите ссылку")
-        val type = context.contentResolver.getType(uri) ?: "video/mp4"
+        // Большое видео сжимаем на телефоне до 480p — так длинные ролики тоже проходят.
+        val raw = if (videoSize(context, uri) in 0..RecipeAi.MAX_VIDEO_BYTES)
+            context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: throw RuntimeException("Не удалось открыть видео")
+        else null
+        val compressed = raw == null || raw.size > RecipeAi.MAX_VIDEO_BYTES
+        val bytes = if (compressed) VideoCompressor.compress(context, uri) else raw!!
+        val type = if (compressed) "video/mp4" else context.contentResolver.getType(uri) ?: "video/mp4"
         // Gemini знает .mov как video/mov; NanoGPT принимает любой видеоформат.
         val mime = if (type == "video/quicktime") "video/mov" else type
         val cover = runCatching { videoFrame(context, uri, null) }.getOrNull()

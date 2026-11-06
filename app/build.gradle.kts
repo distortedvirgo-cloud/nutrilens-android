@@ -56,8 +56,8 @@ android {
         applicationId = "com.nutrilens.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 75
-        versionName = "3.18"
+        versionCode = 76
+        versionName = "3.19"
         // Лидерборд — через прокси (Cloudflare Worker): токена GitHub в APK больше нет.
         buildConfigField("String", "LEADERBOARD_API", "\"https://nutrilens-leaderboard.distortedvirgo.workers.dev\"")
     }
@@ -119,6 +119,10 @@ dependencies {
     implementation(libs.okhttp)
     // yt-dlp: скачивание роликов по ссылке для книги рецептов.
     implementation(libs.ytdl.library)
+    // Сжатие длинных роликов перед отправкой ИИ (аппаратный кодек телефона).
+    implementation(libs.media3.transformer)
+    implementation(libs.media3.effect)
+    implementation(libs.media3.common)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.coil.compose)
     implementation(libs.androidx.exifinterface)

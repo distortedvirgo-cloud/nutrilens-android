@@ -13,7 +13,7 @@ import java.io.File
 /**
  * Скачивание ролика по ссылке (YouTube/Shorts, TikTok, Instagram) через yt-dlp прямо
  * на телефоне — чтобы ИИ смотрел само видео, а не гадал по описанию. Берём один файл
- * со звуком ≤480p: для рецепта хватает, а запрос укладывается в лимит 14 МБ.
+ * со звуком ≤480p; если файл больше лимита запроса к ИИ (14 МБ) — сжимаем на телефоне.
  * Сайты часто меняются — при сбое yt-dlp обновляется (не чаще раза в сутки) и пробует снова.
  */
 object VideoDownloader {
@@ -35,11 +35,18 @@ object VideoDownloader {
             // Instagram/TikTok часто меняют сайт: свежий yt-dlp — до первого скачивания и раз в 6 часов.
             updateIfDue(context)
             val youtube = RecipeAi.kindOf(url) == "youtube"
-            try {
+            val file = try {
                 attempts(context, url, youtube)
             } catch (first: Exception) {
                 if (!updateIfDue(context, force = true)) throw readable(first)
                 try { attempts(context, url, youtube) } catch (e: Exception) { throw readable(e) }
+            }
+            try {
+                // Длинный ролик не влезает в запрос к ИИ — сжимаем на телефоне (480p, звук сохраняется).
+                if (file.length() <= RecipeAi.MAX_VIDEO_BYTES) file.readBytes()
+                else VideoCompressor.compress(context, android.net.Uri.fromFile(file))
+            } finally {
+                file.parentFile?.deleteRecursively()
             }
         }
     }
@@ -49,7 +56,7 @@ object VideoDownloader {
      * они не нужны (android_vr, tv); если нет файла со звуком — берём видео без звука:
      * ингредиенты и надписи ИИ всё равно увидит.
      */
-    private fun attempts(context: Context, url: String, youtube: Boolean): ByteArray {
+    private fun attempts(context: Context, url: String, youtube: Boolean): File {
         if (!youtube) return fetch(context, url, null, FORMAT)
         var last: Exception? = null
         // Проверка «not a bot» на адресах VPN включается не для всех клиентов YouTube.
@@ -61,7 +68,9 @@ object VideoDownloader {
         }
         // Открытые зеркала (Invidious/Piped) отдают ролик со своих серверов — мимо проверки «not a bot».
         val id = RecipeAi.youtubeWatchUrl(url)?.substringAfter("v=")
-        if (id != null) mirrorDownload(id)?.let { return it }
+        if (id != null) mirrorDownload(id)?.let { bytes ->
+            return File(File(context.cacheDir, "recipe_dl").apply { deleteRecursively(); mkdirs() }, "video.mp4").apply { writeBytes(bytes) }
+        }
         throw last ?: RuntimeException("Не удалось скачать видео")
     }
 
@@ -115,18 +124,20 @@ object VideoDownloader {
             else kotlinx.serialization.json.Json.parseToJsonElement(resp.body?.string().orEmpty()) as? kotlinx.serialization.json.JsonObject
         }
 
+    private const val MAX_DOWNLOAD_MB = 150
     private const val FORMAT = "best[height<=480][ext=mp4]/best[height<=480]/best[height<=720][ext=mp4]/best[height<=720]/best"
     /** Последняя попытка: допускаем видео без звука. */
     private const val FORMAT_ANY = "$FORMAT/bv*[height<=480][ext=mp4]/bv*[height<=480]/bv*[height<=720]"
 
-    private fun fetch(context: Context, url: String, client: String?, format: String): ByteArray {
+    private fun fetch(context: Context, url: String, client: String?, format: String): File {
         val dir = File(context.cacheDir, "recipe_dl").apply { deleteRecursively(); mkdirs() }
         val request = YoutubeDLRequest(url).apply {
             addOption("-f", format)
             if (client != null) addOption("--extractor-args", "youtube:player_client=$client")
             addOption("--no-playlist")
             addOption("--no-part")
-            addOption("--max-filesize", "${RecipeAi.MAX_VIDEO_BYTES / (1024 * 1024)}M")
+            // Крупнее лимита ИИ — не беда: после скачивания сожмём. Предел — чтобы не качать фильмы.
+            addOption("--max-filesize", "${MAX_DOWNLOAD_MB}M")
             addOption("-o", File(dir, "video.%(ext)s").absolutePath)
         }
         // Instagram без аккаунта часто отвечает «login required» — передаём куки входа, если он есть.
@@ -138,9 +149,8 @@ object VideoDownloader {
             cookies?.delete()
         }
         val file = dir.listFiles()?.filter { it.isFile && it.length() > 0 }?.maxByOrNull { it.length() }
-            ?: throw RuntimeException("Ролик слишком большой (больше 14 МБ) или недоступен")
-        if (file.length() > RecipeAi.MAX_VIDEO_BYTES) throw RuntimeException("Ролик слишком большой (больше 14 МБ)")
-        return file.readBytes().also { dir.deleteRecursively() }
+            ?: throw RuntimeException("Ролик слишком большой (больше $MAX_DOWNLOAD_MB МБ) или недоступен")
+        return file
     }
 
     /** Обновить yt-dlp, если не обновляли больше суток. true — обновили, есть смысл повторить. */
@@ -168,7 +178,7 @@ object VideoDownloader {
                 m.contains("login", true) || m.contains("cookies", true) || m.contains("rate-limit", true) ->
                     "TikTok не отдал ролик без входа в аккаунт ($raw). Попробуйте другой сервер VPN или сохраните видео и загрузите кнопкой «Видео»"
                 m.contains("Private", true) || m.contains("unavailable", true) -> "Ролик недоступен (закрыт или удалён)"
-                m.contains("14 МБ") -> m
+                m.contains("МБ") -> m
                 else -> "Не удалось скачать видео (${m.lineSequence().lastOrNull { it.contains("ERROR") }?.substringAfter("ERROR:")?.trim()?.take(120) ?: m.take(120)}). Сохраните ролик и загрузите его кнопкой «Видео»"
             }
         )

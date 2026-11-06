@@ -199,8 +199,9 @@ private fun ImportCard(onText: () -> Unit, modifier: Modifier = Modifier) {
     }
     val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
         uri ?: return@rememberLauncherForActivityResult
-        if (RecipeImporter.videoSize(context, uri) > RecipeAi.MAX_VIDEO_BYTES) hint = "Видео больше 14 МБ — обрежьте ролик или пришлите ссылку"
-        else { RecipeImporter.fromVideo(context, uri); hint = "Смотрю видео — это займёт до минуты" }
+        val big = RecipeImporter.videoSize(context, uri) > RecipeAi.MAX_VIDEO_BYTES
+        RecipeImporter.fromVideo(context, uri)
+        hint = if (big) "Видео большое — сначала сожму его, потом посмотрю" else "Смотрю видео — это займёт до минуты"
     }
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(4)) { uris: List<Uri> ->
         if (uris.isNotEmpty()) { RecipeImporter.fromPhotos(context, uris); hint = "Читаю рецепт с фото" }
