@@ -1,5 +1,6 @@
 package com.nutrilens.app.ui
 
+import com.nutrilens.app.insights.effectiveDailyGoal
 import com.nutrilens.app.insights.effectiveMacroGoals
 import android.app.Application
 import androidx.compose.foundation.Canvas
@@ -148,7 +149,7 @@ class ReportViewModel(application: Application) : AndroidViewModel(application) 
     init {
         viewModelScope.launch {
             combine(periodDays, settingsRepo.observe()) { p, s -> p to s }
-                .mapLatest { (p, s) -> load(p, s.dailyGoal, s.proteinGoal) }
+                .mapLatest { (p, s) -> load(p, s.effectiveDailyGoal, s.proteinGoal) }
                 .collect { _state.value = it }
         }
     }
@@ -177,7 +178,7 @@ class ReportViewModel(application: Application) : AndroidViewModel(application) 
                 val goals = effectiveMacroGoals(settings, db.weightDao().latest()?.weight, db.latestFatPercent())
                 _aiText.value = GeminiTools.statsInsight(
                     settings,
-                    settings.dailyGoal,
+                    settings.effectiveDailyGoal,
                     current.recentData,
                     Triple(goals.protein, goals.fat, goals.carbs)
                 )

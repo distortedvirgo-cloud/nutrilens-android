@@ -106,14 +106,42 @@ fun effectiveMacroGoals(
     return MacroGoals(protein, fat, carbs)
 }
 
+/** Режим «Сжигание жира» включён: задана цель по проценту жира. */
+val SettingsEntity.isFatBurnMode: Boolean
+    get() = targetFatPercent != null
+
+/**
+ * План режима «Сжигание жира» уже посчитан и сохранён (нужен хотя бы один вес).
+ * Пока его нет, в режиме работают обычные цели — экран не остаётся без цифр.
+ */
+val SettingsEntity.hasFatBurnPlan: Boolean
+    get() = targetFatPercent != null && (planCalories ?: 0.0) > 0.0 &&
+        planProtein != null && planFat != null && planCarbs != null
+
+/**
+ * Калории на день — ЕДИНАЯ точка для всех экранов, виджетов, лидерборда, отчётов и ИИ.
+ * В режиме «Сжигание жира» — из сохранённого плана, иначе ручная цель пользователя.
+ * settings.dailyGoal напрямую читают только экран настроек и бэкап.
+ */
+val SettingsEntity.effectiveDailyGoal: Double
+    get() = if (hasFatBurnPlan) planCalories ?: dailyGoal else dailyGoal
+
 /**
  * Цели по БЖУ с учётом цели по жиру — единая точка для всех экранов, виджетов и ИИ.
- * Цель по жиру включена → белок считается от сухой массы ([BodyComposition.proteinTarget])
- * и перекрывает обычный: в дефиците именно белок держит мышцы.
+ * Режим «Сжигание жира» с готовым планом → БЖУ из плана (FatBurnPlanner).
+ * План ещё не посчитан → белок от сухой массы ([BodyComposition.proteinTarget])
+ * перекрывает обычный: в дефиците именно белок держит мышцы.
  */
 fun effectiveMacroGoals(settings: SettingsEntity, weightKg: Double?, fatPercent: Double?): MacroGoals {
+    if (settings.hasFatBurnPlan) {
+        return MacroGoals(
+            protein = settings.planProtein ?: 0.0,
+            fat = settings.planFat ?: 0.0,
+            carbs = settings.planCarbs ?: 0.0
+        )
+    }
     val base = effectiveMacroGoals(
-        settings.proteinGoal, settings.fatGoal, settings.carbsGoal, settings.dailyGoal, weightKg
+        settings.proteinGoal, settings.fatGoal, settings.carbsGoal, settings.effectiveDailyGoal, weightKg
     )
     return fatGoalProtein(settings, weightKg, fatPercent)?.let { base.copy(protein = it) } ?: base
 }
@@ -121,7 +149,8 @@ fun effectiveMacroGoals(settings: SettingsEntity, weightKg: Double?, fatPercent:
 /** Белок цели по жиру, если она включена и вес известен; иначе null. */
 fun fatGoalProtein(settings: SettingsEntity, weightKg: Double?, fatPercent: Double?): Double? =
     if (settings.targetFatPercent == null) null
-    else BodyComposition.proteinTarget(weightKg, fatPercent)
+    else settings.planProtein?.takeIf { settings.hasFatBurnPlan }
+        ?: BodyComposition.proteinTarget(weightKg, fatPercent)
 
 /**
  * Повторяет семантику `||` из оригинала: цель используется только если

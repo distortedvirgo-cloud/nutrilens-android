@@ -212,6 +212,9 @@ export function computePlan(input: PlanInput): FatPlan {
   }
 
   // 7. Стабильность: после первого плана — не больше ±150 за пересчёт. Пол — важнее.
+  // Первый план по данным не поднимаем резко выше того, что человек реально ел:
+  // «быстрое похудение» чаще значит неполный дневник, а не огромный расход.
+  if (!prev && observed && st.meanKcal != null) calories = Math.min(calories, st.meanKcal + PLAN.maxStep)
   if (prev) calories = clamp(calories, prev.calories - PLAN.maxStep, prev.calories + PLAN.maxStep)
   calories = Math.max(round10(calories), Math.ceil(floor / 10) * 10)
 

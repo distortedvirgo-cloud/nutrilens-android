@@ -1,5 +1,6 @@
 package com.nutrilens.app.ui
 
+import com.nutrilens.app.insights.effectiveDailyGoal
 import androidx.compose.material.icons.rounded.DinnerDining
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.EggAlt
@@ -271,7 +272,7 @@ fun CoachScreen(
             InsightContext(
                 hour = hour,
                 totals = totals,
-                dailyGoal = settings.dailyGoal,
+                dailyGoal = settings.effectiveDailyGoal,
                 macroGoals = macroGoals,
                 waterMl = waterMl,
                 waterNormMl = waterNorm,
@@ -282,7 +283,7 @@ fun CoachScreen(
         )
     }
     val nextFocus = remember(totals, macroGoals) { nextMealFocus(totals, macroGoals) }
-    val remaining = (settings.dailyGoal - totals.calories).roundToInt()
+    val remaining = (settings.effectiveDailyGoal - totals.calories).roundToInt()
 
     val view = LocalView.current
     val c = NutriTheme.colors

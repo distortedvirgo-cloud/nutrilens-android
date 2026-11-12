@@ -33,8 +33,10 @@ fun NutriGlowBackground(content: @Composable () -> Unit) {
     val extras = NutriTheme.colors
     val base = scheme.background
     val a = scheme.primary
-    val b = scheme.secondary
-    val warm = scheme.tertiary
+    // В режиме «Сжигание жира» сияние целиком тёплое: бирюза и красный «перебор»
+    // рядом с оранжевым смотрятся случайно, поэтому шлейф — светлый оранжевый бренда.
+    val b = if (extras.fatBurn) extras.brandFrom else scheme.secondary
+    val warm = if (extras.fatBurn) scheme.primary else scheme.tertiary
     val reduced = LocalReducedMotion.current
 
     val strength = if (extras.isDark) 1.6f else 1f

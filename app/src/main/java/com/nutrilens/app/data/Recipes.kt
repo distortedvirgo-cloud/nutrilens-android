@@ -1,5 +1,6 @@
 package com.nutrilens.app.data
 
+import com.nutrilens.app.insights.effectiveDailyGoal
 import androidx.room.Dao
 import androidx.room.Entity
 import androidx.room.Insert
@@ -141,7 +142,7 @@ class RecipeRepository(private val db: NutriLensDatabase) {
             carbs = round1(n.carbs * portions),
             aiThoughts = "Из книги рецептов: ${RecipeFormat.amount(portions, "шт")} порц. из ${r.servings}.",
             confidenceScore = 8.0,
-            dailyGoalSnapshot = settings.dailyGoal
+            dailyGoalSnapshot = settings.effectiveDailyGoal
         )
         db.mealDao().insertMeal(meal)
         db.mealDao().insertItems(

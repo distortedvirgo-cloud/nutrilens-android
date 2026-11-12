@@ -1,5 +1,6 @@
 package com.nutrilens.app.ui
 
+import com.nutrilens.app.insights.effectiveDailyGoal
 import android.app.Application
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.rounded.PhotoCamera
@@ -129,7 +130,7 @@ fun ProfileScreen(
     val primary = MaterialTheme.colorScheme.primary
     val groups = listOf(
         "Питание" to listOf(
-            ProfileRow(Icons.Rounded.TrackChanges, "Цели и макросы", "${settings.dailyGoal.roundToInt()} ккал", "settings/goals", MaterialTheme.colorScheme.secondary),
+            ProfileRow(Icons.Rounded.TrackChanges, "Цели и макросы", "${settings.effectiveDailyGoal.roundToInt()} ккал", "settings/goals", MaterialTheme.colorScheme.secondary),
             ProfileRow(Icons.Rounded.NotificationsActive, "Напоминания", "", "settings/reminders", c.warnTo),
             ProfileRow(Icons.Rounded.EmojiEvents, "Лидерборд", nickname.ifEmpty { "нет ника" }, "leaderboard", c.warnTo)
         ),
@@ -180,7 +181,7 @@ fun ProfileScreen(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        "Цель ${settings.dailyGoal.roundToInt()} ккал" +
+                        "Цель ${settings.effectiveDailyGoal.roundToInt()} ккал" +
                             (lastWeight?.let { " · %.1f кг".format(it) } ?: ""),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -199,6 +200,11 @@ fun ProfileScreen(
 
         Spacer(Modifier.height(12.dp))
         BodyFatGoalSection(modifier = Modifier.staggeredIn(2), viewModel = bodyFatViewModel)
+        // Режим «Сжигание жира» — подробный план на неделю прямо под выбором режима.
+        if (settings.targetFatPercent != null) {
+            Spacer(Modifier.height(12.dp))
+            FatBurnPlanSection(modifier = Modifier.staggeredIn(2), viewModel = bodyFatViewModel)
+        }
 
         groups.forEachIndexed { gi, (title, rows) ->
             Spacer(Modifier.height(Space.Section))

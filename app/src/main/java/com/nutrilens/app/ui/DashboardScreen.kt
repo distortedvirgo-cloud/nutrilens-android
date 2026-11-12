@@ -1,5 +1,6 @@
 package com.nutrilens.app.ui
 
+import com.nutrilens.app.insights.effectiveDailyGoal
 import androidx.compose.material.icons.rounded.Refresh
 import android.app.Application
 import androidx.compose.animation.animateColorAsState
@@ -157,6 +158,7 @@ import com.nutrilens.app.insights.calcStreak
 import com.nutrilens.app.insights.effectiveMacroGoals
 import com.nutrilens.app.insights.fatGoalProtein
 import com.nutrilens.app.data.latestFatPercent
+import com.nutrilens.app.data.FatBurnPlanSync
 import com.nutrilens.app.insights.getDayTotals
 import com.nutrilens.app.insights.greeting
 import com.nutrilens.app.insights.nextMealFocus
@@ -168,6 +170,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -308,6 +312,14 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             _selectedDate.collectLatest { date -> reloadSnapshot(date) }
         }
+        // Режим «Сжигание жира»: план пересчитывается при открытии «Сегодня» (если подошёл
+        // срок) и сразу при включении режима или смене цели — первое значение потока и есть старт.
+        viewModelScope.launch {
+            settingsRepository.observe()
+                .map { it.targetFatPercent }
+                .distinctUntilChanged()
+                .collect { target -> if (target != null) FatBurnPlanSync.ensureFresh(getApplication()) }
+        }
         // Вода/вес/тренировка из панели «+» или виджета — перечитываем снимок.
         viewModelScope.launch {
             com.nutrilens.app.data.DataEvents.changed.collect { reloadSnapshot(_selectedDate.value) }
@@ -350,6 +362,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             weightRepository.addWeight(LocalDate.now().toString(), weight)
             refreshWeightState()
+            // Первый вес в режиме — план можно посчитать (дальше — по недельному графику).
+            FatBurnPlanSync.ensureFresh(getApplication())
         }
     }
 
@@ -472,7 +486,8 @@ fun DashboardScreen(
                     streak = streak,
                     onToday = viewModel::goToday,
                     nickname = settings.leaderboardNickname,
-                    onProfile = onOpenProfile
+                    onProfile = onOpenProfile,
+                    modeBadge = fatBurnBadgeText(settings, fatPercent)
                 )
             }
         }
@@ -482,7 +497,7 @@ fun DashboardScreen(
                 WeekStrip(
                     selected = selectedDate,
                     weekKcal = weekKcal,
-                    goal = settings.dailyGoal,
+                    goal = settings.effectiveDailyGoal,
                     onSelect = viewModel::selectDay
                 )
             }
@@ -496,6 +511,14 @@ fun DashboardScreen(
                     fatPercent = fatPercent,
                     onLeaderboard = onOpenLeaderboard
                 )
+            }
+        }
+        // Режим «Сжигание жира»: компактный план на неделю, тап — подробности в Профиле.
+        if (settings.targetFatPercent != null && selectedDate == LocalDate.now()) {
+            item(key = "fatburn-plan") {
+                Box(Modifier.introIn(2, introDone)) {
+                    FatBurnPlanCompactCard(settings = settings, onClick = onOpenProfile)
+                }
             }
         }
         if (activeJobs.isNotEmpty()) {
@@ -1673,11 +1696,29 @@ private fun TodayHeader(
     streak: Int,
     onToday: () -> Unit,
     nickname: String = "",
-    onProfile: () -> Unit = {}
+    onProfile: () -> Unit = {},
+    modeBadge: String? = null
 ) {
     val isToday = selected == LocalDate.now()
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.weight(1f)) {
+            // Бейдж режима — сразу видно, что приложение в режиме сжигания жира.
+            if (modeBadge != null) {
+                Surface(
+                    shape = RoundedCornerShape(Radius.Pill),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.padding(bottom = 6.dp)
+                ) {
+                    Text(
+                        modeBadge,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        maxLines = 1,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+            }
             TinyLabel(
                 selected.format(DateTimeFormatter.ofPattern("EEEE, d MMMM", java.util.Locale("ru", "RU")))
             )
@@ -1849,7 +1890,7 @@ private fun HeroSummary(
     onLeaderboard: () -> Unit
 ) {
     val eaten = meals.sumOf { it.meal.calories }
-    val goal = settings.dailyGoal
+    val goal = settings.effectiveDailyGoal
     val isOver = goal > 0 && eaten > goal
     val c = NutriTheme.colors
     val palette = macroPalette()

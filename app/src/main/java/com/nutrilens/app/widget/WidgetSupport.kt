@@ -1,5 +1,6 @@
 package com.nutrilens.app.widget
 
+import com.nutrilens.app.insights.effectiveDailyGoal
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
@@ -55,7 +56,7 @@ internal object WidgetSupport {
         val goals = effectiveMacroGoals(settings, weight, db.latestFatPercent())
         return WidgetDay(
             eaten = meals.sumOf { it.calories },
-            goal = settings.dailyGoal,
+            goal = settings.effectiveDailyGoal,
             protein = meals.sumOf { it.protein },
             fat = meals.sumOf { it.fat },
             carbs = meals.sumOf { it.carbs },

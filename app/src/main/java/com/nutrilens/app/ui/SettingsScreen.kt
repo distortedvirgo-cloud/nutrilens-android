@@ -1,5 +1,9 @@
 package com.nutrilens.app.ui
 
+import com.nutrilens.app.insights.effectiveDailyGoal
+import com.nutrilens.app.insights.hasFatBurnPlan
+import com.nutrilens.app.insights.isFatBurnMode
+import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.TimePickerDefaults
 import androidx.compose.material.icons.rounded.Schedule
@@ -416,29 +420,56 @@ fun SettingsScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 SettingsSectionTitle(Icons.Rounded.TrackChanges, "Цели", MaterialTheme.colorScheme.secondary)
+                // В режиме «Сжигание жира» цели считает план — ручные поля только показываем
+                // (их значения сохраняются нетронутыми и вернутся, когда режим выключат).
+                val fatBurn = settings.isFatBurnMode
+                if (fatBurn) {
+                    TonalSection(color = MaterialTheme.colorScheme.primary) {
+                        Text(
+                            "В режиме сжигания жира считается автоматически",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            if (settings.hasFatBurnPlan) {
+                                "Сейчас: ${settings.effectiveDailyGoal.roundToInt()} ккал · " +
+                                    "Б ${(settings.planProtein ?: 0.0).roundToInt()} / Ж ${(settings.planFat ?: 0.0).roundToInt()} / " +
+                                    "У ${(settings.planCarbs ?: 0.0).roundToInt()} г. Твои цели ниже сохранены — вернутся, если выключить режим."
+                            } else {
+                                "План появится после первого взвешивания. Твои цели ниже сохранены — вернутся, если выключить режим."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
                 SettingsNumberField(
                     initial = formatNumber(settings.dailyGoal),
                     label = "Дневная норма калорий, ккал",
                     onValid = viewModel::setDailyGoal,
-                    onEmpty = null
+                    onEmpty = null,
+                    enabled = !fatBurn
                 )
                 SettingsNumberField(
                     initial = settings.proteinGoal?.let(::formatNumber).orEmpty(),
                     label = "Белки, г (пусто — автоматически)",
                     onValid = viewModel::setProteinGoal,
-                    onEmpty = { viewModel.setProteinGoal(null) }
+                    onEmpty = { viewModel.setProteinGoal(null) },
+                    enabled = !fatBurn
                 )
                 SettingsNumberField(
                     initial = settings.fatGoal?.let(::formatNumber).orEmpty(),
                     label = "Жиры, г (пусто — автоматически)",
                     onValid = viewModel::setFatGoal,
-                    onEmpty = { viewModel.setFatGoal(null) }
+                    onEmpty = { viewModel.setFatGoal(null) },
+                    enabled = !fatBurn
                 )
                 SettingsNumberField(
                     initial = settings.carbsGoal?.let(::formatNumber).orEmpty(),
                     label = "Углеводы, г (пусто — автоматически)",
                     onValid = viewModel::setCarbsGoal,
-                    onEmpty = { viewModel.setCarbsGoal(null) }
+                    onEmpty = { viewModel.setCarbsGoal(null) },
+                    enabled = !fatBurn
                 )
             }
         }
@@ -873,7 +904,8 @@ private fun SettingsNumberField(
     label: String?,
     onValid: (Double) -> Unit,
     onEmpty: (() -> Unit)?,
-    compact: Boolean = false
+    compact: Boolean = false,
+    enabled: Boolean = true
 ) {
     var text by remember { mutableStateOf(initial) }
     var focused by remember { mutableStateOf(false) }
@@ -898,6 +930,7 @@ private fun SettingsNumberField(
         },
         modifier = modifier,
         label = label,
+        enabled = enabled,
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
     )

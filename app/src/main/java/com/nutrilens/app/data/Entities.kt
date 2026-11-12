@@ -121,7 +121,22 @@ data class SettingsEntity(
     val targetFatPercent: Double? = null,
     val heightCm: Double? = null,
     // "male" / "female"; пусто — берём из текста «О себе».
-    val sex: String = ""
+    val sex: String = "",
+    // Режим «Сжигание жира»: сохранённый недельный план (см. FatBurnPlanner).
+    // Хранится, чтобы цифры не прыгали между пересчётами и были доступны виджетам.
+    // Ручные цели (dailyGoal и БЖУ выше) план не трогает — выключил режим, и они вернулись.
+    val planCalories: Double? = null,
+    val planProtein: Double? = null,
+    val planFat: Double? = null,
+    val planCarbs: Double? = null,
+    val planTdee: Double? = null,
+    val planNote: String = "",
+    // "YYYY-MM-DD" последнего пересчёта; null — плана ещё не было.
+    val planDate: String? = null,
+    // true — расход посчитан по твоим весу и еде, false — по формуле.
+    val planObserved: Boolean = false,
+    // Цель %, под которую считался план: сменили цель — пересчитываем сразу.
+    val planTargetFat: Double? = null
 )
 
 @Entity(tableName = "analysis_jobs")

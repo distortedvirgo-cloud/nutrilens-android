@@ -46,12 +46,16 @@ import com.nutrilens.app.data.BodyComposition
 import com.nutrilens.app.data.BodyMeasurementEntity
 import com.nutrilens.app.data.BodyMeasurementRepository
 import com.nutrilens.app.data.DataEvents
+import com.nutrilens.app.data.FatBurnPlanSync
 import com.nutrilens.app.data.NutriLensDatabase
 import com.nutrilens.app.data.SettingsEntity
 import com.nutrilens.app.data.SettingsRepository
 import com.nutrilens.app.ui.theme.NutriTheme
+import com.nutrilens.app.insights.FatBurnPlanner
 import com.nutrilens.app.ui.theme.macroPalette
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -83,15 +87,56 @@ class BodyFatViewModel(application: Application) : AndroidViewModel(application)
     private val _lastWeight = MutableStateFlow<Double?>(null)
     val lastWeight: StateFlow<Double?> = _lastWeight.asStateFlow()
 
+    /**
+     * Живой расчёт плана для подробной карточки: темп и чего не хватает для точности.
+     * Сами цифры плана берутся из settings — они меняются только при пересчёте.
+     */
+    private val _planPreview = MutableStateFlow<FatBurnPlanner.Plan?>(null)
+    val planPreview: StateFlow<FatBurnPlanner.Plan?> = _planPreview.asStateFlow()
+
     init {
         viewModelScope.launch { _lastWeight.value = db.weightDao().latest()?.weight }
         viewModelScope.launch {
-            DataEvents.changed.collect { _lastWeight.value = db.weightDao().latest()?.weight }
+            DataEvents.changed.collect {
+                _lastWeight.value = db.weightDao().latest()?.weight
+                refreshPlan()
+            }
         }
+        // Режим или цель поменялись (в т.ч. с другого экрана) — пересчёт и свежее превью.
+        viewModelScope.launch {
+            settingsRepo.observe()
+                .map { it.targetFatPercent }
+                .distinctUntilChanged()
+                .collect { refreshPlan() }
+        }
+    }
+
+    private suspend fun refreshPlan() {
+        FatBurnPlanSync.ensureFresh(getApplication())
+        _planPreview.value = FatBurnPlanSync.preview(getApplication())
     }
 
     fun setTarget(value: Double?) = updateSettings {
         it.copy(targetFatPercent = value?.coerceIn(BodyComposition.MIN_TARGET.toDouble(), BodyComposition.MAX_TARGET.toDouble()))
+    }
+
+    /**
+     * Переключатель «Похудение / Сжигание жира». Включение ставит цель по умолчанию
+     * (15% мужчинам, 23% женщинам) и сбрасывает старый план — первый план считается
+     * с чистого листа, без ограничения ±150 ккал. Выключение план не стирает, но он
+     * больше не действует: снова работают ручные цели, которые никто не трогал.
+     */
+    fun setFatBurnMode(on: Boolean) = updateSettings {
+        if (on) {
+            if (it.targetFatPercent != null) it
+            else it.copy(
+                targetFatPercent = if (BodyComposition.isMale(it)) 15.0 else 23.0,
+                planCalories = null,
+                planDate = null
+            )
+        } else {
+            it.copy(targetFatPercent = null)
+        }
     }
 
     fun setSex(value: String) = updateSettings { it.copy(sex = value) }
@@ -104,6 +149,8 @@ class BodyFatViewModel(application: Application) : AndroidViewModel(application)
             if (heightCm != null) settingsRepo.update { it.copy(heightCm = heightCm) }
             repo.save(entity)
             com.nutrilens.app.widget.WidgetUpdater.refresh(getApplication())
+            // Замер — новый процент жира; план пересчитается, только если ещё не был посчитан.
+            refreshPlan()
         }
     }
 
@@ -289,19 +336,26 @@ fun BodyFatGoalSection(modifier: Modifier = Modifier, viewModel: BodyFatViewMode
     FreshCard(modifier.fillMaxWidth()) {
         Column(Modifier.padding(Space.Card), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             CardHeader(
-                title = "Цель по жиру",
+                title = "Цель",
                 icon = Icons.Rounded.MonitorWeight,
-                tint = palette.protein,
-                subtitle = if (target != null) "Цель ${BodyComposition.fmt1(target)}% · мышцы сохраняем" else "Выключено",
-                trailing = {
-                    NutriSwitch(
-                        checked = target != null,
-                        onCheckedChange = { on -> viewModel.setTarget(if (on) BodyComposition.DEFAULT_TARGET else null) }
-                    )
-                }
+                tint = if (target != null) MaterialTheme.colorScheme.primary else palette.protein,
+                subtitle = if (target != null) "Сжигание жира · цель ${BodyComposition.fmt1(target)}% · мышцы сохраняем"
+                else "Похудение · свои калории и БЖУ"
+            )
+            // Режим — явный выбор из двух: так понятно, что это другой способ вести дневник,
+            // а не мелкая галочка. Тема приложения переключается сразу же.
+            SegmentedSwitcher(
+                options = listOf(false to "Похудение", true to "🔥 Сжигание жира"),
+                selected = target != null,
+                onSelect = { viewModel.setFatBurnMode(it) },
+                modifier = Modifier.fillMaxWidth()
             )
             Text(
-                "Следим не только за весом, а за процентом жира: белок считается от сухой массы, прогресс — по замерам талии и шеи.",
+                if (target != null) {
+                    "Следим за процентом жира, а не только за весом: калории и БЖУ считаются сами и подстраиваются под твой вес и еду."
+                } else {
+                    "Сам задаёшь калории и БЖУ в «Цели и макросы». Хочешь рельеф без потери мышц — включи «Сжигание жира»."
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

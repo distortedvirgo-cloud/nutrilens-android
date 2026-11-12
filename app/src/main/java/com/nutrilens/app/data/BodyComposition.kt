@@ -118,7 +118,17 @@ object BodyComposition {
                 if (weightKg != null) append(", сухая масса ${fmt1(leanMass(weightKg, fatPercent))} кг")
                 append(".")
             }
-            proteinTarget(weightKg, fatPercent)?.let { append(" Цель по белку ${it.roundToInt()} г в день.") }
+            val planKcal = settings.planCalories
+            val planProtein = settings.planProtein
+            if (planKcal != null && planKcal > 0 && planProtein != null) {
+                // Режим «Сжигание жира»: план пересчитывается сам — коуч не должен советовать другую норму.
+                append(" Режим сжигания жира: план ${planKcal.roundToInt()} ккал, белок ${planProtein.roundToInt()} г")
+                settings.planFat?.let { append(", жиры ${it.roundToInt()} г") }
+                settings.planCarbs?.let { append(", углеводы ${it.roundToInt()} г") }
+                append(" — считается автоматически по весу и еде, раз в неделю.")
+            } else {
+                proteinTarget(weightKg, fatPercent)?.let { append(" Цель по белку ${it.roundToInt()} г в день.") }
+            }
         }
     }
 

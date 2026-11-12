@@ -1,5 +1,6 @@
 package com.nutrilens.app.ui
 
+import com.nutrilens.app.insights.effectiveDailyGoal
 import android.content.Context
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -100,7 +101,7 @@ fun GroceryScreen(onBack: () -> Unit) {
             ).get()
             val input = JSONObject().apply {
                 put("note", preferences.trim())
-                put("dailyGoal", settings.dailyGoal)
+                put("dailyGoal", settings.effectiveDailyGoal)
             }
             AnalysisScheduler.enqueueTool(context, ToolJobWorker.KIND_GROCERY, input.toString())
         }

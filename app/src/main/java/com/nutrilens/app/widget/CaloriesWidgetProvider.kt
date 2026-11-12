@@ -1,5 +1,6 @@
 package com.nutrilens.app.widget
 
+import com.nutrilens.app.insights.effectiveDailyGoal
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
@@ -67,7 +68,7 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
                 ?: SettingsEntity()
             val meals = db.mealDao().mealsBetween(today, today)
             val eaten = meals.sumOf { it.calories }
-            val goal = settings.dailyGoal
+            val goal = settings.effectiveDailyGoal
             val remaining = (goal - eaten).roundToInt()
             val isOver = remaining < 0
             val weightKg = db.weightDao().latest()?.weight

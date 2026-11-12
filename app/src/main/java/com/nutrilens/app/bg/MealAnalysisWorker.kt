@@ -1,5 +1,6 @@
 package com.nutrilens.app.bg
 
+import com.nutrilens.app.insights.effectiveDailyGoal
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -91,7 +92,7 @@ class MealAnalysisWorker(context: Context, params: WorkerParameters) : Coroutine
                 throw RuntimeException(if (why.isNotEmpty()) "$NO_FOOD_ERROR: $why" else NO_FOOD_ERROR)
             }
 
-            val meal = saveMeal(db, settings.dailyGoal, photos, result)
+            val meal = saveMeal(db, settings.effectiveDailyGoal, photos, result)
             com.nutrilens.app.widget.WidgetUpdater.refresh(applicationContext)
             com.nutrilens.app.leaderboard.LeaderboardSync.pushAsync(applicationContext)
             jobRepo.markDone(jobId, meal.id)

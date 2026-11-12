@@ -19,6 +19,9 @@ import java.io.File
  * Формат JSON: settings, meals, favorites, weights, water, workouts,
  * habits, body_measurements, chat_history (сырой массив из ChatStore), grocery (сырой объект из GroceryStore).
  * Старые копии без body_measurements читаются как «замеров нет».
+ * settings сериализуется целиком (encodeDefaults), поэтому план режима «Сжигание жира»
+ * (planCalories…planTargetFat) попадает в копию сам; в копиях до 3.21 этих полей нет —
+ * берутся значения по умолчанию (плана нет), и он пересчитается при следующем запуске.
  */
 object Backup {
     private const val ERROR_MESSAGE = "Неверный формат файла резервной копии"

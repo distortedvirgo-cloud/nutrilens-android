@@ -1,5 +1,6 @@
 package com.nutrilens.app.data
 
+import com.nutrilens.app.insights.effectiveDailyGoal
 import android.content.Context
 import com.nutrilens.app.leaderboard.LeaderboardSync
 import com.nutrilens.app.widget.WidgetUpdater
@@ -83,7 +84,7 @@ object QuickActions {
             aiThoughts = "Добавлено из избранного",
             reasoning = "",
             confidenceScore = 10.0,
-            dailyGoalSnapshot = settings.dailyGoal,
+            dailyGoalSnapshot = settings.effectiveDailyGoal,
             createdAt = System.currentTimeMillis()
         )
         mealRepo(context).addMeal(meal, emptyList(), emptyList())

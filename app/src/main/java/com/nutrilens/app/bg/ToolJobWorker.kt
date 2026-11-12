@@ -1,5 +1,6 @@
 package com.nutrilens.app.bg
 
+import com.nutrilens.app.insights.effectiveDailyGoal
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -112,12 +113,12 @@ class ToolJobWorker(context: Context, params: WorkerParameters) : CoroutineWorke
             )
         }
         KIND_FRIDGE -> GeminiTools.analyzeFridge(
-            settings, settings.userContext, settings.dailyGoal,
+            settings, settings.userContext, settings.effectiveDailyGoal,
             input.optInt("remainingCalories"), input.optBoolean("useRemaining", true),
             imagesFromInput(input)
         )
         KIND_MENU -> GeminiTools.analyzeMenu(
-            settings, settings.userContext, settings.dailyGoal,
+            settings, settings.userContext, settings.effectiveDailyGoal,
             input.optInt("remainingCalories"), input.optBoolean("useRemaining", true),
             imagesFromInput(input)
         )

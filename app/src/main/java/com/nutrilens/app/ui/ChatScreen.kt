@@ -1,5 +1,6 @@
 package com.nutrilens.app.ui
 
+import com.nutrilens.app.insights.effectiveDailyGoal
 import com.nutrilens.app.insights.effectiveMacroGoals
 import com.nutrilens.app.data.BodyComposition
 import com.nutrilens.app.data.latestFatPercent
@@ -142,7 +143,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 val fatPercent = database.latestFatPercent()
                 val goals = effectiveMacroGoals(settings, weight, fatPercent)
                 val system = GeminiTools.buildChatSystemInstruction(
-                    dailyGoal = settings.dailyGoal,
+                    dailyGoal = settings.effectiveDailyGoal,
                     // Цель по жиру — коуч видит текущий процент, цель и сухую массу.
                     userContext = settings.userContext + BodyComposition.coachContext(settings, weight, fatPercent),
                     todayMeals = mealsToday.map { it.name to it.calories.roundToInt() },

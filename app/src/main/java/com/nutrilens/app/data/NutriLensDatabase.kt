@@ -92,6 +92,25 @@ val MIGRATION_8_9 = object : Migration(8, 9) {
     }
 }
 
+/**
+ * v10: режим «Сжигание жира» — сохранённый недельный план в settings.
+ * Типы и nullability обязаны совпадать с SettingsEntity: Double? → REAL без NOT NULL,
+ * String → TEXT NOT NULL DEFAULT '', Boolean → INTEGER NOT NULL DEFAULT 0.
+ */
+val MIGRATION_9_10 = object : Migration(9, 10) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE settings ADD COLUMN planCalories REAL DEFAULT NULL")
+        db.execSQL("ALTER TABLE settings ADD COLUMN planProtein REAL DEFAULT NULL")
+        db.execSQL("ALTER TABLE settings ADD COLUMN planFat REAL DEFAULT NULL")
+        db.execSQL("ALTER TABLE settings ADD COLUMN planCarbs REAL DEFAULT NULL")
+        db.execSQL("ALTER TABLE settings ADD COLUMN planTdee REAL DEFAULT NULL")
+        db.execSQL("ALTER TABLE settings ADD COLUMN planNote TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE settings ADD COLUMN planDate TEXT DEFAULT NULL")
+        db.execSQL("ALTER TABLE settings ADD COLUMN planObserved INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE settings ADD COLUMN planTargetFat REAL DEFAULT NULL")
+    }
+}
+
 @Database(
     entities = [
         MealEntity::class,
@@ -109,7 +128,7 @@ val MIGRATION_8_9 = object : Migration(8, 9) {
         RecipeEntity::class,
         BodyMeasurementEntity::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = false
 )
 abstract class NutriLensDatabase : RoomDatabase() {
@@ -139,7 +158,8 @@ abstract class NutriLensDatabase : RoomDatabase() {
                 )
                     .addMigrations(
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
-                        MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9
+                        MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
+                        MIGRATION_9_10
                     )
                     .build().also { INSTANCE = it }
             }

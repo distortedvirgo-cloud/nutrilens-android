@@ -1,5 +1,6 @@
 package com.nutrilens.app.ui
 
+import com.nutrilens.app.insights.effectiveDailyGoal
 import androidx.compose.foundation.shape.CircleShape
 import android.content.Context
 import android.net.Uri
@@ -118,7 +119,7 @@ private fun PhotoToolScreen(kind: PhotoToolKind, onBack: () -> Unit) {
             val settings = SettingsRepository(db.settingsDao()).get()
             val today = LocalDate.now().toString()
             val eaten = mealRepository.mealsOn(today).sumOf { it.calories }
-            val remaining = (settings.dailyGoal - eaten).roundToInt().coerceAtLeast(0)
+            val remaining = (settings.effectiveDailyGoal - eaten).roundToInt().coerceAtLeast(0)
             val input = JSONObject().apply {
                 put("photos", JSONArray().apply { photos.forEach { put(it.absolutePath) } })
                 put("remainingCalories", remaining)

@@ -1,5 +1,6 @@
 package com.nutrilens.app.bg
 
+import com.nutrilens.app.insights.effectiveDailyGoal
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -52,7 +53,7 @@ class MealReminderReceiver : BroadcastReceiver() {
                     MEAL_LUNCH -> "Пора пообедать 🍲"
                     else -> "Пора поужинать 🍽️"
                 }
-                val text = "Съедено сегодня: ${sumCalories.roundToInt()} из ${settings.dailyGoal.roundToInt()} ккал"
+                val text = "Съедено сегодня: ${sumCalories.roundToInt()} из ${settings.effectiveDailyGoal.roundToInt()} ккал"
                 val notificationId = when (meal) {
                     MEAL_BREAKFAST -> 1101
                     MEAL_LUNCH -> 1102

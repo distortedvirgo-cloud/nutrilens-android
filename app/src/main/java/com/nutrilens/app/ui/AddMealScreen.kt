@@ -1,5 +1,6 @@
 package com.nutrilens.app.ui
 
+import com.nutrilens.app.insights.effectiveDailyGoal
 import android.app.Application
 import androidx.compose.ui.focus.focusRequester
 import android.content.Context
@@ -320,7 +321,7 @@ class AddMealViewModel(application: Application) : AndroidViewModel(application)
                     aiThoughts = "Добавлено из избранного",
                     reasoning = "",
                     confidenceScore = 10.0,
-                    dailyGoalSnapshot = settings.dailyGoal,
+                    dailyGoalSnapshot = settings.effectiveDailyGoal,
                     createdAt = System.currentTimeMillis()
                 )
                 mealRepository.addMeal(meal, emptyList(), emptyList())

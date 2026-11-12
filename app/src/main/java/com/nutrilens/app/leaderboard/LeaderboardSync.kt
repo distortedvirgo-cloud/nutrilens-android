@@ -1,5 +1,6 @@
 package com.nutrilens.app.leaderboard
 
+import com.nutrilens.app.insights.effectiveDailyGoal
 import android.content.Context
 import android.util.Log
 import com.nutrilens.app.BuildConfig
@@ -53,9 +54,9 @@ class LeaderboardSync(context: Context) {
                 val today = LocalDate.now()
                 val meals = db.mealDao().mealsBetween(today.minusDays(SYNC_DAYS - 1).toString(), today.toString())
                 val days = meals.groupBy { it.date }.mapValues { (_, list) ->
-                    list.sumOf { it.calories } to (list.firstNotNullOfOrNull { it.dailyGoalSnapshot } ?: settings.dailyGoal)
+                    list.sumOf { it.calories } to (list.firstNotNullOfOrNull { it.dailyGoalSnapshot } ?: settings.effectiveDailyGoal)
                 }.toMutableMap()
-                days[today.toString()] = (days[today.toString()]?.first ?: 0.0) to settings.dailyGoal
+                days[today.toString()] = (days[today.toString()]?.first ?: 0.0) to settings.effectiveDailyGoal
                 val body = buildJsonObject {
                     put("secret", PlayerIdentity.secret(appContext))
                     put("nickname", nickname)

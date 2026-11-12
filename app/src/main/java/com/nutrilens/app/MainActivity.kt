@@ -11,16 +11,21 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import com.nutrilens.app.data.NutriLensDatabase
+import com.nutrilens.app.data.SettingsRepository
 import com.nutrilens.app.ui.NutriLensAppRoot
 import com.nutrilens.app.ui.Onboarding
 import com.nutrilens.app.ui.OnboardingScreen
 import com.nutrilens.app.ui.theme.NutriLensTheme
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -40,8 +45,16 @@ class MainActivity : ComponentActivity() {
         val navigateTo = if (shared != null) "recipes" else intent.getStringExtra("navigate")
         val dateExtra = intent.getStringExtra("date")
 
+        // Тема следит за режимом «Сжигание жира» потоком настроек: включил в профиле —
+        // приложение сразу стало оранжевым, без перезапуска.
+        val fatBurnFlow = SettingsRepository(NutriLensDatabase.getInstance(applicationContext).settingsDao())
+            .observe()
+            .map { it.targetFatPercent != null }
+            .distinctUntilChanged()
+
         setContent {
-            NutriLensTheme {
+            val fatBurn by fatBurnFlow.collectAsState(initial = false)
+            NutriLensTheme(fatBurn = fatBurn) {
                 if (Build.VERSION.SDK_INT >= 33) {
                     RequestNotificationPermissionOnce()
                 }
@@ -62,6 +75,8 @@ class MainActivity : ComponentActivity() {
 
     // Свой день в лидерборд — один пуш при старте приложения (fire-and-forget).
     com.nutrilens.app.leaderboard.LeaderboardSync.pushAsync(this)
+    // План режима «Сжигание жира» — пересчёт при старте, если подошёл срок.
+    com.nutrilens.app.data.FatBurnPlanSync.refreshAsync(this)
 }
 
 /** Маршруты, на которые разрешено вести по уведомлениям (dashboard=settings/add + инструменты «Ещё» + лидерборд). */

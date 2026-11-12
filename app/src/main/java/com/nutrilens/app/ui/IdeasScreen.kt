@@ -1,5 +1,6 @@
 package com.nutrilens.app.ui
 
+import com.nutrilens.app.insights.effectiveDailyGoal
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.automirrored.rounded.MenuBook
@@ -124,7 +125,7 @@ class IdeasViewModel(application: Application) : AndroidViewModel(application) {
             val settings = settingsRepository.get()
             val meals = mealRepository.mealsOn(today)
             val totals = meals.sumOf { it.calories }
-            val remaining = (settings.dailyGoal - totals).roundToInt().coerceAtLeast(100)
+            val remaining = (settings.effectiveDailyGoal - totals).roundToInt().coerceAtLeast(100)
             val weight = mealRepository.getLatestWeight()
             val goals = effectiveMacroGoals(settings, weight, database.latestFatPercent())
             val input = JSONObject().apply {

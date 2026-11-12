@@ -112,6 +112,53 @@ private val EmeraldNight = darkColorScheme(
     scrim = Color(0xFF000000)
 )
 
+// Режим «Сжигание жира»: тот же каркас, но акцент — тёплый оранжевый («Ember»),
+// а предупреждение о переборе уходит в красный, чтобы не сливаться с акцентом.
+// Светлый primary темнее предложенного #E8650A: на #E8650A белый текст даёт лишь
+// ~3,3:1, а #C4530A — ≈ 4,6:1 (WCAG AA для текста на кнопках).
+// Поверхности чуть сдвинуты в тёплый тон — зелёный подтон фона в оранжевом режиме выглядит грязно.
+private val EmberLight = IvoryLight.copy(
+    primary = Color(0xFFC4530A),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFFFE6D3),
+    onPrimaryContainer = Color(0xFF5C2403),
+    tertiary = Color(0xFFD93A3F),
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFFDE3E4),
+    onTertiaryContainer = Color(0xFF7A1518),
+    background = Color(0xFFF7F4F1),
+    surfaceVariant = Color(0xFFF2EDE9),
+    surfaceContainerLow = Color(0xFFFCFAF8),
+    surfaceContainer = Color(0xFFF5F1EE),
+    surfaceContainerHigh = Color(0xFFEFEAE6),
+    surfaceContainerHighest = Color(0xFFE9E3DF),
+    outlineVariant = Color(0xFFE8E1DC),
+    inversePrimary = Color(0xFFFF8A3D)
+)
+
+// Тёмная «Ember Night»: графит с тёплым подтоном, акцент #FF8A3D с тёмным текстом на нём.
+private val EmberNight = EmeraldNight.copy(
+    primary = Color(0xFFFF8A3D),
+    onPrimary = Color(0xFF3A1604),
+    primaryContainer = Color(0xFF4A2410),
+    onPrimaryContainer = Color(0xFFFFDCC4),
+    tertiary = Color(0xFFFF5A5F),
+    onTertiary = Color(0xFF45080B),
+    tertiaryContainer = Color(0xFF4C1719),
+    onTertiaryContainer = Color(0xFFFFC9CB),
+    background = Color(0xFF0D0A08),
+    surface = Color(0xFF171310),
+    surfaceVariant = Color(0xFF201A16),
+    surfaceContainerLowest = Color(0xFF0A0806),
+    surfaceContainerLow = Color(0xFF13100D),
+    surfaceContainer = Color(0xFF1A1512),
+    surfaceContainerHigh = Color(0xFF221C18),
+    surfaceContainerHighest = Color(0xFF2A231E),
+    outlineVariant = Color(0xFF332A24),
+    inverseOnSurface = Color(0xFF171310),
+    inversePrimary = Color(0xFFC4530A)
+)
+
 // Скругления — те же ступени, что Radius в DesignKit: мелкое 14, плашки/кнопки/поля 18,
 // карточки 24, листы 32.
 private val NutriShapes = Shapes(
@@ -191,7 +238,9 @@ data class NutriColors(
     val glass: Color,
     val glassBorder: Color,
     val hairline: Color,
-    val isDark: Boolean
+    val isDark: Boolean,
+    /** Режим «Сжигание жира»: оранжевый акцент вместо изумруда. */
+    val fatBurn: Boolean = false
 ) {
     val brandGradient: Brush get() = Brush.linearGradient(listOf(brandFrom, brandTo))
     val warnGradient: Brush get() = Brush.linearGradient(listOf(warnFrom, warnTo))
@@ -235,6 +284,33 @@ private val ExtrasDark = NutriColors(
     isDark = true
 )
 
+// Бренд-градиент — оранжевый, «перебор» — красный (warn), опасность — глубже красный.
+// success в режиме — тоже акцент, чтобы нигде не оставалось зелёного.
+private val ExtrasEmberLight = ExtrasLight.copy(
+    brandFrom = Color(0xFFF07A2A),
+    brandTo = Color(0xFFC4530A),
+    onBrand = Color(0xFFFFFFFF),
+    warnFrom = Color(0xFFF2676B),
+    warnTo = Color(0xFFD93A3F),
+    dangerFrom = Color(0xFFDC2626),
+    dangerTo = Color(0xFF991B1B),
+    success = Color(0xFFC4530A),
+    fatBurn = true
+)
+
+private val ExtrasEmberDark = ExtrasDark.copy(
+    brandFrom = Color(0xFFFFA261),
+    brandTo = Color(0xFFF2701F),
+    onBrand = Color(0xFF3A1604),
+    warnFrom = Color(0xFFFF8A8D),
+    warnTo = Color(0xFFFF5A5F),
+    dangerFrom = Color(0xFFF87171),
+    dangerTo = Color(0xFFDC2626),
+    success = Color(0xFFFF8A3D),
+    glass = Color(0xEB1C1612),
+    fatBurn = true
+)
+
 private val LocalNutriColors = staticCompositionLocalOf { ExtrasLight }
 private val LocalMacroPalette = staticCompositionLocalOf { MacroLight }
 
@@ -248,18 +324,36 @@ object NutriTheme {
 @ReadOnlyComposable
 fun macroPalette(): MacroPalette = LocalMacroPalette.current
 
+/**
+ * Тема приложения. fatBurn = режим «Сжигание жира» (цель по % жира задана):
+ * вся палитра переключается на оранжевую сразу, без перезапуска — MainActivity
+ * наблюдает настройки потоком.
+ */
 @Composable
 fun NutriLensTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
+    fatBurn: Boolean = false,
     content: @Composable () -> Unit
 ) {
+    val extras = when {
+        fatBurn && darkTheme -> ExtrasEmberDark
+        fatBurn -> ExtrasEmberLight
+        darkTheme -> ExtrasDark
+        else -> ExtrasLight
+    }
+    val scheme = when {
+        fatBurn && darkTheme -> EmberNight
+        fatBurn -> EmberLight
+        darkTheme -> EmeraldNight
+        else -> IvoryLight
+    }
     CompositionLocalProvider(
-        LocalNutriColors provides if (darkTheme) ExtrasDark else ExtrasLight,
+        LocalNutriColors provides extras,
         LocalMacroPalette provides if (darkTheme) MacroDark else MacroLight,
         LocalReducedMotion provides rememberReducedMotion()
     ) {
         MaterialTheme(
-            colorScheme = if (darkTheme) EmeraldNight else IvoryLight,
+            colorScheme = scheme,
             shapes = NutriShapes,
             typography = NutriTypography,
             content = content
