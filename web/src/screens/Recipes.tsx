@@ -11,7 +11,7 @@ import { IcBook, IcCamera, IcClipboard, IcClock, IcFlame, IcHeart, IcRefresh, Ic
 
 /** Цвет обложки без картинки — по категории блюда. */
 export const CATEGORY_TINT: Record<Recipe['category'], [string, string]> = {
-  breakfast: ['#FFB868', '#F2766B'], lunch: ['#5FD49B', '#16936A'], dinner: ['#8C9BFF', '#5A4FCF'],
+  breakfast: ['#FFB868', '#F2766B'], lunch: ['var(--cat-lunch-from)', 'var(--cat-lunch-to)'], dinner: ['#8C9BFF', '#5A4FCF'],
   snack: ['#5CD5D0', '#1E8FA3'], dessert: ['#FF9CC2', '#D9508A'], drink: ['#7FC8FF', '#3A7BE0']
 }
 

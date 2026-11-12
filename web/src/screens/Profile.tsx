@@ -2,14 +2,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { type Settings, getSettings, latestMeasurement, latestWeight, saveSettings } from '../data/db'
 import { exportBackup, importBackup } from '../data/actions'
-import { effectiveGoals, fatGoalOn, fmt1 } from '../data/body'
+import { bodyProfile, defaultFatTarget, effectiveGoals, fatGoalOn, fmt1 } from '../data/body'
 import { FatGoalForm, MeasureSheet } from './Body'
 import { dailyResetTime, usageToday } from '../ai/gemini'
 import { activeProvider, hasSelectedKey } from '../ai'
 import { KeyField, ProviderCards } from '../ui/AiSetup'
 import { Avatar, avatarFromFile } from '../ui/Avatar'
 import { schedulePush } from '../data/leaderboard'
-import { Badge, Sheet, useData, useSheetClose, useToast } from '../ui/kit'
+import { Badge, Segmented, Sheet, useData, useSheetClose, useToast } from '../ui/kit'
 import { IcCamera, IcChevronL, IcChevronR, IcDownload, IcInfo, IcKey, IcRuler, IcShare, IcTarget, IcTrophy, IcUpload, IcUser } from '../ui/icons'
 
 type Section = 'goals' | 'fat' | 'measure' | 'about' | 'ai' | 'data' | 'install' | 'leaderboard' | null
@@ -17,6 +17,7 @@ type Section = 'goals' | 'fat' | 'measure' | 'about' | 'ai' | 'data' | 'install'
 export function ProfileScreen({ openAi = 0, onOpenLeaderboard, onBack }: { openAi?: number; onOpenLeaderboard: () => void; onBack: () => void }) {
   const [open, setOpen] = useState<Section>(openAi ? 'ai' : null)
   const avatarRef = useRef<HTMLInputElement>(null)
+  const toast = useToast()
   useEffect(() => { if (openAi) setOpen('ai') }, [openAi])
   const data = useData(async () => ({
     s: await getSettings(), w: (await latestWeight())?.weight ?? null, body: (await latestMeasurement()) ?? null
@@ -29,11 +30,20 @@ export function ProfileScreen({ openAi = 0, onOpenLeaderboard, onBack }: { openA
     try { await saveSettings({ avatar: await avatarFromFile(f) }); schedulePush(500) } catch { /* не картинка */ }
   }
   const g = effectiveGoals(s, w, body)
+  // Переключатель режима. Выключение стирает только план — ручные цели не трогались
+  // и снова действуют. Включение — цель по умолчанию, план посчитается сразу (App).
+  const setMode = async (fat: boolean) => {
+    if (fat === fatOn) return
+    await saveSettings(fat
+      ? { targetFatPercent: defaultFatTarget(bodyProfile(s).female), fatPlan: null }
+      : { targetFatPercent: null, fatPlan: null })
+    toast(fat ? 'Режим «Сжигание жира» включён' : 'Режим «Похудение» — снова твои цели')
+  }
 
   const groups: [string, [Section, React.ReactNode, string, string, string][]][] = [
     ['Питание', [
-      ['goals', <IcTarget size={19} />, 'var(--primary)', 'Цели и макросы', `${Math.round(s.dailyGoal)} ккал`],
-      ['fat', <IcRuler size={19} />, 'var(--secondary)', 'Цель по жиру', fatOn ? `${s.targetFatPercent}%${body ? ` · сейчас ${fmt1(body.fatPercent)}%` : ''}` : 'выкл'],
+      ...(fatOn ? [['fat', <IcRuler size={19} />, 'var(--secondary)', 'Цель по жиру', `${s.targetFatPercent}%${body ? ` · сейчас ${fmt1(body.fatPercent)}%` : ''}`] as [Section, React.ReactNode, string, string, string]] : []),
+      ['goals', <IcTarget size={19} />, 'var(--primary)', 'Цели и макросы', `${Math.round(g.calories)} ккал${g.plan ? ' · авто' : ''}`],
       ...(fatOn || body ? [['measure', <IcRuler size={19} />, 'var(--carbs)', 'Замер тела', body ? 'добавить' : 'первый замер'] as [Section, React.ReactNode, string, string, string]] : []),
       ['about', <IcUser size={19} />, 'var(--protein)', 'О себе', s.nickname || ''],
       ['leaderboard', <IcTrophy size={19} />, 'var(--warn-to)', 'Лидерборд', s.nickname.trim() || 'нет ника']
@@ -71,7 +81,7 @@ export function ProfileScreen({ openAi = 0, onOpenLeaderboard, onBack }: { openA
           </span>
           <div className="grow">
             <div className="h2 ellipsis">{s.nickname.trim() || 'Без ника'}</div>
-            <div className="small num">Цель {Math.round(s.dailyGoal)} ккал{w != null ? ` · ${w.toFixed(1).replace(".", ",")} кг` : ''}</div>
+            <div className="small num">Цель {Math.round(g.calories)} ккал{w != null ? ` · ${w.toFixed(1).replace(".", ",")} кг` : ''}</div>
           </div>
         </button>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
@@ -93,6 +103,16 @@ export function ProfileScreen({ openAi = 0, onOpenLeaderboard, onBack }: { openA
         {groups.map(([title, rows]) => (
           <div key={title} className="col gap-8">
             <div className="overline" style={{ margin: '10px 4px 0' }}>{title}</div>
+            {title === 'Питание' && (
+              <div className="card r24 pad-14 col gap-10">
+                <Segmented options={[[0, 'Похудение'], [1, 'Сжигание жира']]} value={fatOn ? 1 : 0} onChange={(v) => setMode(v === 1)} />
+                <div className="small" style={{ padding: '0 4px' }}>
+                  {fatOn
+                    ? 'Меньше жира при тех же мышцах: калории и БЖУ считаются сами и подстраиваются раз в неделю по весу и дневнику.'
+                    : 'Свои цели по калориям и БЖУ. «Сжигание жира» посчитает план сам — от процента жира и сухой массы.'}
+                </div>
+              </div>
+            )}
             <div className="card r24" style={{ overflow: 'hidden' }}>
               {rows.map(([key, icon, tint, label, value], i) => (
                 <button key={label} className="row gap-14" onClick={() => key === 'leaderboard' ? onOpenLeaderboard() : setOpen(key)}
@@ -120,11 +140,12 @@ export function ProfileScreen({ openAi = 0, onOpenLeaderboard, onBack }: { openA
   )
 }
 
-function NumField({ id, label, value, onChange, placeholder }: { id: string; label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
+function NumField({ id, label, value, onChange, placeholder, disabled }: { id: string; label: string; value: string; onChange: (v: string) => void; placeholder?: string; disabled?: boolean }) {
   return (
     <div className="grow">
       <label className="field-label" htmlFor={id}>{label}</label>
-      <input id={id} className="field num" inputMode="decimal" value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
+      <input id={id} className="field num" inputMode="decimal" value={value} placeholder={placeholder} disabled={disabled}
+        style={disabled ? { opacity: 0.55, background: 'var(--surface-low)' } : undefined} onChange={(e) => onChange(e.target.value)} />
     </div>
   )
 }
@@ -142,22 +163,35 @@ function GoalsForm({ s }: { s: Settings }) {
   const [f, setF] = useState(s.fatGoal ? String(s.fatGoal) : '')
   const [c, setC] = useState(s.carbsGoal ? String(s.carbsGoal) : '')
   const ok = (toNum(kcal) ?? 0) >= 800
+  // В режиме сжигания жира поля только показывают план: ручные цели не меняем,
+  // чтобы при возврате в «Похудение» они остались как были.
+  const auto = fatGoalOn(s)
+  const plan = auto ? s.fatPlan : null
+  const shown = (manual: string, v: number | undefined) => (plan && v != null ? String(v) : manual)
   return (
     <div className="col gap-14">
       <div className="h1">Цели и макросы</div>
-      <NumField id="g-kcal" label="Дневная норма, ккал" value={kcal} onChange={setKcal} />
-      <div className="small">Белки, жиры и углеводы можно оставить пустыми — посчитаю сам от веса и нормы калорий.</div>
-      {fatGoalOn(s) && <div className="small" style={{ color: 'var(--secondary)', fontWeight: 700 }}>Включена цель по жиру — белок считается от сухой массы, поле «Белки» пока не действует.</div>}
+      {auto && (
+        <div className="row gap-10 small" style={{ padding: 14, borderRadius: 18, background: 'color-mix(in srgb, var(--primary) 10%, var(--surface))', alignItems: 'flex-start' }}>
+          <span style={{ color: 'var(--primary)', marginTop: 1 }}><IcInfo size={18} /></span>
+          <span><b style={{ color: 'var(--text)' }}>В режиме сжигания жира считается автоматически</b> — по весу, замерам и дневнику, пересчёт раз в неделю.
+            {plan ? '' : ' Запиши вес — и план появится.'} Твои цели сохранены и вернутся в режиме «Похудение».</span>
+        </div>
+      )}
+      <NumField id="g-kcal" label="Дневная норма, ккал" value={shown(kcal, plan?.calories)} onChange={setKcal} disabled={auto} />
+      {!auto && <div className="small">Белки, жиры и углеводы можно оставить пустыми — посчитаю сам от веса и нормы калорий.</div>}
       <div className="row gap-8">
-        <NumField id="g-p" label="Белки, г" value={p} onChange={setP} placeholder="авто" />
-        <NumField id="g-f" label="Жиры, г" value={f} onChange={setF} placeholder="авто" />
-        <NumField id="g-c" label="Углев., г" value={c} onChange={setC} placeholder="авто" />
+        <NumField id="g-p" label="Белки, г" value={shown(p, plan?.protein)} onChange={setP} placeholder="авто" disabled={auto} />
+        <NumField id="g-f" label="Жиры, г" value={shown(f, plan?.fat)} onChange={setF} placeholder="авто" disabled={auto} />
+        <NumField id="g-c" label="Углев., г" value={shown(c, plan?.carbs)} onChange={setC} placeholder="авто" disabled={auto} />
       </div>
-      <button className="btn btn-brand full" disabled={!ok} onClick={async () => {
-        await saveSettings({ dailyGoal: toNum(kcal)!, proteinGoal: toNum(p), fatGoal: toNum(f), carbsGoal: toNum(c) })
-        close()
-        toast('Цели сохранены')
-      }}>Сохранить</button>
+      {auto
+        ? <button className="btn btn-soft full" onClick={close}>Понятно</button>
+        : <button className="btn btn-brand full" disabled={!ok} onClick={async () => {
+            await saveSettings({ dailyGoal: toNum(kcal)!, proteinGoal: toNum(p), fatGoal: toNum(f), carbsGoal: toNum(c) })
+            close()
+            toast('Цели сохранены')
+          }}>Сохранить</button>}
     </div>
   )
 }

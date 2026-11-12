@@ -39,6 +39,8 @@
   --fat: #D9620F;
   --carbs: #7D5FD6;
   --gold: #F2B53A;
+  --cat-lunch-from: #5FD49B;
+  --cat-lunch-to: #16936A;
   --shadow-1: 0 1px 2px rgba(13, 20, 17, 0.05);
   --shadow-2: 0 8px 24px rgba(13, 20, 17, 0.07);
   --glow: 0 10px 28px rgba(18, 161, 116, 0.35);
@@ -101,10 +103,77 @@
   }
 }
 
+/* ---------- Режим «Сжигание жира»: тёплый оранжевый акцент ----------
+   Включается атрибутом data-mode="fat" на <html> (ui/theme.ts). Селектор
+   :root[data-mode] сильнее :root, поэтому светлая палитра перекрывает базовую;
+   тёмная идёт ниже в @media и перекрывает светлую. Предупреждение о переборе
+   (tertiary / warn) уходит в красный — иначе сольётся с оранжевым акцентом.
+   Поверхности — тёплые нейтральные вместо зеленоватых. */
+:root[data-mode="fat"] {
+  --bg: #F7F4F0;
+  --surface: #FFFFFF;
+  --surface-low: #FBF9F7;
+  --surface-high: #F0EBE6;
+  --surface-highest: #EAE4DE;
+  --text: #17110D;
+  --text-2: #594F47;
+  --text-3: #73685F;
+  --hairline: rgba(23, 17, 13, 0.08);
+  --primary: #BF4F08;
+  --primary-cont: #FFE6D3;
+  --on-primary-cont: #5C2203;
+  --tertiary: #D93A3F;
+  --tertiary-cont: #FDE3E4;
+  --on-tertiary-cont: #6E1418;
+  --brand-from: #F07A2A;
+  --brand-to: #C9540A;
+  --on-brand: #FFFFFF;
+  --warn-from: #F2686C;
+  --warn-to: #D93A3F;
+  --cat-lunch-from: #FFD36B;
+  --cat-lunch-to: #D99A12;
+  --shadow-1: 0 1px 2px rgba(23, 17, 13, 0.05);
+  --shadow-2: 0 8px 24px rgba(23, 17, 13, 0.07);
+  --glow: 0 10px 28px rgba(232, 101, 10, 0.33);
+  --tab-bg: rgba(251, 249, 247, 0.94);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-mode="fat"] {
+    --bg: #0E0B09;
+    --surface: #171310;
+    --surface-low: #120F0C;
+    --surface-high: #221C17;
+    --surface-highest: #2A231D;
+    --text: #F3EEEA;
+    --text-2: #B3A8A0;
+    --text-3: #948980;
+    --hairline: rgba(255, 255, 255, 0.08);
+    --primary: #FF8A3D;
+    --primary-cont: #4A2310;
+    --on-primary-cont: #FFD9BF;
+    --tertiary: #FF5A5F;
+    --tertiary-cont: #4C1719;
+    --on-tertiary-cont: #FFD6D7;
+    --brand-from: #FF9A52;
+    --brand-to: #F06A14;
+    --on-brand: #2B1100;
+    --warn-from: #FF7A7E;
+    --warn-to: #FF5A5F;
+    --cat-lunch-from: #FFD36B;
+    --cat-lunch-to: #C98A0B;
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-2: 0 10px 28px rgba(0, 0, 0, 0.35);
+    --glow: 0 10px 28px rgba(255, 138, 61, 0.28);
+    --tab-bg: rgba(18, 15, 12, 0.94);
+  }
+}
+
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
 html, body {
   margin: 0;
+  transition: background-color var(--t-long) var(--ease-std);
   height: 100%;
   background: var(--bg);
   color: var(--text);
@@ -343,6 +412,16 @@ textarea.field { resize: none; min-height: 92px; line-height: 1.4; }
 }
 .toast button { color: var(--brand-from); font-weight: 800; }
 @keyframes toastIn { from { opacity: 0; transform: translateY(20px) scale(0.96); } to { opacity: 1; transform: none; } }
+
+/* ---------- Режим «Сжигание жира» ---------- */
+
+.mode-pill {
+  align-self: flex-start; max-width: 100%;
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 30px; padding: 0 12px; border-radius: 999px;
+  font-size: 13px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: var(--primary-cont); color: var(--on-primary-cont);
+}
 
 /* ---------- Мелочи ---------- */
 

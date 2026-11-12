@@ -3,7 +3,7 @@ import { useState } from 'react'
 import {
   type BodyMeasurement, type Settings, getSettings, latestWeight, measurementOn, putMeasurement, saveSettings
 } from '../data/db'
-import { FAT_TARGET_MAX, FAT_TARGET_MIN, bodyProfile, composition, fatGoalOn, fmt1, measurementFat, navyFatPercent } from '../data/body'
+import { FAT_TARGET_MAX, FAT_TARGET_MIN, bodyProfile, composition, defaultFatTarget, fatGoalOn, fmt1, measurementFat, navyFatPercent } from '../data/body'
 import { iso } from '../data/insights'
 import { Segmented, Sheet, useData, useSheetClose, useToast } from '../ui/kit'
 import { IcInfo, IcMinus, IcPlus } from '../ui/icons'
@@ -104,14 +104,14 @@ function Field({ id, label, value, onChange, placeholder }: { id: string; label:
   )
 }
 
-/** Профиль → «Цель по жиру»: включить, выбрать процент, рост и пол для формулы. */
+/** Профиль → «Цель по жиру»: режим, целевой процент, рост и пол для формулы. */
 export function FatGoalForm({ s, hasMeasurement, onMeasure }: { s: Settings; hasMeasurement: boolean; onMeasure: () => void }) {
   const close = useSheetClose()
   const toast = useToast()
   const prof = bodyProfile(s)
   const [on, setOn] = useState(fatGoalOn(s))
   const [female, setFemale] = useState(prof.female ?? false)
-  const [target, setTarget] = useState<number>(s.targetFatPercent ?? (prof.female ? 23 : 15))
+  const [target, setTarget] = useState<number>(s.targetFatPercent ?? defaultFatTarget(prof.female))
   const [height, setHeight] = useState(str(prof.heightCm))
   const h = num(height)
   const heightOk = h == null || (h >= 120 && h <= 230)
@@ -121,10 +121,10 @@ export function FatGoalForm({ s, hasMeasurement, onMeasure }: { s: Settings; has
     <div className="col gap-14">
       <div className="h1">Цель по жиру</div>
       <div className="small" style={{ fontSize: 14 }}>
-        Не просто меньше килограммов, а меньше жира при тех же мышцах. Белок поднимется до 2,6 г на кг сухой массы —
-        он будет главной цифрой на «Сегодня» рядом с калориями. Прогресс — по замерам талии и шеи раз в неделю.
+        Не просто меньше килограммов, а меньше жира при тех же мышцах. Калории и БЖУ посчитаю сам и буду подстраивать
+        раз в неделю по весу и дневнику; белок — 2,6 г на кг сухой массы. Прогресс — по замерам талии и шеи раз в неделю.
       </div>
-      <Segmented options={[[1, 'Включена'], [0, 'Выключена']]} value={on ? 1 : 0} onChange={(v) => setOn(v === 1)} />
+      <Segmented options={[[0, 'Похудение'], [1, 'Сжигание жира']]} value={on ? 1 : 0} onChange={(v) => setOn(v === 1)} />
       {on && (
         <>
           <div className="card pad-16 row gap-12" style={{ background: 'var(--surface-low)' }}>
@@ -143,7 +143,9 @@ export function FatGoalForm({ s, hasMeasurement, onMeasure }: { s: Settings; has
         </>
       )}
       <button className="btn btn-brand full" disabled={!heightOk} onClick={async () => {
+        // Выключили — план стираем (ручные цели и так целы); сменили цель — план пересчитается сам.
         const patch: Partial<Settings> = { targetFatPercent: on ? target : null }
+        if (!on) patch.fatPlan = null
         if (on) {
           patch.sex = female ? 'female' : 'male'
           if (h != null) patch.heightCm = Math.round(h)
@@ -151,7 +153,7 @@ export function FatGoalForm({ s, hasMeasurement, onMeasure }: { s: Settings; has
         await saveSettings(patch)
         close()
         if (on && !hasMeasurement) setTimeout(onMeasure, 260)
-        toast(on ? `Цель: ${target}% жира` : 'Цель по жиру выключена')
+        toast(on ? `Цель: ${target}% жира` : 'Режим «Похудение» — снова твои цели')
       }}>{on && !hasMeasurement ? 'Сохранить и сделать замер' : 'Сохранить'}</button>
     </div>
   )

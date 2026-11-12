@@ -2,6 +2,7 @@
 // для цели «процент жира». Чистые функции — без IndexedDB и React.
 import type { BodyMeasurement, Settings } from './db'
 import { macroGoals, type MacroGoals } from './insights'
+import type { FatPlan } from './fatplan'
 
 export const FAT_TARGET_MIN = 8
 export const FAT_TARGET_MAX = 35
@@ -97,16 +98,48 @@ export function fatGoalProtein(weight: number | null, fatPercent: number | null)
   return Math.round(g / 5) * 5
 }
 
+export interface EffectiveGoals extends MacroGoals {
+  calories: number
+  /** План режима «Сжигание жира», если цели посчитаны им; null — ручные цели. */
+  plan: FatPlan | null
+}
+
 /**
- * Цели БЖУ, которые видит пользователь. Единая точка: при включённой цели по жиру
- * белок считается от сухой массы вместо обычной цели.
+ * Калорийная цель дня — единая точка для «Сегодня», коуча, лидерборда и снимка
+ * цели в записи еды. В режиме сжигания жира — из плана, иначе ручная.
  */
-export function effectiveGoals(s: Settings, weight: number | null, latest: BodyMeasurement | null | undefined): MacroGoals {
-  const g = macroGoals(s.proteinGoal, s.fatGoal, s.carbsGoal, s.dailyGoal, weight)
+export function effectiveCalories(s: Pick<Settings, 'targetFatPercent' | 'fatPlan' | 'dailyGoal'>): number {
+  return fatGoalOn(s) && s.fatPlan ? s.fatPlan.calories : s.dailyGoal
+}
+
+/**
+ * Цели, которые видит пользователь. Единая точка: в режиме сжигания жира — план
+ * (калории и БЖУ считаются сами); пока плана нет (не записан вес) — ручные цели,
+ * но белок уже от сухой массы.
+ */
+export function effectiveGoals(s: Settings, weight: number | null, latest: BodyMeasurement | null | undefined): EffectiveGoals {
+  if (fatGoalOn(s) && s.fatPlan) {
+    const p = s.fatPlan
+    return { calories: p.calories, protein: p.protein, fat: p.fat, carbs: p.carbs, plan: p }
+  }
+  const g = { ...macroGoals(s.proteinGoal, s.fatGoal, s.carbsGoal, s.dailyGoal, weight), calories: s.dailyGoal, plan: null }
   if (!fatGoalOn(s)) return g
   const p = fatGoalProtein(weight, latest?.fatPercent ?? null)
   return p != null ? { ...g, protein: p } : g
 }
+
+/**
+ * Множитель активности для плана. Отдельного поля нет — онбординг пишет уровень
+ * в «О себе» («активность средняя»), берём оттуда; не нашли — null (будет 1,4).
+ */
+export function activityFactor(s: Pick<Settings, 'userContext'>): number | null {
+  const m = /активност\S*\s+(низк|средн|высок)/i.exec(s.userContext)
+  if (!m) return null
+  return { 'низк': 1.3, 'средн': 1.5, 'высок': 1.7 }[m[1].toLowerCase() as 'низк' | 'средн' | 'высок']
+}
+
+/** Режим по умолчанию: 15% у мужчин, 23% у женщин. */
+export const defaultFatTarget = (female: boolean | null): number => (female ? 23 : 15)
 
 /** Строка для ИИ-коуча; пусто, если данных нет. */
 export function bodyContext(s: Settings, weight: number | null, latest: BodyMeasurement | null | undefined): string {

@@ -1,6 +1,7 @@
 // Хранилище NutriLens Web: IndexedDB на устройстве (данные никуда не уходят).
 // Схема повторяет Android-версию, чтобы бэкапы переносились в обе стороны.
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
+import type { FatPlan } from './fatplan'
 
 export interface MealItem {
   name: string
@@ -60,6 +61,13 @@ export interface Settings {
   sex: 'male' | 'female' | null
   /** Цель по проценту жира; null — функция выключена. */
   targetFatPercent: number | null
+  /**
+   * Режим «Сжигание жира»: посчитанный план калорий и БЖУ. Хранится, чтобы цифры
+   * не прыгали между пересчётами (раз в 7 дней). Ручные цели выше не трогаются —
+   * выключил режим, и они снова действуют. Хранилище settings — один объект,
+   * поэтому новое поле не требует новой версии базы: старые записи получают null.
+   */
+  fatPlan: FatPlan | null
 }
 
 /** Замер тела: один на дату. manualFatPercent (весы, калипер, DEXA) важнее формулы. */
@@ -117,7 +125,8 @@ export const DEFAULT_SETTINGS: Settings = {
   avatar: '',
   heightCm: null,
   sex: null,
-  targetFatPercent: null
+  targetFatPercent: null,
+  fatPlan: null
 }
 
 // ---------- Книга рецептов ----------

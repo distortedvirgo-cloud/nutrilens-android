@@ -5,6 +5,7 @@ import { hasSelectedKey } from '../ai'
 import { type Favorite, type Meal, addWater, favorites, getSettings, putMeal, setWeight, toggleWorkout, uid } from '../data/db'
 import { enqueueAnalysis, runQueue, storePhoto } from '../data/actions'
 import { iso, nowTime } from '../data/insights'
+import { effectiveCalories } from '../data/body'
 import { Badge, Photo, Sheet, useData, useSheetClose, useToast } from '../ui/kit'
 import { IcCamera, IcChevronR, IcClose, IcDrop, IcDumbbell, IcGallery, IcScale, IcSpark, IcText, IcBook } from '../ui/icons'
 
@@ -60,7 +61,7 @@ function QuickAddBody({ favs, onCompose, onWeigh, onRecipe }: {
     const meal: Meal = {
       id: uid(), date: iso(new Date()), time: nowTime(), name: f.name, calories: f.calories, protein: f.protein,
       fat: f.fat, carbs: f.carbs, aiThoughts: 'Добавлено из избранного', reasoning: '', confidenceScore: 10,
-      healthScore: null, healthNote: null, dailyGoalSnapshot: s.dailyGoal, createdAt: Date.now(), items: [], photoIds: []
+      healthScore: null, healthNote: null, dailyGoalSnapshot: effectiveCalories(s), createdAt: Date.now(), items: [], photoIds: []
     }
     await putMeal(meal)
     close()

@@ -3,6 +3,9 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { type Meal, type Settings, getSettings, onDataChanged } from './data/db'
 import { runQueue } from './data/actions'
+import { fatGoalOn } from './data/body'
+import { ensureFatPlan } from './data/plan'
+import { applyMode } from './ui/theme'
 import { applyUpdate, checkUpdate, remindLater, skipVersion, type UpdateInfo } from './data/update'
 import { TodayScreen } from './screens/Today'
 import { ProgressScreen } from './screens/Progress'
@@ -63,10 +66,21 @@ function Shell() {
   const [profileAi, setProfileAi] = useState(0)
   useEffect(() => {
     const load = () => getSettings().then(setSettings)
+    // План «Сжигание жира» пересчитывается сам, когда пора: при запуске, при
+    // возврате в приложение (новый день) и после изменений (включили режим,
+    // сменили цель, первый замер). Не пора — ничего не пишет.
+    const plan = () => { ensureFatPlan().catch(() => {}) }
     load()
+    plan()
     schedulePush(1500)
-    return onDataChanged(() => { load(); schedulePush() })
+    const onVis = () => document.visibilityState === 'visible' && plan()
+    document.addEventListener('visibilitychange', onVis)
+    const off = onDataChanged(() => { load(); plan(); schedulePush() })
+    return () => { off(); document.removeEventListener('visibilitychange', onVis) }
   }, [])
+  // Акцент приложения: оранжевый в режиме сжигания жира — сразу, без перезапуска.
+  const fatMode = settings ? fatGoalOn(settings) : null
+  useEffect(() => { if (fatMode != null) applyMode(fatMode) }, [fatMode])
   const openAiSetup = () => { setChat(null); setBoard(false); setRecipeId(null); setTab('profile'); setProfileAi((n) => n + 1) }
 
   // Новая версия на сервере — окно со сводкой. Проверяем при входе и при

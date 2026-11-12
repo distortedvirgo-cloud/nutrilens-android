@@ -5,7 +5,8 @@ import {
   type BodyMeasurement, type Recipe } from './db'
 import { analyzeMeal, chat } from '../ai'
 import { addDays, dayTotals, iso, nowTime } from './insights'
-import { bodyContext, effectiveGoals, FAT_TARGET_MAX, FAT_TARGET_MIN } from './body'
+import { bodyContext, effectiveCalories, effectiveGoals, FAT_TARGET_MAX, FAT_TARGET_MIN } from './body'
+import { fatPlanFromFlat, fatPlanToFlat, parseFatPlan } from './fatplan'
 
 // ---------- Фото: сжатие перед ИИ и хранением ----------
 
@@ -122,7 +123,7 @@ async function processJob(job: Job): Promise<Meal> {
     confidenceScore: r.confidenceScore,
     healthScore: r.healthScore,
     healthNote: r.healthNote,
-    dailyGoalSnapshot: settings.dailyGoal,
+    dailyGoalSnapshot: effectiveCalories(settings),
     createdAt: existing?.createdAt ?? Date.now(),
     items: r.items,
     photoIds: existing?.photoIds ?? job.photoIds
@@ -151,7 +152,7 @@ export async function sendChat(text: string): Promise<void> {
   const body = await latestMeasurement()
   const g = effectiveGoals(settings, w, body)
   const bodyLine = bodyContext(settings, w, body)
-  const remaining = Math.round(settings.dailyGoal) - Math.round(t.calories)
+  const remaining = Math.round(g.calories) - Math.round(t.calories)
   const week = await mealsBetween(iso(addDays(new Date(), -6)), iso(addDays(new Date(), -1)))
   const byDay = new Map<string, number>()
   week.forEach((m) => byDay.set(m.date, (byDay.get(m.date) ?? 0) + m.calories))
@@ -161,7 +162,7 @@ export async function sendChat(text: string): Promise<void> {
     '',
     `СЕЙЧАС: ${today} ${nowTime()}.`,
     `ПОЛЬЗОВАТЕЛЬ: ${settings.userContext || 'о себе ничего не написал'}${w != null ? `. Вес ${w.toFixed(1)} кг` : ''}.`,
-    `ЦЕЛЬ: ${Math.round(settings.dailyGoal)} ккал/день. Сегодня съедено ${Math.round(t.calories)} ккал, ${remaining >= 0 ? `осталось ${remaining}` : `перебор ${-remaining}`} ккал. ` +
+    `ЦЕЛЬ: ${Math.round(g.calories)} ккал/день${g.plan ? ' (режим «Сжигание жира»: калории и БЖУ посчитаны автоматически по весу и дневнику, пересчёт раз в неделю — не предлагай менять цель вручную)' : ''}. Сегодня съедено ${Math.round(t.calories)} ккал, ${remaining >= 0 ? `осталось ${remaining}` : `перебор ${-remaining}`} ккал. ` +
       `БЖУ сегодня: Б ${Math.round(t.protein)}/${g.protein} г, Ж ${Math.round(t.fat)}/${g.fat} г, У ${Math.round(t.carbs)}/${g.carbs} г (съедено/цель).`,
     bodyLine ? `СОСТАВ ТЕЛА: ${bodyLine}` : '',
     `СЕГОДНЯ В ДНЕВНИКЕ: ${meals.map((m) => `${m.name} — ${Math.round(m.calories)} ккал`).join('; ') || 'пока ничего'}.`,
@@ -189,7 +190,11 @@ export async function exportBackup(): Promise<Blob> {
       id: 1, apiKey: s.apiKey, nanoApiKey: s.nanoApiKey, nanoApiEndpoint: s.nanoEndpoint,
       apiMode: s.provider === 'gemini' ? 'free' : 'simple', dailyGoal: s.dailyGoal, proteinGoal: s.proteinGoal, fatGoal: s.fatGoal,
       carbsGoal: s.carbsGoal, userContext: s.userContext, leaderboardNickname: s.nickname,
-      heightCm: s.heightCm, sex: s.sex, targetFatPercent: s.targetFatPercent
+      heightCm: s.heightCm, sex: s.sex, targetFatPercent: s.targetFatPercent,
+      // План режима «Сжигание жира»: целиком для веба и плоскими полями, как их
+      // пишет Android. Старые версии эти поля просто не знают.
+      fatPlan: s.fatPlan,
+      ...fatPlanToFlat(s.fatPlan)
     },
     meals: meals.map(({ items: _i, photoIds: _p, ...m }) => m),
     meal_items: meals.flatMap((m) => m.items.map((i) => ({ ...i, mealId: m.id }))),
@@ -299,6 +304,9 @@ export async function importBackup(file: Blob): Promise<number> {
       targetFatPercent: 'targetFatPercent' in s
         ? (s.targetFatPercent == null ? null : Math.min(FAT_TARGET_MAX, Math.max(FAT_TARGET_MIN, Number(s.targetFatPercent))))
         : (current?.targetFatPercent ?? null),
+      // Веб-план, иначе Android-поля; старый бэкап без плана — null, и план
+      // пересчитается по импортированным данным.
+      fatPlan: parseFatPlan(s.fatPlan) ?? fatPlanFromFlat(s),
       onboarded: true
     })
   }

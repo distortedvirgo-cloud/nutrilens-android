@@ -42,13 +42,13 @@ export function CoachScreen({ onOpenChat }: { onOpenChat: (q?: string) => void }
     return {
       s, totals, goals, workout,
       habits: await habitsOn(today),
-      insights: buildInsights({ hour: new Date().getHours(), totals, dailyGoal: s.dailyGoal, goals, waterMl: water, waterNormMl: norm, streak, workout }),
+      insights: buildInsights({ hour: new Date().getHours(), totals, dailyGoal: goals.calories, goals, waterMl: water, waterNormMl: norm, streak, workout }),
       focus: nextMealFocus(totals, goals),
       chat: (await chatHistory()).slice(-2)
     }
   }, [today], null)
   if (!data) return <div className="screen" />
-  const remaining = Math.round(data.s.dailyGoal - data.totals.calories)
+  const remaining = Math.round(data.goals.calories - data.totals.calories)
   const done = HABITS.filter(([id]) => data.habits.has(id)).length
 
   return (

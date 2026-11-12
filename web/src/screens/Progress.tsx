@@ -3,9 +3,11 @@ import { useState } from 'react'
 import { getSettings, mealsBetween, waterBetween, weightsBetween } from '../data/db'
 import { addDays, calcStreak, iso, parseIso, waterNorm } from '../data/insights'
 import { type BodyMeasurement, allMealDates, latestWeight, measurements } from '../data/db'
-import { composition, etaText, fatGoalOn, fmt1, plural } from '../data/body'
+import { composition, effectiveCalories, etaText, fatGoalOn, fmt1, plural } from '../data/body'
+import { type DataStatus, type FatPlan, daysBetween } from '../data/fatplan'
+import { planDataStatus } from '../data/plan'
 import { Badge, Bar, Segmented, useData } from '../ui/kit'
-import { IcAlert, IcChart, IcDrop, IcFire, IcFood, IcPlus, IcRuler, IcScale, IcTarget } from '../ui/icons'
+import { IcAlert, IcChart, IcDrop, IcFire, IcFood, IcInfo, IcPlus, IcRuler, IcScale, IcSpark, IcTarget } from '../ui/icons'
 import { MeasureSheet } from './Body'
 
 const SHORT_WD = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб']
@@ -28,7 +30,7 @@ export function ProgressScreen() {
       return { date: iso(d), kcal: byDay.get(iso(d)) ?? 0 }
     })
     const active = days.filter((d) => d.kcal > 0)
-    const goal = settings.dailyGoal
+    const goal = effectiveCalories(settings)
     const water = await waterBetween(start, end)
     const w = (await latestWeight())?.weight ?? null
     return {
@@ -44,7 +46,10 @@ export function ProgressScreen() {
       waterNorm: waterNorm(w, false),
       weight: w,
       targetFat: fatGoalOn(settings) ? settings.targetFatPercent : null,
-      body: await measurements()
+      body: await measurements(),
+      fatMode: fatGoalOn(settings),
+      plan: settings.fatPlan,
+      status: fatGoalOn(settings) ? await planDataStatus() : null
     }
   }, [period], null)
 
@@ -56,6 +61,7 @@ export function ProgressScreen() {
           <div className="small">Как проходит твой период</div>
         </div>
         <Segmented options={[[7, 'Неделя'], [30, 'Месяц'], [365, 'Год']]} value={period} onChange={setPeriod} />
+        {data?.fatMode && <PlanCard plan={data.plan} status={data.status} />}
         {data && (data.targetFat != null || data.body.length > 0) && (
           <BodyCard list={data.body} weight={data.weight} target={data.targetFat} onMeasure={() => setMeasuring(true)} />
         )}
@@ -292,9 +298,75 @@ function BodyCard({ list, weight, target, onMeasure }: {
   )
 }
 
-const MiniStat = ({ v, l, color }: { v: string; l: string; color: string }) => (
-  <div className="col" style={{ padding: '10px 12px', borderRadius: 16, background: 'var(--surface-low)', border: '1px solid var(--hairline)' }}>
-    <span className="h2 num" style={{ color }}>{v}</span>
+const MiniStat = ({ v, l, color, small }: { v: string; l: string; color: string; small?: boolean }) => (
+  <div className="col" style={{ padding: '10px 12px', borderRadius: 16, background: 'var(--surface-low)', border: '1px solid var(--hairline)', minWidth: 0 }}>
+    <span className={small ? 'title num' : 'h2 num'} style={{ color, whiteSpace: small ? undefined : 'nowrap' }}>{v}</span>
     <span className="label">{l}</span>
   </div>
 )
+
+const rateText = (r: number) => `${r > 0 ? '−' : r < 0 ? '+' : ''}${fmt1(Math.abs(r))}% в неделю`
+
+/**
+ * «План на неделю» режима сжигания жира: калории и БЖУ, откуда расход, темп
+ * цель/факт, почему план такой и когда пересчёт. Нехватку данных показываем
+ * по живым цифрам, а не по сохранённому плану — иначе «нужно ещё 3 взвешивания»
+ * висело бы до пересчёта.
+ */
+function PlanCard({ plan, status }: { plan: FatPlan | null; status: DataStatus | null }) {
+  const head = (
+    <div className="row gap-12">
+      <Badge tint="var(--primary)" size={40}><IcFire size={20} /></Badge>
+      <div className="grow title">План на неделю</div>
+      <span className="chip primary" style={{ height: 30, fontSize: 13 }}>авто</span>
+    </div>
+  )
+  const explain = <div className="label">План сам подстраивается по весу и дневнику еды. Точнее он станет примерно через 2 недели записей и 4+ взвешиваний.</div>
+  if (!plan) {
+    return (
+      <div className="card pad-18 col gap-12">
+        {head}
+        <div className="small">Запиши вес — посчитаю калории и БЖУ для сжигания жира.</div>
+        {explain}
+      </div>
+    )
+  }
+  const left = Math.max(0, daysBetween(iso(new Date()), plan.nextDate))
+  return (
+    <div className="card pad-18 col gap-14">
+      {head}
+      <div className="row gap-8" style={{ alignItems: 'baseline' }}>
+        <span className="display num">{plan.calories}</span>
+        <span className="small">ккал в день</span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+        <MiniStat v={`${plan.protein} г`} l="белок" color="var(--protein)" />
+        <MiniStat v={`${plan.fat} г`} l="жиры" color="var(--fat)" />
+        <MiniStat v={`${plan.carbs} г`} l="углеводы" color="var(--carbs)" />
+      </div>
+      <div className="small num">
+        Твой расход ≈ <b style={{ color: 'var(--text)' }}>{plan.tdee} ккал</b> ({plan.observed ? 'по твоим данным' : 'по формуле'})
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        <MiniStat v={rateText(plan.targetRate)} l="цель темпа" color="var(--primary)" small />
+        <MiniStat v={plan.actualRate != null ? rateText(plan.actualRate) : '—'} l={plan.actualRate != null ? 'по факту, 3 недели' : 'факт — пока мало данных'} color="var(--text)" small />
+      </div>
+      {plan.note && (
+        <div className="row gap-10 small" style={{ padding: 12, borderRadius: 16, background: 'color-mix(in srgb, var(--primary) 10%, transparent)', alignItems: 'flex-start' }}>
+          <span style={{ color: 'var(--primary)', marginTop: 1 }}><IcSpark size={17} /></span>
+          <span style={{ color: 'var(--text)' }}>{plan.note}</span>
+        </div>
+      )}
+      {status && !status.enough && status.missing && (
+        <div className="row gap-10 small" style={{ alignItems: 'flex-start' }}>
+          <span style={{ color: 'var(--secondary)', marginTop: 1 }}><IcInfo size={17} /></span>
+          <span>Чтобы считать расход по твоим данным, {status.missing}.</span>
+        </div>
+      )}
+      <div className="small" style={{ fontWeight: 700 }}>
+        Следующий пересчёт — {left === 0 ? 'сегодня' : `через ${left} ${plural(left, 'день', 'дня', 'дней')}`}
+      </div>
+      {explain}
+    </div>
+  )
+}

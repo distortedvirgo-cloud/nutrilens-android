@@ -7,6 +7,7 @@ import { fetchText } from '../ai/net'
 import { getPhoto, getSettings, putMeal, putRecipe, uid, type Meal, type Recipe, type RecipeIngredient, type RecipeSourceKind } from './db'
 import { LEADERBOARD_API } from './leaderboard'
 import { iso, nowTime } from './insights'
+import { effectiveCalories } from './body'
 
 // ---------- Очередь импорта (в памяти: разбор занимает 10–60 с) ----------
 
@@ -181,7 +182,7 @@ export async function logRecipe(r: Recipe, portions: number): Promise<Meal> {
     calories: Math.round(n.calories * portions), protein: Math.round(n.protein * portions * 10) / 10,
     fat: Math.round(n.fat * portions * 10) / 10, carbs: Math.round(n.carbs * portions * 10) / 10,
     aiThoughts: `Из книги рецептов: ${portions} порц. из ${r.servings}.`, reasoning: '', confidenceScore: 8,
-    healthScore: null, healthNote: null, dailyGoalSnapshot: s.dailyGoal, createdAt: Date.now(),
+    healthScore: null, healthNote: null, dailyGoalSnapshot: effectiveCalories(s), createdAt: Date.now(),
     items: r.ingredients.filter((i) => (i.calories ?? 0) > 0 || (i.grams ?? 0) > 0).map((i) => ({
       name: i.name, weightG: Math.round((i.grams ?? 0) * f), calories: Math.round((i.calories ?? 0) * f),
       protein: 0, fat: 0, carbs: 0, breakdown: ingredientAmount(i, f)

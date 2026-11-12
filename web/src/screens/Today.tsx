@@ -12,6 +12,8 @@ import {
 } from '../data/insights'
 import { retryJob, runQueue } from '../data/actions'
 import { effectiveGoals, fatGoalOn } from '../data/body'
+import { type FatPlan, daysBetween, plural } from '../data/fatplan'
+import { MeasureSheet } from './Body'
 import { Bar, Badge, Photo, Ring, useCountUp, useData, useToast } from '../ui/kit'
 import {
   IcCamera, IcChevronR, IcKey, IcDrop, IcFire, IcPlus, IcRefresh, IcScale, IcSpark, IcStar, IcTrophy, IcAlert, IcClose
@@ -19,7 +21,7 @@ import {
 
 const WEEK = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 
-export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOpenLeaderboard, onOpenProfile, needsKey, onSetupAi }: {
+export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOpenProgress, onOpenLeaderboard, onOpenProfile, needsKey, onSetupAi }: {
   onOpenMeal: (m: Meal) => void
   onAddPhoto: () => void
   onOpenCoach: () => void
@@ -31,6 +33,7 @@ export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOp
   onSetupAi: () => void
 }) {
   const [date, setDate] = useState(() => iso(new Date()))
+  const [measuring, setMeasuring] = useState(false)
   const toast = useToast()
   const d = parseIso(date)
   const today = iso(new Date())
@@ -80,6 +83,13 @@ export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOp
     <div className="screen screen-enter">
       <div className="col gap-16 stagger">
         <Header date={d} streak={streak} isToday={isToday} onToday={() => setDate(today)} nickname={settings.nickname} avatar={settings.avatar} onProfile={onOpenProfile} />
+        {fatMode && (
+          <button className="mode-pill pressable num" onClick={data.body ? onOpenProgress : () => setMeasuring(true)}
+            aria-label={data.body ? 'Режим сжигания жира — открыть прогресс' : 'Режим сжигания жира — сделать первый замер'}>
+            <span aria-hidden="true">🔥</span>
+            Сжигание жира · {data.body ? `${Math.round(data.body.fatPercent)}% → ${settings.targetFatPercent}%` : 'сделай первый замер'}
+          </button>
+        )}
         {needsKey && (
           <button className="card pad-16 pressable row gap-14" onClick={onSetupAi}
             style={{ textAlign: 'left', border: '1.5px solid color-mix(in srgb, var(--primary) 50%, transparent)', background: 'color-mix(in srgb, var(--primary) 12%, var(--surface))' }}>
@@ -91,8 +101,20 @@ export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOp
             <span className="muted"><IcChevronR size={18} /></span>
           </button>
         )}
-        <WeekStrip date={d} weekKcal={data.weekKcal} goal={settings.dailyGoal} onSelect={(x) => setDate(iso(x))} />
-        <Hero meals={meals} goal={settings.dailyGoal} goals={goals} proteinFirst={fatMode} onLeaderboard={onOpenLeaderboard} />
+        <WeekStrip date={d} weekKcal={data.weekKcal} goal={goals.calories} onSelect={(x) => setDate(iso(x))} />
+        <Hero meals={meals} goal={goals.calories} goals={goals} proteinFirst={fatMode} onLeaderboard={onOpenLeaderboard} />
+        {fatMode && isToday && (goals.plan
+          ? <PlanMini plan={goals.plan} today={today} onOpen={onOpenProgress} />
+          : weight == null && (
+            <button className="card r22 pressable row gap-12" onClick={onWeigh} style={{ padding: '14px 16px', textAlign: 'left' }}>
+              <Badge tint="var(--primary)" size={38}><IcScale size={20} /></Badge>
+              <span className="col grow">
+                <span className="title">План на неделю</span>
+                <span className="small">Запиши вес — посчитаю калории и БЖУ для сжигания жира</span>
+              </span>
+              <span className="muted"><IcChevronR size={18} /></span>
+            </button>
+          ))}
 
         {active.length > 0 && <Processing count={active.length} note={active[0].note} />}
         {failed.map((j) => (
@@ -184,7 +206,30 @@ export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOp
           </button>
         )}
       </div>
+      {measuring && <MeasureSheet onClose={() => setMeasuring(false)} />}
     </div>
+  )
+}
+
+/** «Сегодня» → компактный план режима: цифры дня и когда пересчёт. Подробно — в «Прогрессе». */
+function PlanMini({ plan, today, onOpen }: { plan: FatPlan; today: string; onOpen: () => void }) {
+  const left = Math.max(0, daysBetween(today, plan.nextDate))
+  return (
+    <button className="card r22 pressable col gap-8" onClick={onOpen} style={{ padding: '14px 16px', textAlign: 'left' }}>
+      <div className="row gap-12">
+        <Badge tint="var(--primary)" size={38}><IcFire size={20} /></Badge>
+        <div className="grow">
+          <div className="row gap-6"><span className="title">План на неделю</span><span className="label">· авто</span></div>
+          <div className="small num">
+            <b style={{ color: 'var(--text)' }}>{plan.calories} ккал</b> · Б {plan.protein} · Ж {plan.fat} · У {plan.carbs} г
+          </div>
+        </div>
+        <span className="muted"><IcChevronR size={18} /></span>
+      </div>
+      <div className="label num" style={{ paddingLeft: 50 }}>
+        Расход ≈ {plan.tdee} ккал ({plan.observed ? 'по твоим данным' : 'по формуле'}) · пересчёт {left === 0 ? 'сегодня' : `через ${left} ${plural(left, 'день', 'дня', 'дней')}`}
+      </div>
+    </button>
   )
 }
 

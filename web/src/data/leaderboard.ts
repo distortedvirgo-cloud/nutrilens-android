@@ -7,6 +7,7 @@
 // просто поле внутри. Поэтому смена ника не создаёт второго участника.
 import { getSettings, mealsBetween, saveSettings, type Settings } from './db'
 import { addDays, iso, mondayOf } from './insights'
+import { effectiveCalories } from './body'
 
 export const LEADERBOARD_API = (import.meta.env.VITE_LEADERBOARD_API as string | undefined)?.replace(/\/+$/, '') || ''
 export const leaderboardConfigured = () => !!LEADERBOARD_API
@@ -60,12 +61,14 @@ export async function pushOwn(): Promise<boolean> {
   const start = iso(addDays(today, -(SYNC_DAYS - 1)))
   const meals = await mealsBetween(start, iso(today))
   const days: Record<string, LbDay> = {}
+  // Цель — эффективная: в режиме сжигания жира очки считаются от плана, а не от ручной цели.
+  const goal = effectiveCalories(s)
   for (const m of meals) {
-    const d = (days[m.date] ??= { calories: 0, goal: m.dailyGoalSnapshot || s.dailyGoal })
+    const d = (days[m.date] ??= { calories: 0, goal: m.dailyGoalSnapshot || goal })
     d.calories += m.calories
   }
   // Сегодня — всегда, даже без еды, с текущей целью (как в Android).
-  days[iso(today)] = { calories: days[iso(today)]?.calories ?? 0, goal: s.dailyGoal }
+  days[iso(today)] = { calories: days[iso(today)]?.calories ?? 0, goal }
   for (const d of Object.values(days)) d.calories = Math.round(d.calories * 10) / 10
 
   const payload = JSON.stringify({ secret: s.playerSecret, nickname, days, avatar: s.avatar || '' })
