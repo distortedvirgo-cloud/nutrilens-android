@@ -104,6 +104,7 @@ import com.nutrilens.app.insights.InsightContext
 import com.nutrilens.app.insights.buildInsights
 import com.nutrilens.app.insights.calcStreak
 import com.nutrilens.app.insights.effectiveMacroGoals
+import com.nutrilens.app.data.latestFatPercent
 import com.nutrilens.app.insights.getDayTotals
 import com.nutrilens.app.insights.greeting
 import com.nutrilens.app.insights.nextMealFocus
@@ -168,6 +169,10 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     private val _lastWeight = MutableStateFlow<Double?>(null)
     val lastWeight: StateFlow<Double?> = _lastWeight.asStateFlow()
 
+    /** Последний процент жира — для белка при цели по жиру. */
+    private val _fatPercent = MutableStateFlow<Double?>(null)
+    val fatPercent: StateFlow<Double?> = _fatPercent.asStateFlow()
+
     /** Последние реплики диалога с диетологом — превью на экране «Коуч». */
     private val _chatPreview = MutableStateFlow<List<com.nutrilens.app.data.ChatMessage>>(emptyList())
     val chatPreview: StateFlow<List<com.nutrilens.app.data.ChatMessage>> = _chatPreview.asStateFlow()
@@ -185,6 +190,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
             _streak.value = calcStreak(mealRepository.allMealDates().toSet(), LocalDate.now())
             _hasAnyMeals.value = mealRepository.allMealDates().isNotEmpty()
             _lastWeight.value = mealRepository.getLatestWeight()
+            _fatPercent.value = database.latestFatPercent()
         }
         reloadChat()
         viewModelScope.launch {
@@ -192,6 +198,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                 _waterMl.value = mealRepository.getWaterMl(today)
                 _workoutDone.value = mealRepository.getWorkoutDone(today)
                 _lastWeight.value = mealRepository.getLatestWeight()
+                _fatPercent.value = database.latestFatPercent()
             }
         }
         habitsRepository.observeDate(today)
@@ -246,6 +253,7 @@ fun CoachScreen(
     val streak by viewModel.streak.collectAsStateWithLifecycle()
     val hasAnyMeals by viewModel.hasAnyMeals.collectAsStateWithLifecycle()
     val lastWeight by viewModel.lastWeight.collectAsStateWithLifecycle()
+    val fatPercent by viewModel.fatPercent.collectAsStateWithLifecycle()
     val chatPreview by viewModel.chatPreview.collectAsStateWithLifecycle()
 
     // Вернулись из чата — освежаем превью диалога.
@@ -254,11 +262,8 @@ fun CoachScreen(
     val totals = remember(meals) { getDayTotals(meals.map { it.meal }) }
     val hour = remember { LocalTime.now().hour }
     val greet = remember(hour) { greeting(hour) }
-    val macroGoals = remember(settings, lastWeight) {
-        effectiveMacroGoals(
-            settings.proteinGoal, settings.fatGoal, settings.carbsGoal,
-            settings.dailyGoal, lastWeight
-        )
+    val macroGoals = remember(settings, lastWeight, fatPercent) {
+        effectiveMacroGoals(settings, lastWeight, fatPercent)
     }
     val waterNorm = remember(lastWeight, workoutDone) { waterNormaMl(lastWeight, workoutDone) }
     val insights = remember(totals, settings, macroGoals, waterMl, waterNorm, streak, workoutDone, hasAnyMeals) {

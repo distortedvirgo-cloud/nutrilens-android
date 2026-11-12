@@ -2,11 +2,12 @@
 // тренировка и привычки дня.
 import { useEffect, useRef, useState } from 'react'
 import {
-  type ChatMessage, allMealDates, chatHistory, clearChat, getSettings, habitsOn, latestWeight, mealsOn,
+  type ChatMessage, allMealDates, chatHistory, clearChat, getSettings, habitsOn, latestMeasurement, latestWeight, mealsOn,
   toggleHabit, toggleWorkout, waterOn, workoutOn, addWater
 } from '../data/db'
-import { buildInsights, calcStreak, dayTotals, greeting, iso, macroGoals, nextMealFocus, waterNorm } from '../data/insights'
+import { buildInsights, calcStreak, dayTotals, greeting, iso, nextMealFocus, waterNorm } from '../data/insights'
 import { sendChat } from '../data/actions'
+import { effectiveGoals } from '../data/body'
 import { Badge, Bar, Md, useData, useToast } from '../ui/kit'
 import { IcBulb, IcCheck, IcChevronL, IcChevronR, IcDumbbell, IcSend, IcSpark, IcTrash } from '../ui/icons'
 
@@ -34,7 +35,7 @@ export function CoachScreen({ onOpenChat }: { onOpenChat: (q?: string) => void }
     const w = (await latestWeight())?.weight ?? null
     const workout = await workoutOn(today)
     const totals = dayTotals(meals)
-    const goals = macroGoals(s.proteinGoal, s.fatGoal, s.carbsGoal, s.dailyGoal, w)
+    const goals = effectiveGoals(s, w, await latestMeasurement())
     const water = await waterOn(today)
     const norm = waterNorm(w, workout)
     const streak = calcStreak(await allMealDates(), new Date())

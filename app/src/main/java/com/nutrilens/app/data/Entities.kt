@@ -116,7 +116,12 @@ data class SettingsEntity(
     // Старые значения free/simple/advanced читаются через [aiProvider].
     val analysisMode: String = "nanogpt",
     // Ник участника лидерборда (пусто — в лидерборде не участвуем).
-    val leaderboardNickname: String = ""
+    val leaderboardNickname: String = "",
+    // Цель по проценту жира (null — функция выключена) и данные для формулы ВМС.
+    val targetFatPercent: Double? = null,
+    val heightCm: Double? = null,
+    // "male" / "female"; пусто — берём из текста «О себе».
+    val sex: String = ""
 )
 
 @Entity(tableName = "analysis_jobs")

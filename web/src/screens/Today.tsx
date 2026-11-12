@@ -3,14 +3,15 @@
 import { useRef, useState } from 'react'
 import { Avatar } from '../ui/Avatar'
 import {
-  type Meal, addWater, allMealDates, getSettings, jobs, latestWeight, mealsBetween, mealsOn,
+  type Meal, addWater, allMealDates, getSettings, jobs, latestMeasurement, latestWeight, mealsBetween, mealsOn,
   waterOn, workoutOn, deleteJob, favorites
 } from '../data/db'
 import {
   SLOTS, type Slot, addDays, calcStreak, dayOverline, dayTitle, dayTotals, daysWord, healthScoreOf, iso,
-  macroGoals, mondayOf, nextMealFocus, parseIso, slotOf, waterNorm
+  mondayOf, nextMealFocus, parseIso, slotOf, waterNorm
 } from '../data/insights'
 import { retryJob, runQueue } from '../data/actions'
+import { effectiveGoals, fatGoalOn } from '../data/body'
 import { Bar, Badge, Photo, Ring, useCountUp, useData, useToast } from '../ui/kit'
 import {
   IcCamera, IcChevronR, IcKey, IcDrop, IcFire, IcPlus, IcRefresh, IcScale, IcSpark, IcStar, IcTrophy, IcAlert, IcClose
@@ -50,6 +51,7 @@ export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOp
       weight: w?.weight ?? null,
       weightDays: w ? Math.round((parseIso(today).getTime() - parseIso(w.date).getTime()) / 86400000) : null,
       streak: calcStreak(await allMealDates(), new Date()),
+      body: (await latestMeasurement()) ?? null,
       jobs: await jobs(),
       favNames: new Set((await favorites()).map((f) => f.name))
     }
@@ -58,7 +60,8 @@ export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOp
   if (!data) return <div className="screen" />
   const { meals, settings, water, workout, weight, weightDays, streak } = data
   const totals = dayTotals(meals)
-  const goals = macroGoals(settings.proteinGoal, settings.fatGoal, settings.carbsGoal, settings.dailyGoal, weight)
+  const goals = effectiveGoals(settings, weight, data.body)
+  const fatMode = fatGoalOn(settings)
   const norm = waterNorm(weight, workout)
   const focus = isToday ? nextMealFocus(totals, goals) : null
   const active = data.jobs.filter((j) => j.status !== 'FAILED')
@@ -89,7 +92,7 @@ export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOp
           </button>
         )}
         <WeekStrip date={d} weekKcal={data.weekKcal} goal={settings.dailyGoal} onSelect={(x) => setDate(iso(x))} />
-        <Hero meals={meals} goal={settings.dailyGoal} goals={goals} onLeaderboard={onOpenLeaderboard} />
+        <Hero meals={meals} goal={settings.dailyGoal} goals={goals} proteinFirst={fatMode} onLeaderboard={onOpenLeaderboard} />
 
         {active.length > 0 && <Processing count={active.length} note={active[0].note} />}
         {failed.map((j) => (
@@ -257,8 +260,8 @@ function WeekStrip({ date, weekKcal, goal, onSelect }: {
   )
 }
 
-function Hero({ meals, goal, goals, onLeaderboard }: {
-  meals: Meal[]; goal: number; goals: { protein: number; fat: number; carbs: number }; onLeaderboard: () => void
+function Hero({ meals, goal, goals, proteinFirst, onLeaderboard }: {
+  meals: Meal[]; goal: number; goals: { protein: number; fat: number; carbs: number }; proteinFirst: boolean; onLeaderboard: () => void
 }) {
   const t = dayTotals(meals)
   const over = goal > 0 && t.calories > goal
@@ -276,7 +279,9 @@ function Hero({ meals, goal, goals, onLeaderboard }: {
           <div className="overline">{over ? 'Перебор' : 'Осталось'}</div>
           <div className="num" style={{ fontSize: 20, fontWeight: 800, color: over ? 'var(--tertiary)' : 'var(--primary)' }}>{left} ккал</div>
         </div>
-        <MacroBar label="Белки" v={t.protein} g={goals.protein} color="var(--protein)" />
+        {proteinFirst
+          ? <ProteinFocus v={t.protein} g={goals.protein} />
+          : <MacroBar label="Белки" v={t.protein} g={goals.protein} color="var(--protein)" />}
         <MacroBar label="Жиры" v={t.fat} g={goals.fat} color="var(--fat)" />
         <MacroBar label="Углеводы" v={t.carbs} g={goals.carbs} color="var(--carbs)" />
       </div>
@@ -296,6 +301,24 @@ function MacroBar({ label, v, g, color }: { label: string; v: number; g: number;
         <span className="muted num">{Math.round(v)} / {Math.round(g)} г</span>
       </div>
       <Bar fraction={g > 0 ? v / g : 0} color={color} />
+    </div>
+  )
+}
+
+/** Цель по жиру: белок — вторая главная цифра дня, крупнее остальных макросов. */
+function ProteinFocus({ v, g }: { v: number; g: number }) {
+  const done = g > 0 && v >= g
+  return (
+    <div aria-label={`Белок: ${Math.round(v)} из ${Math.round(g)} грамм`}
+      style={{ padding: '8px 10px 10px', margin: '0 -2px', borderRadius: 14, background: 'color-mix(in srgb, var(--protein) 9%, transparent)' }}>
+      <div className="row between" style={{ marginBottom: 6, gap: 6 }}>
+        <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--protein)' }}>Белок</span>
+        <span className="num" style={{ fontSize: 15, fontWeight: 800 }}>
+          {Math.round(v)}<span className="muted" style={{ fontWeight: 700 }}> / {Math.round(g)} г</span>
+        </span>
+      </div>
+      <Bar fraction={g > 0 ? v / g : 0} color="var(--protein)" height={9} />
+      <div className="label" style={{ marginTop: 5, fontSize: 11 }}>{done ? 'Норма есть, мышцы целы' : `ещё ${Math.round(g - v)} г до нормы`}</div>
     </div>
   )
 }

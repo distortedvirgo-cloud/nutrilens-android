@@ -17,7 +17,8 @@ import java.io.File
 /**
  * Экспорт/импорт полной резервной копии приложения.
  * Формат JSON: settings, meals, favorites, weights, water, workouts,
- * habits, chat_history (сырой массив из ChatStore), grocery (сырой объект из GroceryStore).
+ * habits, body_measurements, chat_history (сырой массив из ChatStore), grocery (сырой объект из GroceryStore).
+ * Старые копии без body_measurements читаются как «замеров нет».
  */
 object Backup {
     private const val ERROR_MESSAGE = "Неверный формат файла резервной копии"
@@ -40,6 +41,7 @@ object Backup {
         val water = db.waterDao().all()
         val workouts = db.workoutDao().all()
         val habits = db.habitLogDao().all()
+        val measurements = db.bodyMeasurementDao().all()
 
         val chatRaw = readRaw(context, ChatStore.FILE_NAME)
         val groceryRaw = readRaw(context, GroceryStore.FILE_NAME)
@@ -52,6 +54,7 @@ object Backup {
             put("water", json.encodeToJsonElement(water))
             put("workouts", json.encodeToJsonElement(workouts))
             put("habits", json.encodeToJsonElement(habits))
+            put("body_measurements", json.encodeToJsonElement(measurements))
             put(
                 "chat_history",
                 chatRaw?.let { raw -> runCatching { json.parseToJsonElement(raw) }.getOrNull() }
@@ -107,6 +110,7 @@ object Backup {
             db.waterDao().deleteAll()
             db.workoutDao().deleteAll()
             db.habitLogDao().deleteAll()
+            db.bodyMeasurementDao().deleteAll()
 
             val settings = try {
                 root["settings"]?.let { json.decodeFromJsonElement<SettingsEntity?>(it) }
@@ -156,6 +160,14 @@ object Backup {
                 throw RuntimeException(ERROR_MESSAGE)
             }
             habits.forEach { db.habitLogDao().insert(it) }
+
+            // Замеры появились в 3.20: в старых копиях поля нет — просто пусто.
+            val measurements = try {
+                json.decodeFromJsonElement<List<BodyMeasurementEntity>>(root["body_measurements"] ?: JsonArray(emptyList()))
+            } catch (e: Exception) {
+                throw RuntimeException(ERROR_MESSAGE)
+            }
+            measurements.forEach { db.bodyMeasurementDao().upsert(it) }
         }
 
         root["chat_history"]?.let { element ->

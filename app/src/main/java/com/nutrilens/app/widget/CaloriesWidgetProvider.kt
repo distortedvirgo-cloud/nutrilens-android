@@ -16,6 +16,7 @@ import com.nutrilens.app.R
 import com.nutrilens.app.data.NutriLensDatabase
 import com.nutrilens.app.data.SettingsEntity
 import com.nutrilens.app.data.SettingsRepository
+import com.nutrilens.app.data.latestFatPercent
 import com.nutrilens.app.insights.effectiveMacroGoals
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -74,10 +75,7 @@ class CaloriesWidgetProvider : AppWidgetProvider() {
             val protein = meals.sumOf { it.protein }.roundToInt()
             val fat = meals.sumOf { it.fat }.roundToInt()
             val carbs = meals.sumOf { it.carbs }.roundToInt()
-            val macroGoals = effectiveMacroGoals(
-                settings.proteinGoal, settings.fatGoal, settings.carbsGoal,
-                goal, weightKg
-            )
+            val macroGoals = effectiveMacroGoals(settings, weightKg, db.latestFatPercent())
 
             // Светлая/тёмная тема: eсли в системе тёмный режим — тёмная капсула.
             val dark = (context.resources.configuration.uiMode and

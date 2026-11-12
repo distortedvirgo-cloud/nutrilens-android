@@ -50,6 +50,7 @@ export const IcLink = mk(['M10 14a4.5 4.5 0 0 0 6.4.1l3-3a4.5 4.5 0 0 0-6.4-6.4l
 export const IcVideo = mk(['M3 6h12v12H3z', 'M15 10l6-3.5v11L15 14'])
 export const IcHeart = mk('M12 20s-7.5-4.6-9.2-9.4C1.6 7.2 4 4 7.2 4c2 0 3.6 1.1 4.8 2.8C13.2 5.1 14.8 4 16.8 4 20 4 22.4 7.2 21.2 10.6 19.5 15.4 12 20 12 20z')
 export const IcMinus = mk('M5 12h14')
+export const IcRuler = mk(['M3 15.5L15.5 3 21 8.5 8.5 21z', 'M7 11.5l2 2', 'M10 8.5l2 2', 'M13 5.5l2 2'])
 export const IcPlay = mk('M7 4.5v15l12.5-7.5z')
 export const IcPause = mk(['M8 5v14', 'M16 5v14'])
 export const IcSearch = mk(['M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14z', 'M20 20l-4-4'])

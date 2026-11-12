@@ -1,9 +1,11 @@
 // Действия приложения: фото, очередь ИИ-анализа, чат, бэкапы.
 import {
   type Job, type Meal, addChat, chatHistory, db, deleteJob, getMeal, getPhoto, getSettings,
-  jobs, latestWeight, mealsBetween, mealsOn, notifyChanged, putJob, putMeal, putPhoto, recentMeals, uid, type Recipe } from './db'
+  jobs, latestMeasurement, latestWeight, mealsBetween, mealsOn, notifyChanged, putJob, putMeal, putPhoto, recentMeals, uid,
+  type BodyMeasurement, type Recipe } from './db'
 import { analyzeMeal, chat } from '../ai'
-import { addDays, dayTotals, iso, macroGoals, nowTime } from './insights'
+import { addDays, dayTotals, iso, nowTime } from './insights'
+import { bodyContext, effectiveGoals, FAT_TARGET_MAX, FAT_TARGET_MIN } from './body'
 
 // ---------- Фото: сжатие перед ИИ и хранением ----------
 
@@ -146,7 +148,9 @@ export async function sendChat(text: string): Promise<void> {
   const meals = await mealsOn(today)
   const t = dayTotals(meals)
   const w = (await latestWeight())?.weight ?? null
-  const g = macroGoals(settings.proteinGoal, settings.fatGoal, settings.carbsGoal, settings.dailyGoal, w)
+  const body = await latestMeasurement()
+  const g = effectiveGoals(settings, w, body)
+  const bodyLine = bodyContext(settings, w, body)
   const remaining = Math.round(settings.dailyGoal) - Math.round(t.calories)
   const week = await mealsBetween(iso(addDays(new Date(), -6)), iso(addDays(new Date(), -1)))
   const byDay = new Map<string, number>()
@@ -159,6 +163,7 @@ export async function sendChat(text: string): Promise<void> {
     `ПОЛЬЗОВАТЕЛЬ: ${settings.userContext || 'о себе ничего не написал'}${w != null ? `. Вес ${w.toFixed(1)} кг` : ''}.`,
     `ЦЕЛЬ: ${Math.round(settings.dailyGoal)} ккал/день. Сегодня съедено ${Math.round(t.calories)} ккал, ${remaining >= 0 ? `осталось ${remaining}` : `перебор ${-remaining}`} ккал. ` +
       `БЖУ сегодня: Б ${Math.round(t.protein)}/${g.protein} г, Ж ${Math.round(t.fat)}/${g.fat} г, У ${Math.round(t.carbs)}/${g.carbs} г (съедено/цель).`,
+    bodyLine ? `СОСТАВ ТЕЛА: ${bodyLine}` : '',
     `СЕГОДНЯ В ДНЕВНИКЕ: ${meals.map((m) => `${m.name} — ${Math.round(m.calories)} ккал`).join('; ') || 'пока ничего'}.`,
     recentDays ? `ПОСЛЕДНИЕ ДНИ:\n${recentDays}` : '',
     '',
@@ -183,12 +188,14 @@ export async function exportBackup(): Promise<Blob> {
     settings: {
       id: 1, apiKey: s.apiKey, nanoApiKey: s.nanoApiKey, nanoApiEndpoint: s.nanoEndpoint,
       apiMode: s.provider === 'gemini' ? 'free' : 'simple', dailyGoal: s.dailyGoal, proteinGoal: s.proteinGoal, fatGoal: s.fatGoal,
-      carbsGoal: s.carbsGoal, userContext: s.userContext, leaderboardNickname: s.nickname
+      carbsGoal: s.carbsGoal, userContext: s.userContext, leaderboardNickname: s.nickname,
+      heightCm: s.heightCm, sex: s.sex, targetFatPercent: s.targetFatPercent
     },
     meals: meals.map(({ items: _i, photoIds: _p, ...m }) => m),
     meal_items: meals.flatMap((m) => m.items.map((i) => ({ ...i, mealId: m.id }))),
     favorites: await d.getAll('favorites'),
     weights: await d.getAll('weights'),
+    body_measurements: await d.getAll('measurements'),
     water: await d.getAll('water'),
     workouts: await d.getAll('workouts'),
     habits: (await d.getAll('habits')).map((h) => ({ date: h.date, habitId: h.habitId })),
@@ -227,7 +234,13 @@ export async function importBackup(file: Blob): Promise<number> {
   if (Array.isArray(root.recipes)) {
     for (const r of root.recipes as Recipe[]) if (r && r.id && r.title && Array.isArray(r.ingredients)) await d.put('recipes', r)
   }
-  const tx = d.transaction(['meals', 'favorites', 'weights', 'water', 'workouts', 'habits', 'settings', 'chat'], 'readwrite')
+  // Замеры тела: старые бэкапы их не содержат — тогда текущие не трогаем.
+  const body = Array.isArray(root.body_measurements) ? parseMeasurements(root.body_measurements) : null
+  const tx = d.transaction(['meals', 'favorites', 'weights', 'water', 'workouts', 'habits', 'settings', 'chat', 'measurements'], 'readwrite')
+  if (body) {
+    await tx.objectStore('measurements').clear()
+    for (const m of body) await tx.objectStore('measurements').put(m)
+  }
   await Promise.all(['meals', 'favorites', 'weights', 'water', 'workouts', 'habits', 'chat'].map((s) => tx.objectStore(s as 'meals').clear()))
   const meals = root.meals as Record<string, unknown>[]
   for (const m of meals) {
@@ -281,10 +294,34 @@ export async function importBackup(file: Blob): Promise<number> {
       // не берём: его файл пишет само Android-приложение, вебу туда нельзя.
       playerId: String((root.web_player as { id?: string } | null)?.id || current?.playerId || ''),
       playerSecret: String((root.web_player as { secret?: string } | null)?.secret || current?.playerSecret || ''),
+      heightCm: optNum(s.heightCm, current?.heightCm),
+      sex: s.sex === 'male' || s.sex === 'female' ? s.sex : (current?.sex ?? null),
+      targetFatPercent: 'targetFatPercent' in s
+        ? (s.targetFatPercent == null ? null : Math.min(FAT_TARGET_MAX, Math.max(FAT_TARGET_MIN, Number(s.targetFatPercent))))
+        : (current?.targetFatPercent ?? null),
       onboarded: true
     })
   }
   await tx.done
   notifyChanged()
   return meals.length
+}
+
+const optNum = (v: unknown, fallback: number | null | undefined): number | null => {
+  const n = Number(v)
+  return v != null && Number.isFinite(n) && n > 0 ? n : (fallback ?? null)
+}
+
+function parseMeasurements(list: unknown[]): BodyMeasurement[] {
+  const out: BodyMeasurement[] = []
+  for (const raw of list as Record<string, unknown>[]) {
+    const date = String(raw?.date ?? '')
+    const fat = Number(raw?.fatPercent)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(fat)) continue
+    const m: BodyMeasurement = { date, waistCm: Number(raw.waistCm ?? 0), neckCm: Number(raw.neckCm ?? 0), fatPercent: fat }
+    if (raw.hipsCm != null && Number.isFinite(Number(raw.hipsCm))) m.hipsCm = Number(raw.hipsCm)
+    if (raw.manualFatPercent != null && Number.isFinite(Number(raw.manualFatPercent))) m.manualFatPercent = Number(raw.manualFatPercent)
+    out.push(m)
+  }
+  return out
 }

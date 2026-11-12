@@ -16,6 +16,7 @@ import android.widget.RemoteViews
 import com.nutrilens.app.data.NutriLensDatabase
 import com.nutrilens.app.data.QuickActions
 import com.nutrilens.app.data.SettingsRepository
+import com.nutrilens.app.data.latestFatPercent
 import com.nutrilens.app.insights.effectiveMacroGoals
 import com.nutrilens.app.insights.waterNormaMl
 import com.nutrilens.app.notifications.NotificationHelper
@@ -51,9 +52,7 @@ internal object WidgetSupport {
         val meals = db.mealDao().mealsBetween(today, today)
         val weight = db.weightDao().latest()?.weight
         val workout = db.workoutDao().byDate(today)?.done ?: false
-        val goals = effectiveMacroGoals(
-            settings.proteinGoal, settings.fatGoal, settings.carbsGoal, settings.dailyGoal, weight
-        )
+        val goals = effectiveMacroGoals(settings, weight, db.latestFatPercent())
         return WidgetDay(
             eaten = meals.sumOf { it.calories },
             goal = settings.dailyGoal,

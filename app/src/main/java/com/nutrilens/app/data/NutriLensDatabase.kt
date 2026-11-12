@@ -74,6 +74,24 @@ val MIGRATION_7_8 = object : Migration(7, 8) {
     }
 }
 
+/**
+ * v9: цель по проценту жира — замеры тела (обхваты + свой процент) и в settings
+ * цель, рост и пол. Схема таблицы обязана совпадать с BodyMeasurementEntity один-в-один,
+ * иначе Room упадёт при обновлении.
+ */
+val MIGRATION_8_9 = object : Migration(8, 9) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `body_measurements` (" +
+                "`date` TEXT NOT NULL, `waistCm` REAL, `neckCm` REAL, `hipsCm` REAL, " +
+                "`manualFatPercent` REAL, `fatPercent` REAL NOT NULL, PRIMARY KEY(`date`))"
+        )
+        db.execSQL("ALTER TABLE settings ADD COLUMN targetFatPercent REAL DEFAULT NULL")
+        db.execSQL("ALTER TABLE settings ADD COLUMN heightCm REAL DEFAULT NULL")
+        db.execSQL("ALTER TABLE settings ADD COLUMN sex TEXT NOT NULL DEFAULT ''")
+    }
+}
+
 @Database(
     entities = [
         MealEntity::class,
@@ -88,9 +106,10 @@ val MIGRATION_7_8 = object : Migration(7, 8) {
         AnalysisJobEntity::class,
         RefinementJobEntity::class,
         ToolJobEntity::class,
-        RecipeEntity::class
+        RecipeEntity::class,
+        BodyMeasurementEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 abstract class NutriLensDatabase : RoomDatabase() {
@@ -105,6 +124,7 @@ abstract class NutriLensDatabase : RoomDatabase() {
     abstract fun refinementJobDao(): RefinementJobDao
     abstract fun toolJobDao(): ToolJobDao
     abstract fun recipeDao(): RecipeDao
+    abstract fun bodyMeasurementDao(): BodyMeasurementDao
 
     companion object {
         @Volatile
@@ -119,7 +139,7 @@ abstract class NutriLensDatabase : RoomDatabase() {
                 )
                     .addMigrations(
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
-                        MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8
+                        MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9
                     )
                     .build().also { INSTANCE = it }
             }

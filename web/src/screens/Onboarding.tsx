@@ -41,6 +41,8 @@ export function Onboarding({ settings, onDone }: { settings: Settings; onDone: (
         `Цель — ${['похудеть', 'держать вес', 'набрать массу'][goal]}, активность ${['низкая', 'средняя', 'высокая'][activity]}.${notes.trim() ? ' ' + notes.trim() : ''}`
       const o = n(override)
       patch.dailyGoal = Math.min(6000, Math.max(800, Number.isFinite(o) ? o : computed!))
+      patch.heightCm = Math.round(h)
+      patch.sex = male ? 'male' : 'female'
       await setWeight(iso(new Date()), w)
     } else if (notes.trim()) patch.userContext = notes.trim()
     await saveSettings(patch)

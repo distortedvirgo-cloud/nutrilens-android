@@ -97,14 +97,19 @@ private data class ProfileRow(
  * длинного экрана.
  */
 @Composable
-fun ProfileScreen(onNavigate: (String) -> Unit, onBack: () -> Unit = {}, viewModel: ProfileViewModel = viewModel()) {
+fun ProfileScreen(
+    onNavigate: (String) -> Unit,
+    onBack: () -> Unit = {},
+    viewModel: ProfileViewModel = viewModel(),
+    bodyFatViewModel: BodyFatViewModel = viewModel()
+) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val lastWeight by viewModel.lastWeight.collectAsStateWithLifecycle()
+    val measurements by bodyFatViewModel.measurements.collectAsStateWithLifecycle()
     val c = NutriTheme.colors
     val palette = macroPalette()
-    val goals = effectiveMacroGoals(
-        settings.proteinGoal, settings.fatGoal, settings.carbsGoal, settings.dailyGoal, lastWeight
-    )
+    // Цель по жиру включена — белок в плитке уже от сухой массы.
+    val goals = effectiveMacroGoals(settings, lastWeight, measurements.lastOrNull()?.fatPercent)
     val nickname = settings.leaderboardNickname.trim()
     val context = androidx.compose.ui.platform.LocalContext.current
     val avatarScope = androidx.compose.runtime.rememberCoroutineScope()
@@ -191,6 +196,9 @@ fun ProfileScreen(onNavigate: (String) -> Unit, onBack: () -> Unit = {}, viewMod
             TonalTile("${goals.fat.roundToInt()} г", "жиры", palette.fat, Modifier.weight(1f), onClick = toGoals)
             TonalTile("${goals.carbs.roundToInt()} г", "углеводы", palette.carbs, Modifier.weight(1f), onClick = toGoals)
         }
+
+        Spacer(Modifier.height(12.dp))
+        BodyFatGoalSection(modifier = Modifier.staggeredIn(2), viewModel = bodyFatViewModel)
 
         groups.forEachIndexed { gi, (title, rows) ->
             Spacer(Modifier.height(Space.Section))

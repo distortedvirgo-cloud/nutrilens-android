@@ -1,6 +1,8 @@
 package com.nutrilens.app.insights
 
+import com.nutrilens.app.data.BodyComposition
 import com.nutrilens.app.data.MealEntity
+import com.nutrilens.app.data.SettingsEntity
 import java.time.LocalDate
 
 /* ============================================================
@@ -103,6 +105,23 @@ fun effectiveMacroGoals(
     val carbs = goalOr(carbsGoal) { Math.round(dailyGoal * 0.4 / 4).toDouble() }
     return MacroGoals(protein, fat, carbs)
 }
+
+/**
+ * Цели по БЖУ с учётом цели по жиру — единая точка для всех экранов, виджетов и ИИ.
+ * Цель по жиру включена → белок считается от сухой массы ([BodyComposition.proteinTarget])
+ * и перекрывает обычный: в дефиците именно белок держит мышцы.
+ */
+fun effectiveMacroGoals(settings: SettingsEntity, weightKg: Double?, fatPercent: Double?): MacroGoals {
+    val base = effectiveMacroGoals(
+        settings.proteinGoal, settings.fatGoal, settings.carbsGoal, settings.dailyGoal, weightKg
+    )
+    return fatGoalProtein(settings, weightKg, fatPercent)?.let { base.copy(protein = it) } ?: base
+}
+
+/** Белок цели по жиру, если она включена и вес известен; иначе null. */
+fun fatGoalProtein(settings: SettingsEntity, weightKg: Double?, fatPercent: Double?): Double? =
+    if (settings.targetFatPercent == null) null
+    else BodyComposition.proteinTarget(weightKg, fatPercent)
 
 /**
  * Повторяет семантику `||` из оригинала: цель используется только если

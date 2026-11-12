@@ -155,6 +155,8 @@ import com.nutrilens.app.insights.InsightContext
 import com.nutrilens.app.insights.buildInsights
 import com.nutrilens.app.insights.calcStreak
 import com.nutrilens.app.insights.effectiveMacroGoals
+import com.nutrilens.app.insights.fatGoalProtein
+import com.nutrilens.app.data.latestFatPercent
 import com.nutrilens.app.insights.getDayTotals
 import com.nutrilens.app.insights.greeting
 import com.nutrilens.app.insights.nextMealFocus
@@ -259,6 +261,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private val _lastWeight = MutableStateFlow<Double?>(null)
     val lastWeight: StateFlow<Double?> = _lastWeight.asStateFlow()
 
+    /** Последний процент жира из замеров — белок при цели по жиру считается от сухой массы. */
+    private val _fatPercent = MutableStateFlow<Double?>(null)
+    val fatPercent: StateFlow<Double?> = _fatPercent.asStateFlow()
+
     /** null = записей о весе пока нет, иначе дни с последнего взвешивания. */
     private val _daysSinceLastWeight = MutableStateFlow<Int?>(null)
     val daysSinceLastWeight: StateFlow<Int?> = _daysSinceLastWeight.asStateFlow()
@@ -283,6 +289,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         _workoutDone.value = mealRepository.getWorkoutDone(day)
         _lastWeight.value = mealRepository.getLatestWeight()
         _daysSinceLastWeight.value = weightRepository.daysSinceLastWeight()
+        _fatPercent.value = database.latestFatPercent()
         val dates = mealRepository.allMealDates().toSet()
         _streak.value = calcStreak(dates, date)
         _hasAnyMeals.value = dates.isNotEmpty()
@@ -413,6 +420,7 @@ fun DashboardScreen(
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val waterMl by viewModel.waterMl.collectAsStateWithLifecycle()
     val lastWeight by viewModel.lastWeight.collectAsStateWithLifecycle()
+    val fatPercent by viewModel.fatPercent.collectAsStateWithLifecycle()
     val daysSince by viewModel.daysSinceLastWeight.collectAsStateWithLifecycle()
     val workoutDone by viewModel.workoutDone.collectAsStateWithLifecycle()
     val streak by viewModel.streak.collectAsStateWithLifecycle()
@@ -485,6 +493,7 @@ fun DashboardScreen(
                     meals = meals,
                     settings = settings,
                     lastWeight = lastWeight,
+                    fatPercent = fatPercent,
                     onLeaderboard = onOpenLeaderboard
                 )
             }
@@ -525,10 +534,7 @@ fun DashboardScreen(
         if (isToday) {
             val focus = nextMealFocus(
                 getDayTotals(meals.map { it.meal }),
-                effectiveMacroGoals(
-                    settings.proteinGoal, settings.fatGoal, settings.carbsGoal,
-                    settings.dailyGoal, lastWeight
-                )
+                effectiveMacroGoals(settings, lastWeight, fatPercent)
             ).substringBefore("\n").trim()
             if (focus.isNotBlank()) {
                 item { Box(Modifier.introIn(3, introDone)) { CoachTip(text = focus, onClick = onOpenCoach) } }
@@ -1839,6 +1845,7 @@ private fun HeroSummary(
     meals: List<MealWithImages>,
     settings: SettingsEntity,
     lastWeight: Double?,
+    fatPercent: Double?,
     onLeaderboard: () -> Unit
 ) {
     val eaten = meals.sumOf { it.meal.calories }
@@ -1846,9 +1853,9 @@ private fun HeroSummary(
     val isOver = goal > 0 && eaten > goal
     val c = NutriTheme.colors
     val palette = macroPalette()
-    val goals = effectiveMacroGoals(
-        settings.proteinGoal, settings.fatGoal, settings.carbsGoal, settings.dailyGoal, lastWeight
-    )
+    val goals = effectiveMacroGoals(settings, lastWeight, fatPercent)
+    // Цель по жиру: белок выносим крупной строкой под кольцо — вторая главная цифра дня.
+    val proteinFocus = fatGoalProtein(settings, lastWeight, fatPercent) != null
     val fraction by animateFloatAsState(
         if (goal > 0) (eaten / goal).toFloat().coerceIn(0f, 1f) else 0f,
         tween(Motion.ExtraLong + 300, easing = Motion.Emphasized),
@@ -1863,60 +1870,69 @@ private fun HeroSummary(
 
     FreshCard(Modifier.fillMaxWidth()) {
         Box(Modifier.fillMaxWidth()) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(18.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(132.dp)) {
-                    Canvas(Modifier.fillMaxSize()) {
-                        val stroke = 12.dp.toPx()
-                        val radius = (size.minDimension - stroke) / 2f
-                        val topLeft = Offset(center.x - radius, center.y - radius)
-                        val arcSize = Size(radius * 2, radius * 2)
-                        drawArc(track, 0f, 360f, false, topLeft, arcSize, style = Stroke(stroke))
-                        if (fraction > 0f) {
-                            rotate(-90f) {
-                                drawArc(
-                                    brush = Brush.sweepGradient(
-                                        0f to arcFrom,
-                                        fraction.coerceIn(0.01f, 0.99f) to arcTo,
-                                        1f to arcTo,
-                                        center = center
-                                    ),
-                                    startAngle = 0f,
-                                    sweepAngle = 360f * fraction,
-                                    useCenter = false,
-                                    topLeft = topLeft,
-                                    size = arcSize,
-                                    style = Stroke(stroke, cap = StrokeCap.Round)
-                                )
-                                drawCircle(arcFrom, radius = stroke / 2f, center = Offset(center.x + radius, center.y))
+            Column {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(18.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(132.dp)) {
+                        Canvas(Modifier.fillMaxSize()) {
+                            val stroke = 12.dp.toPx()
+                            val radius = (size.minDimension - stroke) / 2f
+                            val topLeft = Offset(center.x - radius, center.y - radius)
+                            val arcSize = Size(radius * 2, radius * 2)
+                            drawArc(track, 0f, 360f, false, topLeft, arcSize, style = Stroke(stroke))
+                            if (fraction > 0f) {
+                                rotate(-90f) {
+                                    drawArc(
+                                        brush = Brush.sweepGradient(
+                                            0f to arcFrom,
+                                            fraction.coerceIn(0.01f, 0.99f) to arcTo,
+                                            1f to arcTo,
+                                            center = center
+                                        ),
+                                        startAngle = 0f,
+                                        sweepAngle = 360f * fraction,
+                                        useCenter = false,
+                                        topLeft = topLeft,
+                                        size = arcSize,
+                                        style = Stroke(stroke, cap = StrokeCap.Round)
+                                    )
+                                    drawCircle(arcFrom, radius = stroke / 2f, center = Offset(center.x + radius, center.y))
+                                }
                             }
                         }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            DisplayNumber("${eatenShown.roundToInt()}", size = 30, color = MaterialTheme.colorScheme.onSurface)
+                            Text(
+                                "из ${goal.roundToInt()} ккал",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        DisplayNumber("${eatenShown.roundToInt()}", size = 30, color = MaterialTheme.colorScheme.onSurface)
-                        Text(
-                            "из ${goal.roundToInt()} ккал",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    Spacer(Modifier.width(18.dp))
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Column {
+                            TinyLabel(if (isOver) "Перебор" else "Осталось")
+                            Text(
+                                "${kotlin.math.abs(goal - eaten).roundToInt()} ккал",
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = if (isOver) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        if (!proteinFocus) MacroBar("Белки", meals.sumOf { it.meal.protein }, goals.protein, palette.protein)
+                        MacroBar("Жиры", meals.sumOf { it.meal.fat }, goals.fat, palette.fat)
+                        MacroBar("Углеводы", meals.sumOf { it.meal.carbs }, goals.carbs, palette.carbs)
                     }
                 }
-                Spacer(Modifier.width(18.dp))
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Column {
-                        TinyLabel(if (isOver) "Перебор" else "Осталось")
-                        Text(
-                            "${kotlin.math.abs(goal - eaten).roundToInt()} ккал",
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = if (isOver) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    MacroBar("Белки", meals.sumOf { it.meal.protein }, goals.protein, palette.protein)
-                    MacroBar("Жиры", meals.sumOf { it.meal.fat }, goals.fat, palette.fat)
-                    MacroBar("Углеводы", meals.sumOf { it.meal.carbs }, goals.carbs, palette.carbs)
+                if (proteinFocus) {
+                    ProteinFocus(
+                        eaten = meals.sumOf { it.meal.protein },
+                        goal = goals.protein,
+                        modifier = Modifier.padding(start = 18.dp, end = 18.dp, bottom = 18.dp)
+                    )
                 }
             }
             Surface(

@@ -2,15 +2,18 @@
 import { useState } from 'react'
 import { getSettings, mealsBetween, waterBetween, weightsBetween } from '../data/db'
 import { addDays, calcStreak, iso, parseIso, waterNorm } from '../data/insights'
-import { allMealDates, latestWeight } from '../data/db'
+import { type BodyMeasurement, allMealDates, latestWeight, measurements } from '../data/db'
+import { composition, etaText, fatGoalOn, fmt1, plural } from '../data/body'
 import { Badge, Bar, Segmented, useData } from '../ui/kit'
-import { IcChart, IcDrop, IcFire, IcFood, IcScale, IcTarget } from '../ui/icons'
+import { IcAlert, IcChart, IcDrop, IcFire, IcFood, IcPlus, IcRuler, IcScale, IcTarget } from '../ui/icons'
+import { MeasureSheet } from './Body'
 
 const SHORT_WD = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб']
 const SHORT_M = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
 
 export function ProgressScreen() {
   const [period, setPeriod] = useState<7 | 30 | 365>(7)
+  const [measuring, setMeasuring] = useState(false)
   const data = useData(async () => {
     const today = new Date()
     const start = iso(addDays(today, -(period - 1)))
@@ -38,7 +41,10 @@ export function ProgressScreen() {
       streak: calcStreak(await allMealDates(), today),
       weights: (await weightsBetween(start, end)).sort((a, b) => a.date.localeCompare(b.date)),
       waterAvg: water.length ? Math.round(water.reduce((a, x) => a + x.ml, 0) / water.length) : 0,
-      waterNorm: waterNorm(w, false)
+      waterNorm: waterNorm(w, false),
+      weight: w,
+      targetFat: fatGoalOn(settings) ? settings.targetFatPercent : null,
+      body: await measurements()
     }
   }, [period], null)
 
@@ -50,6 +56,9 @@ export function ProgressScreen() {
           <div className="small">Как проходит твой период</div>
         </div>
         <Segmented options={[[7, 'Неделя'], [30, 'Месяц'], [365, 'Год']]} value={period} onChange={setPeriod} />
+        {data && (data.targetFat != null || data.body.length > 0) && (
+          <BodyCard list={data.body} weight={data.weight} target={data.targetFat} onMeasure={() => setMeasuring(true)} />
+        )}
         {data && data.activeCount === 0 && (
           <div className="card col" style={{ alignItems: 'center', padding: '36px 24px', textAlign: 'center', gap: 8 }}>
             <Badge tint="var(--primary)" size={60}><IcChart size={30} /></Badge>
@@ -78,6 +87,7 @@ export function ProgressScreen() {
           </>
         )}
       </div>
+      {measuring && <MeasureSheet onClose={() => setMeasuring(false)} />}
     </div>
   )
 }
@@ -164,11 +174,7 @@ function Weight({ weights }: { weights: { date: string; weight: number }[] }) {
       </div>
     )
   }
-  const W = 320, H = 120, pad = 10
   const min = Math.min(...weights.map((w) => w.weight)), max = Math.max(...weights.map((w) => w.weight))
-  const span = Math.max(1, max - min)
-  const pts = weights.map((w, i) => [pad + (i * (W - pad * 2)) / (weights.length - 1), H - pad - ((w.weight - min) / span) * (H - pad * 2)])
-  const line = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(' ')
   const delta = weights.at(-1)!.weight - weights[0].weight
   const dc = delta > 0 ? 'var(--tertiary)' : 'var(--primary)'
   return (
@@ -179,20 +185,116 @@ function Weight({ weights }: { weights: { date: string; weight: number }[] }) {
           {delta > 0 ? '+' : ''}{delta.toFixed(1).replace('.', ',')} кг
         </span>
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} role="img" aria-label={`Вес от ${min} до ${max} кг`}>
-        <defs>
-          <linearGradient id="wfill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="var(--secondary)" stopOpacity="0.25" />
-            <stop offset="1" stopColor="var(--secondary)" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        <path d={`${line} L${pts.at(-1)![0]} ${H} L${pts[0][0]} ${H} Z`} fill="url(#wfill)" />
-        <path d={line} fill="none" stroke="var(--secondary)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
-          pathLength={1} strokeDasharray={1} style={{ animation: 'draw 1200ms var(--ease-emph) both' }} />
-        {pts.map((p, i) => <circle key={i} cx={p[0]} cy={p[1]} r="4.5" fill="var(--surface)" stroke="var(--secondary)" strokeWidth="2.5" />)}
-      </svg>
+      <LineChart values={weights.map((w) => w.weight)} color="var(--secondary)" id="wfill" label={`Вес от ${min} до ${max} кг`} />
       <div className="row between label num"><span>мин {min.toFixed(1).replace(".", ",")}</span><span>макс {max.toFixed(1).replace(".", ",")}</span></div>
-      <style>{'@keyframes draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }'}</style>
     </div>
   )
 }
+
+/** Линия с заливкой — для веса и процента жира. */
+function LineChart({ values, color, id, label, minSpan = 1 }: { values: number[]; color: string; id: string; label: string; minSpan?: number }) {
+  const W = 320, H = 120, pad = 10
+  const min = Math.min(...values), max = Math.max(...values)
+  const span = Math.max(minSpan, max - min)
+  const pts = values.map((v, i) => [pad + (i * (W - pad * 2)) / (values.length - 1), H - pad - ((v - min) / span) * (H - pad * 2)])
+  const line = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(' ')
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} role="img" aria-label={label}>
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor={color} stopOpacity="0.25" />
+          <stop offset="1" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={`${line} L${pts.at(-1)![0]} ${H} L${pts[0][0]} ${H} Z`} fill={`url(#${id})`} />
+      <path d={line} fill="none" stroke={color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
+        pathLength={1} strokeDasharray={1} style={{ animation: 'draw 1200ms var(--ease-emph) both' }} />
+      {pts.map((p, i) => <circle key={i} cx={p[0]} cy={p[1]} r="4.5" fill="var(--surface)" stroke={color} strokeWidth="2.5" />)}
+      <style>{'@keyframes draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }'}</style>
+    </svg>
+  )
+}
+
+/** «Состав тела»: процент жира, жир и сухая масса, путь к цели, тренд замеров. */
+function BodyCard({ list, weight, target, onMeasure }: {
+  list: BodyMeasurement[]; weight: number | null; target: number | null; onMeasure: () => void
+}) {
+  const last = list.at(-1)
+  const head = (
+    <div className="row gap-12">
+      <Badge tint="var(--secondary)" size={40}><IcRuler size={20} /></Badge>
+      <div className="grow title">Состав тела</div>
+      {target != null && <span className="chip primary num" style={{ height: 30, fontSize: 13 }}>цель {target}%</span>}
+    </div>
+  )
+  const addBtn = <button className="btn btn-soft full sm" onClick={onMeasure}><IcPlus size={18} />Добавить замер</button>
+  if (!last) {
+    return (
+      <div className="card pad-18 col gap-12">
+        {head}
+        <div className="small">Измерь талию и шею — посчитаю процент жира, сухую массу и сколько осталось до цели.</div>
+        {addBtn}
+      </div>
+    )
+  }
+  const days = Math.round((parseIso(iso(new Date())).getTime() - parseIso(last.date).getTime()) / 86400000)
+  const c = weight != null ? composition(weight, last.fatPercent, target) : null
+  const start = list[0].fatPercent
+  const progress = target == null ? 0 : start <= target ? 1 : (start - last.fatPercent) / (start - target)
+  const delta = list.length > 1 ? last.fatPercent - start : 0
+  return (
+    <div className="card pad-18 col gap-14">
+      {head}
+      <div className="row gap-12" style={{ alignItems: 'flex-end' }}>
+        <div className="grow">
+          <div className="display num">{fmt1(last.fatPercent)}%</div>
+          <div className="small">жира · {days === 0 ? 'замер сегодня' : `замер ${days} ${plural(days, 'день', 'дня', 'дней')} назад`}</div>
+        </div>
+        {list.length > 1 && Math.abs(delta) >= 0.1 && (
+          <span className="chip num" style={{ height: 30, fontSize: 13, color: delta > 0 ? 'var(--tertiary)' : 'var(--primary)', background: `color-mix(in srgb, ${delta > 0 ? 'var(--tertiary)' : 'var(--primary)'} 13%, transparent)` }}>
+            {delta > 0 ? '+' : ''}{fmt1(delta)}% со старта
+          </span>
+        )}
+      </div>
+      {c ? (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <MiniStat v={`${fmt1(c.fatMass)} кг`} l="жировая масса" color="var(--fat)" />
+          <MiniStat v={`${fmt1(c.leanMass)} кг`} l="сухая масса" color="var(--protein)" />
+        </div>
+      ) : (
+        <div className="small">Запиши вес — посчитаю массу жира и мышц.</div>
+      )}
+      {target != null && (
+        <div className="col gap-8">
+          <Bar fraction={progress} color="var(--secondary)" height={10} />
+          <div className="row between label num"><span>старт {fmt1(start)}%</span><span>цель {target}%</span></div>
+          {c?.targetWeight != null && (
+            <div className="small">
+              Вес при цели — при сохранении мышц ≈ <b className="num" style={{ color: 'var(--text)' }}>{Math.round(c.targetWeight)} кг</b>
+              {c.fatToLose! > 0.2 ? <> · сбросить ≈ {fmt1(c.fatToLose!)} кг жира, {etaText(c.etaWeeks!)}</> : <> · цель достигнута</>}
+            </div>
+          )}
+        </div>
+      )}
+      {list.length > 1 && (
+        <LineChart values={list.slice(-30).map((m) => m.fatPercent)} color="var(--secondary)" id="ffill" minSpan={2}
+          label={`Процент жира: от ${fmt1(start)}% до ${fmt1(last.fatPercent)}%`} />
+      )}
+      {days > 7 && (
+        <div className="row gap-10 small" style={{ padding: 12, borderRadius: 16, background: 'color-mix(in srgb, var(--warn-to) 10%, transparent)', alignItems: 'flex-start' }}>
+          <span style={{ color: 'var(--warn-to)', marginTop: 1 }}><IcAlert size={17} /></span>
+          <span>Последний замер {days} {plural(days, 'день', 'дня', 'дней')} назад — пора обновить, лучше утром натощак.</span>
+        </div>
+      )}
+      <div className="label">Домашние методы ошибаются на ±3–4% — смотри на тренд, а не на одну цифру.</div>
+      {addBtn}
+    </div>
+  )
+}
+
+const MiniStat = ({ v, l, color }: { v: string; l: string; color: string }) => (
+  <div className="col" style={{ padding: '10px 12px', borderRadius: 16, background: 'var(--surface-low)', border: '1px solid var(--hairline)' }}>
+    <span className="h2 num" style={{ color }}>{v}</span>
+    <span className="label">{l}</span>
+  </div>
+)

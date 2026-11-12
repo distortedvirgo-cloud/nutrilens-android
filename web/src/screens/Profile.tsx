@@ -1,34 +1,40 @@
 // «Профиль»: кто я и цели + настройки по разделам (каждый — свой лист).
 import { useEffect, useRef, useState } from 'react'
-import { type Settings, getSettings, latestWeight, saveSettings } from '../data/db'
+import { type Settings, getSettings, latestMeasurement, latestWeight, saveSettings } from '../data/db'
 import { exportBackup, importBackup } from '../data/actions'
-import { macroGoals } from '../data/insights'
+import { effectiveGoals, fatGoalOn, fmt1 } from '../data/body'
+import { FatGoalForm, MeasureSheet } from './Body'
 import { dailyResetTime, usageToday } from '../ai/gemini'
 import { activeProvider, hasSelectedKey } from '../ai'
 import { KeyField, ProviderCards } from '../ui/AiSetup'
 import { Avatar, avatarFromFile } from '../ui/Avatar'
 import { schedulePush } from '../data/leaderboard'
 import { Badge, Sheet, useData, useSheetClose, useToast } from '../ui/kit'
-import { IcCamera, IcChevronL, IcChevronR, IcDownload, IcInfo, IcKey, IcShare, IcTarget, IcTrophy, IcUpload, IcUser } from '../ui/icons'
+import { IcCamera, IcChevronL, IcChevronR, IcDownload, IcInfo, IcKey, IcRuler, IcShare, IcTarget, IcTrophy, IcUpload, IcUser } from '../ui/icons'
 
-type Section = 'goals' | 'about' | 'ai' | 'data' | 'install' | 'leaderboard' | null
+type Section = 'goals' | 'fat' | 'measure' | 'about' | 'ai' | 'data' | 'install' | 'leaderboard' | null
 
 export function ProfileScreen({ openAi = 0, onOpenLeaderboard, onBack }: { openAi?: number; onOpenLeaderboard: () => void; onBack: () => void }) {
   const [open, setOpen] = useState<Section>(openAi ? 'ai' : null)
   const avatarRef = useRef<HTMLInputElement>(null)
   useEffect(() => { if (openAi) setOpen('ai') }, [openAi])
-  const data = useData(async () => ({ s: await getSettings(), w: (await latestWeight())?.weight ?? null }), [], null)
+  const data = useData(async () => ({
+    s: await getSettings(), w: (await latestWeight())?.weight ?? null, body: (await latestMeasurement()) ?? null
+  }), [], null)
   if (!data) return <div className="screen" />
-  const { s, w } = data
+  const { s, w, body } = data
+  const fatOn = fatGoalOn(s)
   const pickAvatar = async (f?: File) => {
     if (!f) return
     try { await saveSettings({ avatar: await avatarFromFile(f) }); schedulePush(500) } catch { /* не картинка */ }
   }
-  const g = macroGoals(s.proteinGoal, s.fatGoal, s.carbsGoal, s.dailyGoal, w)
+  const g = effectiveGoals(s, w, body)
 
   const groups: [string, [Section, React.ReactNode, string, string, string][]][] = [
     ['Питание', [
       ['goals', <IcTarget size={19} />, 'var(--primary)', 'Цели и макросы', `${Math.round(s.dailyGoal)} ккал`],
+      ['fat', <IcRuler size={19} />, 'var(--secondary)', 'Цель по жиру', fatOn ? `${s.targetFatPercent}%${body ? ` · сейчас ${fmt1(body.fatPercent)}%` : ''}` : 'выкл'],
+      ...(fatOn || body ? [['measure', <IcRuler size={19} />, 'var(--carbs)', 'Замер тела', body ? 'добавить' : 'первый замер'] as [Section, React.ReactNode, string, string, string]] : []),
       ['about', <IcUser size={19} />, 'var(--protein)', 'О себе', s.nickname || ''],
       ['leaderboard', <IcTrophy size={19} />, 'var(--warn-to)', 'Лидерборд', s.nickname.trim() || 'нет ника']
     ]],
@@ -76,6 +82,14 @@ export function ProfileScreen({ openAi = 0, onOpenLeaderboard, onBack }: { openA
             </button>
           ))}
         </div>
+        {fatOn && !body && (
+          <button className="card pad-16 pressable row gap-14" onClick={() => setOpen('measure')}
+            style={{ textAlign: 'left', border: '1.5px solid color-mix(in srgb, var(--secondary) 45%, transparent)', background: 'color-mix(in srgb, var(--secondary) 10%, var(--surface))' }}>
+            <span className="badge" style={{ width: 44, height: 44, borderRadius: 14, background: 'var(--secondary)', color: 'var(--on-brand)' }}><IcRuler size={22} /></span>
+            <span className="col grow"><span className="title">Сделай первый замер</span><span className="small">Талия и шея — и я посчитаю процент жира и норму белка</span></span>
+            <span className="muted"><IcChevronR size={18} /></span>
+          </button>
+        )}
         {groups.map(([title, rows]) => (
           <div key={title} className="col gap-8">
             <div className="overline" style={{ margin: '10px 4px 0' }}>{title}</div>
@@ -96,6 +110,8 @@ export function ProfileScreen({ openAi = 0, onOpenLeaderboard, onBack }: { openA
       </div>
 
       {open === 'goals' && <Sheet label="Цели" onClose={() => setOpen(null)}><GoalsForm s={s} /></Sheet>}
+      {open === 'fat' && <Sheet label="Цель по жиру" onClose={() => setOpen(null)}><FatGoalForm s={s} hasMeasurement={!!body} onMeasure={() => setOpen('measure')} /></Sheet>}
+      {open === 'measure' && <MeasureSheet onClose={() => setOpen(null)} />}
       {open === 'about' && <Sheet label="О себе" onClose={() => setOpen(null)}><AboutForm s={s} /></Sheet>}
       {open === 'ai' && <Sheet label="Нейросеть" onClose={() => setOpen(null)}><AiForm s={s} /></Sheet>}
       {open === 'data' && <Sheet label="Данные" onClose={() => setOpen(null)}><DataForm /></Sheet>}
@@ -131,6 +147,7 @@ function GoalsForm({ s }: { s: Settings }) {
       <div className="h1">Цели и макросы</div>
       <NumField id="g-kcal" label="Дневная норма, ккал" value={kcal} onChange={setKcal} />
       <div className="small">Белки, жиры и углеводы можно оставить пустыми — посчитаю сам от веса и нормы калорий.</div>
+      {fatGoalOn(s) && <div className="small" style={{ color: 'var(--secondary)', fontWeight: 700 }}>Включена цель по жиру — белок считается от сухой массы, поле «Белки» пока не действует.</div>}
       <div className="row gap-8">
         <NumField id="g-p" label="Белки, г" value={p} onChange={setP} placeholder="авто" />
         <NumField id="g-f" label="Жиры, г" value={f} onChange={setF} placeholder="авто" />

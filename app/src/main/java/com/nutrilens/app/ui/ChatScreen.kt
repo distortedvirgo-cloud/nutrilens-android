@@ -1,6 +1,8 @@
 package com.nutrilens.app.ui
 
 import com.nutrilens.app.insights.effectiveMacroGoals
+import com.nutrilens.app.data.BodyComposition
+import com.nutrilens.app.data.latestFatPercent
 import android.app.Application
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -137,12 +139,12 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val mealsToday = mealRepository.mealsOn(today)
                 val weight = mealRepository.getLatestWeight()
-                val goals = effectiveMacroGoals(
-                    settings.proteinGoal, settings.fatGoal, settings.carbsGoal, settings.dailyGoal, weight
-                )
+                val fatPercent = database.latestFatPercent()
+                val goals = effectiveMacroGoals(settings, weight, fatPercent)
                 val system = GeminiTools.buildChatSystemInstruction(
                     dailyGoal = settings.dailyGoal,
-                    userContext = settings.userContext,
+                    // Цель по жиру — коуч видит текущий процент, цель и сухую массу.
+                    userContext = settings.userContext + BodyComposition.coachContext(settings, weight, fatPercent),
                     todayMeals = mealsToday.map { it.name to it.calories.roundToInt() },
                     todayTotal = mealsToday.sumOf { it.calories }.roundToInt(),
                     todayMacros = Triple(

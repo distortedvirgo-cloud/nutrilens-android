@@ -53,6 +53,7 @@ import com.nutrilens.app.data.NutriLensDatabase
 import com.nutrilens.app.data.SettingsRepository
 import com.nutrilens.app.data.ToolJobEntity
 import com.nutrilens.app.data.ToolJobRepository
+import com.nutrilens.app.data.latestFatPercent
 import com.nutrilens.app.insights.effectiveMacroGoals
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -125,10 +126,7 @@ class IdeasViewModel(application: Application) : AndroidViewModel(application) {
             val totals = meals.sumOf { it.calories }
             val remaining = (settings.dailyGoal - totals).roundToInt().coerceAtLeast(100)
             val weight = mealRepository.getLatestWeight()
-            val goals = effectiveMacroGoals(
-                settings.proteinGoal, settings.fatGoal, settings.carbsGoal,
-                settings.dailyGoal, weight
-            )
+            val goals = effectiveMacroGoals(settings, weight, database.latestFatPercent())
             val input = JSONObject().apply {
                 put("note", mealType)
                 put("remainingCalories", remaining)

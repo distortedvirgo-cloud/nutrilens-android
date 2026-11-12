@@ -50,6 +50,7 @@ import com.nutrilens.app.ai.GeminiTools
 import com.nutrilens.app.data.NutriLensDatabase
 import com.nutrilens.app.data.SettingsRepository
 import com.nutrilens.app.data.WeightEntity
+import com.nutrilens.app.data.latestFatPercent
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.EmojiEvents
@@ -173,10 +174,7 @@ class ReportViewModel(application: Application) : AndroidViewModel(application) 
             _aiLoading.value = true
             _aiError.value = null
             try {
-                val goals = effectiveMacroGoals(
-                    settings.proteinGoal, settings.fatGoal, settings.carbsGoal,
-                    settings.dailyGoal, db.weightDao().latest()?.weight
-                )
+                val goals = effectiveMacroGoals(settings, db.weightDao().latest()?.weight, db.latestFatPercent())
                 _aiText.value = GeminiTools.statsInsight(
                     settings,
                     settings.dailyGoal,
@@ -287,7 +285,8 @@ class ReportViewModel(application: Application) : AndroidViewModel(application) 
 @Composable
 fun ReportScreen(
     onOpenLeaderboard: () -> Unit = {},
-    viewModel: ReportViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    viewModel: ReportViewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
+    bodyFatViewModel: BodyFatViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val aiLoading by viewModel.aiLoading.collectAsStateWithLifecycle()
@@ -303,6 +302,9 @@ fun ReportScreen(
             .padding(bottom = 120.dp)
     ) {
         ScreenHeader(title = "Прогресс", subtitle = "Как проходит твой период")
+
+        // Состав тела не зависит от периода и от наличия еды — поэтому над переключателем.
+        BodyCompositionSection(modifier = Modifier.staggeredIn(1), viewModel = bodyFatViewModel)
 
         // Выбранный период живёт во ViewModel — переключатель не сбрасывается
         // при возврате на вкладку.
@@ -723,35 +725,44 @@ private fun WeightCard(weights: List<WeightEntity>) {
 /** Линия веса «прорисовывается» слева направо, под ней — мягкая градиентная заливка. */
 @Composable
 private fun WeightChart(weights: List<WeightEntity>) {
-    val line = MaterialTheme.colorScheme.secondary
+    TrendLineChart(weights.map { it.weight }, MaterialTheme.colorScheme.secondary)
+}
+
+/**
+ * Линия тренда (вес, процент жира): прорисовывается слева направо, под ней —
+ * мягкая заливка, снизу мин/макс. Общая для «Веса» и «Состава тела».
+ */
+@Composable
+internal fun TrendLineChart(values: List<Double>, line: Color, unit: String = "") {
     val surface = MaterialTheme.colorScheme.surface
     val draw = remember { Animatable(0f) }
-    LaunchedEffect(weights) {
+    LaunchedEffect(values) {
         draw.snapTo(0f)
         draw.animateTo(1f, tween(Motion.ExtraLong + 300, easing = Motion.Emphasized))
     }
+    if (values.isEmpty()) return
     Column {
         Canvas(modifier = Modifier.fillMaxWidth().height(130.dp)) {
-            val minW = weights.minOf { it.weight }
-            val maxW = weights.maxOf { it.weight }
+            val minW = values.min()
+            val maxW = values.max()
             val span = (maxW - minW).coerceAtLeast(1.0)
             val pad = 10.dp.toPx()
             val xFor = { i: Int ->
-                if (weights.size == 1) size.width / 2
-                else pad + i * (size.width - pad * 2) / (weights.size - 1)
+                if (values.size == 1) size.width / 2
+                else pad + i * (size.width - pad * 2) / (values.size - 1)
             }
             val yFor = { w: Double ->
                 size.height - pad - ((w - minW) / span * (size.height - pad * 2)).toFloat()
             }
             val path = Path().apply {
-                weights.forEachIndexed { i, entry ->
-                    val p = Offset(xFor(i), yFor(entry.weight))
+                values.forEachIndexed { i, v ->
+                    val p = Offset(xFor(i), yFor(v))
                     if (i == 0) moveTo(p.x, p.y) else lineTo(p.x, p.y)
                 }
             }
             val area = Path().apply {
                 addPath(path)
-                lineTo(xFor(weights.size - 1), size.height)
+                lineTo(xFor(values.size - 1), size.height)
                 lineTo(xFor(0), size.height)
                 close()
             }
@@ -764,8 +775,8 @@ private fun WeightChart(weights: List<WeightEntity>) {
                     path, line,
                     style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
                 )
-                weights.forEachIndexed { i, entry ->
-                    val center = Offset(xFor(i), yFor(entry.weight))
+                values.forEachIndexed { i, v ->
+                    val center = Offset(xFor(i), yFor(v))
                     drawCircle(line, radius = 5.dp.toPx(), center = center)
                     drawCircle(surface, radius = 2.5.dp.toPx(), center = center)
                 }
@@ -774,13 +785,13 @@ private fun WeightChart(weights: List<WeightEntity>) {
         Spacer(Modifier.height(6.dp))
         Row(modifier = Modifier.fillMaxWidth()) {
             Text(
-                "мин %.1f".format(weights.minOf { it.weight }),
+                "мин %.1f".format(values.min()) + unit,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f)
             )
             Text(
-                "макс %.1f".format(weights.maxOf { it.weight }),
+                "макс %.1f".format(values.max()) + unit,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.End,

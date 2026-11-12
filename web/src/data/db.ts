@@ -55,6 +55,21 @@ export interface Settings {
   playerSecret: string
   /** Аватарка 128 px, data-URL JPEG; пусто — буква ника. Видна и в лидерборде. */
   avatar: string
+  /** Рост, см, и пол — для формулы процента жира. null — не указано (берём из «О себе»). */
+  heightCm: number | null
+  sex: 'male' | 'female' | null
+  /** Цель по проценту жира; null — функция выключена. */
+  targetFatPercent: number | null
+}
+
+/** Замер тела: один на дату. manualFatPercent (весы, калипер, DEXA) важнее формулы. */
+export interface BodyMeasurement {
+  date: string // YYYY-MM-DD
+  waistCm: number
+  neckCm: number
+  hipsCm?: number
+  manualFatPercent?: number
+  fatPercent: number
 }
 
 export interface Favorite {
@@ -99,7 +114,10 @@ export const DEFAULT_SETTINGS: Settings = {
   onboarded: false,
   playerId: '',
   playerSecret: '',
-  avatar: ''
+  avatar: '',
+  heightCm: null,
+  sex: null,
+  targetFatPercent: null
 }
 
 // ---------- Книга рецептов ----------
@@ -158,14 +176,17 @@ interface NutriSchema extends DBSchema {
   settings: { key: number; value: Settings }
   jobs: { key: string; value: Job }
   chat: { key: string; value: ChatMessage; indexes: { byTime: number } }
+  measurements: { key: string; value: BodyMeasurement }
 }
 
 let dbPromise: Promise<IDBPDatabase<NutriSchema>> | null = null
 
 export function db(): Promise<IDBPDatabase<NutriSchema>> {
   if (!dbPromise) {
-    dbPromise = openDB<NutriSchema>('nutrilens', 2, {
+    dbPromise = openDB<NutriSchema>('nutrilens', 3, {
       upgrade(d, oldVersion) {
+        // v3: замеры тела (процент жира). Остальные хранилища не трогаем.
+        if (oldVersion < 3) d.createObjectStore('measurements', { keyPath: 'date' })
         // v2: книга рецептов. Хранилища v1 создаются только на свежей базе.
         if (oldVersion < 2) d.createObjectStore('recipes', { keyPath: 'id' }).createIndex('byTime', 'createdAt')
         if (oldVersion >= 1) return
@@ -322,6 +343,26 @@ export async function toggleHabit(date: string, habitId: string): Promise<void> 
   const key = `${date}:${habitId}`
   if (await d.get('habits', key)) await d.delete('habits', key)
   else await d.put('habits', { key, date, habitId })
+  notifyChanged()
+}
+
+// ---------- Замеры тела ----------
+
+export async function measurements(): Promise<BodyMeasurement[]> {
+  return (await (await db()).getAll('measurements')).sort((a, b) => a.date.localeCompare(b.date))
+}
+
+export async function latestMeasurement(): Promise<BodyMeasurement | undefined> {
+  return (await measurements()).at(-1)
+}
+
+export async function measurementOn(date: string): Promise<BodyMeasurement | undefined> {
+  return (await db()).get('measurements', date)
+}
+
+/** Запись на ту же дату перезаписывается. */
+export async function putMeasurement(m: BodyMeasurement): Promise<void> {
+  await (await db()).put('measurements', m)
   notifyChanged()
 }
 

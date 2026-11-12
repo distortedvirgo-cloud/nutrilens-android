@@ -137,6 +137,9 @@ fun OnboardingScreen(onFinish: () -> Unit) {
                     }
                     out = out.copy(
                         userContext = about,
+                        // Рост и пол отдельно — их берёт формула процента жира.
+                        heightCm = heightN,
+                        sex = if (male) "male" else "female",
                         dailyGoal = (num(kcalOverride) ?: computed!!.toDouble()).coerceIn(800.0, 6000.0)
                     )
                 } else if (notes.isNotBlank()) {
