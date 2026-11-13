@@ -643,7 +643,7 @@ object FatBurnPlanSync {
         // Вес на дату: последнее взвешивание не позже неё, иначе самое раннее.
         val bodyweightAt = { d: LocalDate -> (weights.lastOrNull { !it.first.isAfter(d) } ?: weights.firstOrNull())?.second }
         val phase = program?.currentPhase
-        val blockStart = phase?.startDate?.takeIf { phase.type == FatBurnProgram.PhaseType.BLOCK }
+        val blockStart = if (phase != null && phase.type == FatBurnProgram.PhaseType.BLOCK) phase.startDate else null
         val deload = program != null && phase?.type == FatBurnProgram.PhaseType.BREAK &&
             FatBurnProgram.daysInPhase(program, today) < 7
         // Прошлые чек-ины, новые первыми; сегодняшний (если чек-ин переделывают) не в счёт.
