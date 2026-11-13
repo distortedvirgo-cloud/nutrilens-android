@@ -5,15 +5,16 @@ import { exportBackup, importBackup } from '../data/actions'
 import { bodyProfile, defaultFatTarget, effectiveGoals, fatGoalOn, fmt1 } from '../data/body'
 import { FatGoalForm, MeasureSheet } from './Body'
 import { CHECKIN, WEEKDAYS_SHORT, weekdayAcc } from '../data/checkin'
+import { SCORE, clampStepGoal, fmtInt } from '../data/dayscore'
 import { dailyResetTime, usageToday } from '../ai/gemini'
 import { activeProvider, hasSelectedKey } from '../ai'
 import { KeyField, ProviderCards } from '../ui/AiSetup'
 import { Avatar, avatarFromFile } from '../ui/Avatar'
 import { schedulePush } from '../data/leaderboard'
 import { Badge, Segmented, Sheet, useData, useSheetClose, useToast } from '../ui/kit'
-import { IcCamera, IcChevronL, IcChevronR, IcDownload, IcInfo, IcKey, IcMinus, IcPlus, IcRuler, IcShare, IcTarget, IcTrophy, IcUpload, IcUser } from '../ui/icons'
+import { IcCamera, IcChevronL, IcChevronR, IcDownload, IcInfo, IcKey, IcMinus, IcPlus, IcRuler, IcShare, IcSteps, IcTarget, IcTrophy, IcUpload, IcUser } from '../ui/icons'
 
-type Section = 'goals' | 'fat' | 'measure' | 'about' | 'ai' | 'data' | 'install' | 'leaderboard' | null
+type Section = 'goals' | 'steps' | 'fat' | 'measure' | 'about' | 'ai' | 'data' | 'install' | 'leaderboard' | null
 
 export function ProfileScreen({ openAi = 0, onOpenLeaderboard, onBack }: { openAi?: number; onOpenLeaderboard: () => void; onBack: () => void }) {
   const [open, setOpen] = useState<Section>(openAi ? 'ai' : null)
@@ -45,6 +46,7 @@ export function ProfileScreen({ openAi = 0, onOpenLeaderboard, onBack }: { openA
     ['Питание', [
       ...(fatOn ? [['fat', <IcRuler size={19} />, 'var(--secondary)', 'Цель по жиру', `${s.targetFatPercent}%${body ? ` · сейчас ${fmt1(body.fatPercent)}%` : ''}`] as [Section, React.ReactNode, string, string, string]] : []),
       ['goals', <IcTarget size={19} />, 'var(--primary)', 'Цели и макросы', `${Math.round(g.calories)} ккал${g.plan ? ' · авто' : ''}`],
+      ['steps', <IcSteps size={19} />, 'var(--carbs)', 'Шаги', s.stepsEnabled ? `${fmtInt(s.stepGoal || SCORE.stepGoalDefault)} в день` : 'выключены'],
       ...(fatOn || body ? [['measure', <IcRuler size={19} />, 'var(--carbs)', 'Замер тела', body ? 'добавить' : 'первый замер'] as [Section, React.ReactNode, string, string, string]] : []),
       ['about', <IcUser size={19} />, 'var(--protein)', 'О себе', s.nickname || ''],
       ['leaderboard', <IcTrophy size={19} />, 'var(--warn-to)', 'Лидерборд', s.nickname.trim() || 'нет ника']
@@ -132,6 +134,7 @@ export function ProfileScreen({ openAi = 0, onOpenLeaderboard, onBack }: { openA
       </div>
 
       {open === 'goals' && <Sheet label="Цели" onClose={() => setOpen(null)}><GoalsForm s={s} /></Sheet>}
+      {open === 'steps' && <Sheet label="Шаги" onClose={() => setOpen(null)}><StepsSettings s={s} /></Sheet>}
       {open === 'fat' && <Sheet label="Цель по жиру" onClose={() => setOpen(null)}><FatGoalForm s={s} hasMeasurement={!!body} onMeasure={() => setOpen('measure')} /></Sheet>}
       {open === 'measure' && <MeasureSheet onClose={() => setOpen(null)} />}
       {open === 'about' && <Sheet label="О себе" onClose={() => setOpen(null)}><AboutForm s={s} /></Sheet>}
@@ -175,6 +178,36 @@ function ModeSettings({ s }: { s: Settings }) {
         <span className="h2 num" aria-live="polite" style={{ minWidth: 18, textAlign: 'center' }}>{goal}</span>
         <button className="icon-btn" aria-label="Больше силовых" disabled={goal >= CHECKIN.workoutGoalMax} onClick={() => setGoal(1)}><IcPlus size={18} /></button>
       </div>
+    </div>
+  )
+}
+
+/** Шаги: включить плитку на «Сегодня» и цель. Меняется сразу, без кнопки «Сохранить». */
+function StepsSettings({ s }: { s: Settings }) {
+  const close = useSheetClose()
+  const goal = s.stepGoal || SCORE.stepGoalDefault
+  const setGoal = (d: number) => saveSettings({ stepGoal: clampStepGoal(goal + d) })
+  return (
+    <div className="col gap-14">
+      <div>
+        <div className="h1">Шаги</div>
+        <div className="small">Плитка на «Сегодня»: нажми и впиши, сколько прошёл за день.{fatGoalOn(s) ? ' В режиме шаги идут в оценку дня — как и силовая.' : ''}</div>
+      </div>
+      <Segmented options={[[0, 'Выключены'], [1, 'Включены']]} value={s.stepsEnabled ? 1 : 0} onChange={(v) => saveSettings({ stepsEnabled: v === 1 })} />
+      <div className="row gap-12" style={{ padding: '0 4px', opacity: s.stepsEnabled ? 1 : 0.5 }}>
+        <span className="col grow">
+          <span style={{ fontWeight: 700 }}>Цель в день</span>
+          <span className="label num">от {fmtInt(SCORE.stepGoalMin)} до {fmtInt(SCORE.stepGoalMax)}</span>
+        </span>
+        <button className="icon-btn" aria-label="Меньше шагов" disabled={!s.stepsEnabled || goal <= SCORE.stepGoalMin} onClick={() => setGoal(-SCORE.stepGoalStep)}><IcMinus size={18} /></button>
+        <span className="h2 num" aria-live="polite" style={{ minWidth: 64, textAlign: 'center' }}>{fmtInt(goal)}</span>
+        <button className="icon-btn" aria-label="Больше шагов" disabled={!s.stepsEnabled || goal >= SCORE.stepGoalMax} onClick={() => setGoal(SCORE.stepGoalStep)}><IcPlus size={18} /></button>
+      </div>
+      <div className="row gap-10 small" style={{ padding: 14, borderRadius: 18, background: 'var(--surface-high)', alignItems: 'flex-start' }}>
+        <span style={{ color: 'var(--secondary)', marginTop: 1 }}><IcInfo size={18} /></span>
+        <span>Шаги не прибавляют калории: расход уже учтён в недельном пересчёте.</span>
+      </div>
+      <button className="btn btn-soft full" onClick={close}>Готово</button>
     </div>
   )
 }

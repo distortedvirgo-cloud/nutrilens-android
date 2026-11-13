@@ -2,6 +2,7 @@
 // fatplan.ts: без IndexedDB, React и «сейчас» — всё приходит во входе, поэтому
 // правила легко проверить скриптом. Пороги — в CHECKIN, чтобы тюнить в одном месте.
 import { type FatPlan, type PlanInput, PLAN, addIsoDays, computePlan, daysBetween, macrosFor, planFloor, plural } from './fatplan'
+import { type DayActivity, SCORE, averageScore, gradeDay } from './dayscore'
 
 export const CHECKIN = {
   /** Сглаживание тренда за один день: 0,25 — тренд «помнит» примерно неделю. */
@@ -15,7 +16,10 @@ export const CHECKIN = {
   minRateDays: 4,
   /** «Дневник полный»: 5 записанных дней из 7. */
   diaryDays: 5,
-  /** «Хороший день»: калории от −10% до +5% плана и белок от 90% цели. */
+  /**
+   * «Хороший день» с 3.23 — оценка дня от 70 (dayscore.ts). Для дней без записи
+   * активности остаётся правило 3.22: калории от −10% до +5% плана и белок от 90% цели.
+   */
   goodLo: 0.9,
   goodHi: 1.05,
   proteinShare: 0.9,
@@ -145,6 +149,8 @@ export interface CheckIn extends Ratings {
   fatChange: number | null
   diaryDays: number
   goodDays: number
+  /** Средняя оценка дня за период (3.23); null — старый чек-ин или дней с данными нет. */
+  avgScore: number | null
   proteinDays: number
   workouts: number
   workoutGoal: number
@@ -168,6 +174,9 @@ export interface CheckinInput {
   days: { date: string; kcal: number; protein: number }[]
   /** Даты отмеченных силовых. */
   workouts: string[]
+  /** Шаги и сон по дням (3.23); нет записи за день — день оценивается по правилу 3.22. */
+  activity?: DayActivity[]
+  stepGoal?: number
   /** Взвешивания с запасом до начала периода — чтобы тренд успел «разогреться». */
   weights: { date: string; weight: number }[]
   measurements: { date: string; fatPercent: number }[]
@@ -206,8 +215,21 @@ export function buildCheckin(input: CheckinInput): CheckinResult {
   const diaryDays = period.filter((d) => d.kcal >= PLAN.minDayKcal).length
   const proteinOk = (d: { protein: number }) => d.protein >= prevPlan.protein * CHECKIN.proteinShare
   const proteinDays = period.filter((d) => d.kcal >= PLAN.minDayKcal && proteinOk(d)).length
-  const goodDays = period.filter((d) => d.kcal >= prevPlan.calories * CHECKIN.goodLo && d.kcal <= prevPlan.calories * CHECKIN.goodHi && proteinOk(d)).length
-  const workouts = new Set(input.workouts.filter(inPeriod)).size
+  // Хорошие дни — по оценке дня; день без записи шагов/сна — по старому правилу (внутри gradeDay).
+  const workoutSet = new Set(input.workouts.filter(inPeriod))
+  const actBy = new Map((input.activity ?? []).filter((a) => inPeriod(a.date)).map((a) => [a.date, a]))
+  const foodBy = new Map(period.map((d) => [d.date, d]))
+  const targets = { calories: prevPlan.calories, protein: prevPlan.protein, stepGoal: input.stepGoal ?? SCORE.stepGoalDefault }
+  const grades = Array.from({ length: n }, (_, i) => {
+    const date = addIsoDays(start, i)
+    const f = foodBy.get(date)
+    return gradeDay({ kcal: f?.kcal ?? 0, protein: f?.protein ?? 0, workout: workoutSet.has(date) }, actBy.get(date) ?? null, targets)
+  })
+  const goodDays = grades.filter((g) => g.good).length
+  // Средний балл — только если в периоде есть дни с записью активности: у недели
+  // целиком «до 3.23» сна в оценке нет, и цифра была бы заниженной.
+  const avgScore = actBy.size ? averageScore(grades) : null
+  const workouts = workoutSet.size
   const diaryComplete = diaryDays >= diaryNeed
 
   // 2. Вес по тренду — темп недели не прыгает от воды и соли.
@@ -308,7 +330,7 @@ export function buildCheckin(input: CheckinInput): CheckinResult {
     fatPercent: lastM?.fatPercent ?? null,
     fatChange: fatChange == null ? null : Math.round(fatChange * 10) / 10,
     ...ratings,
-    diaryDays, goodDays, proteinDays, workouts, workoutGoal: workoutNeed,
+    diaryDays, goodDays, avgScore, proteinDays, workouts, workoutGoal: workoutNeed,
     signal, signalText, flatWeeks,
     planBefore: macros(prevPlan),
     planAfter: macros(plan),
@@ -342,7 +364,7 @@ export function parseCheckin(v: unknown): CheckIn | null {
     trendChangeKg: opt('trendChangeKg'), ratePerWeek: opt('ratePerWeek'),
     fatPercent: opt('fatPercent'), fatChange: opt('fatChange'),
     hunger: rating('hunger'), energy: rating('energy'), sleep: rating('sleep'),
-    diaryDays: n('diaryDays'), goodDays: n('goodDays'), proteinDays: n('proteinDays'),
+    diaryDays: n('diaryDays'), goodDays: n('goodDays'), avgScore: opt('avgScore'), proteinDays: n('proteinDays'),
     workouts: n('workouts'), workoutGoal: n('workoutGoal', CHECKIN.workoutGoalDefault),
     signal: o.signal === 'green' || o.signal === 'red' ? o.signal : 'yellow',
     signalText: typeof o.signalText === 'string' ? o.signalText : '',
@@ -358,7 +380,7 @@ export function checkinContext(c: CheckIn): string {
   const parts = [`последний чек-ин ${c.date}: тренд веса ${f1(c.trendWeight)} кг`]
   if (c.ratePerWeek != null) parts.push(`темп ${c.ratePerWeek > 0 ? '−' : '+'}${f1(Math.abs(c.ratePerWeek))}% веса в неделю`)
   if (c.fatPercent != null) parts.push(`жир ${f1(c.fatPercent)}%${c.fatChange != null ? ` (${c.fatChange > 0 ? '+' : ''}${f1(c.fatChange)})` : ''}`)
-  parts.push(`дневник ${c.diaryDays}/${c.periodDays} дней, хороших дней ${c.goodDays}, силовых ${c.workouts}/${c.workoutGoal}`)
+  parts.push(`дневник ${c.diaryDays}/${c.periodDays} дней, хороших дней ${c.goodDays}${c.avgScore != null ? `, средняя оценка дня ${c.avgScore}/100` : ''}, силовых ${c.workouts}/${c.workoutGoal}`)
   parts.push(`сигнал мышц: ${c.signal === 'green' ? 'зелёный' : c.signal === 'yellow' ? 'жёлтый' : 'красный'}`)
   if (c.hunger != null) parts.push(`голод ${c.hunger}/5, энергия ${c.energy ?? '—'}/5, сон ${c.sleep ?? '—'}/5`)
   parts.push(`план ${c.planBefore ? `${c.planBefore.calories} → ` : ''}${c.planAfter.calories} ккал (${c.note})`)

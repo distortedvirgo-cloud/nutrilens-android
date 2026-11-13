@@ -6,9 +6,10 @@ import { type BodyMeasurement, allMealDates, latestWeight, measurements } from '
 import { composition, effectiveCalories, etaText, fatGoalOn, fmt1, plural } from '../data/body'
 import { type DataStatus, type FatPlan, addIsoDays } from '../data/fatplan'
 import { type CheckIn, type TrendPoint, checkinWhen, trendChange, trendSeries } from '../data/checkin'
-import { type CheckinStatus, checkinStatus, planDataStatus } from '../data/plan'
+import { type CheckinStatus, checkinStatus, dayGrades, planDataStatus } from '../data/plan'
+import { type DayGrade, SCORE, averageScore, programWeeks } from '../data/dayscore'
 import { checkins } from '../data/db'
-import { CheckinHistory, CheckinResultSheet } from './Checkin'
+import { CheckinHistory, CheckinResultSheet, LEVEL_COLOR } from './Checkin'
 import { Badge, Bar, Segmented, useData } from '../ui/kit'
 import { IcAlert, IcChart, IcDrop, IcFire, IcFood, IcInfo, IcPlus, IcRuler, IcScale, IcSpark, IcTarget } from '../ui/icons'
 import { MeasureSheet } from './Body'
@@ -57,7 +58,9 @@ export function ProgressScreen() {
       plan: settings.fatPlan,
       status: fatGoalOn(settings) ? await planDataStatus() : null,
       checkin: await checkinStatus(settings),
-      checkins: fatGoalOn(settings) ? await checkins() : []
+      checkins: fatGoalOn(settings) ? await checkins() : [],
+      // Оценки дней: неделя — 7 дней, месяц и год — последние 4 недели (больше в полосу не влезет).
+      grades: await dayGrades(addIsoDays(end, -(period === 7 ? 6 : 27)), end, settings)
     }
   }, [period], null)
 
@@ -70,6 +73,7 @@ export function ProgressScreen() {
         </div>
         <Segmented options={[[7, 'Неделя'], [30, 'Месяц'], [365, 'Год']]} value={period} onChange={setPeriod} />
         {data?.fatMode && <PlanCard plan={data.plan} status={data.status} checkin={data.checkin} trend={data.trend} />}
+        {data?.fatMode && data.grades && <ProgramCard grades={data.grades} checkins={data.checkins} today={data.end} />}
         {data && (data.targetFat != null || data.body.length > 0) && (
           <BodyCard list={data.body} weight={data.weight} target={data.targetFat} onMeasure={() => setMeasuring(true)} />
         )}
@@ -411,6 +415,63 @@ function PlanCard({ plan, status, checkin, trend }: { plan: FatPlan | null; stat
         {checkin?.due ? 'Чек-ин ждёт — открой «Сегодня»' : `Чек-ин — ${checkinWhen(checkin?.next ?? plan.nextDate, today)}`}
       </div>
       {explain}
+    </div>
+  )
+}
+
+/**
+ * «Недели программы»: засчитанные недели (5+ хороших дней и чек-ин) и дни по
+ * оценке. Только позитив: пропущенная неделя просто не считается — никаких
+ * «серия потеряна» и счётчиков плохих дней.
+ */
+function ProgramCard({ grades, checkins: list, today }: { grades: Map<string, DayGrade>; checkins: CheckIn[]; today: string }) {
+  const { done, streak } = programWeeks(list)
+  const days = [...grades.entries()]
+  // Средняя — без сегодняшнего дня: он ещё идёт.
+  const avg = averageScore(days.filter(([d]) => d !== today).map(([, g]) => g))
+  const big = days.length <= 7
+  return (
+    <div className="card pad-18 col gap-14">
+      <div className="row gap-12">
+        <Badge tint="var(--primary)" size={40}><IcTarget size={20} /></Badge>
+        <div className="grow title">Недели программы</div>
+        {streak >= 2 && <span className="chip primary num" style={{ height: 30, fontSize: 13 }}>{streak} {plural(streak, 'неделя', 'недели', 'недель')} подряд 🔥</span>}
+      </div>
+      <div className="row gap-8" style={{ alignItems: 'baseline' }}>
+        <span className="display num">{done}</span>
+        <span className="small">{done === 0 ? 'пока впереди — первая засчитается на чек-ине' : `${plural(done, 'неделя засчитана', 'недели засчитаны', 'недель засчитано')}`}</span>
+      </div>
+      <div className="label">Неделя засчитана, если в ней 5+ хороших дней и сделан чек-ин. Хороший день — оценка от {SCORE.good}.</div>
+      <div className="col gap-8">
+        <div className="row between">
+          <span style={{ fontWeight: 700, fontSize: 14 }}>Оценка дней</span>
+          {avg != null && <span className="label num">в среднем {avg}</span>}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: big ? 6 : 5 }} role="img"
+          aria-label={`Оценки дней за ${days.length} ${plural(days.length, 'день', 'дня', 'дней')}${avg != null ? `, в среднем ${avg}` : ''}`}>
+          {days.map(([d, g]) => {
+            const c = g.level === 'none' ? 'var(--surface-high)' : LEVEL_COLOR[g.level]
+            const filled = g.level !== 'none' && g.level !== 'pending'
+            return (
+              <div key={d} className="col" style={{ alignItems: 'center', gap: 4 }}>
+                <span className="num" style={{
+                  width: '100%', maxWidth: big ? 40 : 30, aspectRatio: '1', borderRadius: big ? 999 : 8,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: big ? 13 : 10.5, fontWeight: 800,
+                  background: filled ? `color-mix(in srgb, ${c} 22%, transparent)` : 'var(--surface-low)',
+                  border: `1.5px ${g.level === 'pending' ? 'dashed' : 'solid'} ${g.level === 'none' ? 'var(--hairline)' : c}`,
+                  color: g.score ? 'var(--text)' : 'var(--text-3)'
+                }}>{g.score ? g.score.total : ''}</span>
+                {big && <span className="label" style={{ fontSize: 10.5 }}>{SHORT_WD[parseIso(d).getDay()]}</span>}
+              </div>
+            )
+          })}
+        </div>
+        <div className="row gap-12 label" style={{ flexWrap: 'wrap' }}>
+          <Legend c={LEVEL_COLOR.good} t={`${SCORE.good}+`} /><Legend c={LEVEL_COLOR.medium} t={`${SCORE.medium}–${SCORE.good - 1}`} />
+          <Legend c={LEVEL_COLOR.low} t={`до ${SCORE.medium}`} /><Legend c="var(--primary)" t="сегодня — пока" />
+        </div>
+      </div>
     </div>
   )
 }

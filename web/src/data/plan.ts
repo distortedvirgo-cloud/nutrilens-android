@@ -2,13 +2,14 @@
 // пересчитать, если пора, и сохранить в настройки. Сам алгоритм — в fatplan.ts,
 // правила чек-ина — в checkin.ts.
 import {
-  getSettings, lastCheckin, latestMeasurement, latestWeight, measurements, mealsBetween, putCheckin, saveSettings,
+  activityBetween, getSettings, lastCheckin, latestMeasurement, latestWeight, measurements, mealsBetween, putCheckin, saveSettings,
   weightsBetween, workoutsBetween, type Settings
 } from './db'
 import { activityFactor, bodyProfile, fatGoalOn } from './body'
 import { type DataStatus, type FatPlan, type PlanInput, PLAN, addIsoDays, assessData, computePlan, planDue } from './fatplan'
 import { type CheckIn, type Ratings, CHECKIN, buildCheckin, checkinDue, checkinPeriod, nextCheckinDate } from './checkin'
 import { iso } from './insights'
+import { type DayGrade, SCORE, gradeDay } from './dayscore'
 
 /** Вход для алгоритма; null — режим выключен или веса ещё нет (без веса плана не посчитать). */
 export async function loadPlanInput(s?: Settings): Promise<PlanInput | null> {
@@ -116,6 +117,8 @@ export function completeCheckin(ratings: Ratings, prevPlan: FatPlan): Promise<Ch
       plan: { ...input, prev: prevPlan },
       days: [...byDay].map(([date, v]) => ({ date, ...v })),
       workouts: await workoutsBetween(start, addIsoDays(today, -1)),
+      activity: await activityBetween(start, addIsoDays(today, -1)),
+      stepGoal: s.stepGoal || SCORE.stepGoalDefault,
       // Месяц до начала периода — тренд успевает «разогреться» и не стартует с сырой цифры.
       weights: await weightsBetween(addIsoDays(start, -30), today),
       measurements: (await measurements()).map((m) => ({ date: m.date, fatPercent: m.fatPercent })),
@@ -127,4 +130,31 @@ export function completeCheckin(ratings: Ratings, prevPlan: FatPlan): Promise<Ch
     await putCheckin(checkin)
     return checkin
   })
+}
+
+/**
+ * Оценки дней за даты (включительно) — для полосы недели и «Прогресса».
+ * Прошлые дни считаем от текущего плана: исторических планов по дням нет,
+ * а шаг плана за неделю — не больше ±150 ккал, оценка почти не сдвигается.
+ * null — режим выключен или плана ещё нет.
+ */
+export async function dayGrades(start: string, end: string, s?: Settings): Promise<Map<string, DayGrade> | null> {
+  s ??= await getSettings()
+  if (!fatGoalOn(s) || !s.fatPlan) return null
+  const today = iso(new Date())
+  const food = new Map<string, { kcal: number; protein: number }>()
+  for (const m of await mealsBetween(start, end)) {
+    const d = food.get(m.date) ?? { kcal: 0, protein: 0 }
+    food.set(m.date, { kcal: d.kcal + m.calories, protein: d.protein + m.protein })
+  }
+  const workouts = new Set(await workoutsBetween(start, end))
+  const act = new Map((await activityBetween(start, end)).map((a) => [a.date, a]))
+  const t = { calories: s.fatPlan.calories, protein: s.fatPlan.protein, stepGoal: s.stepGoal || SCORE.stepGoalDefault }
+  const out = new Map<string, DayGrade>()
+  for (let d = start; d <= end; d = addIsoDays(d, 1)) {
+    if (d > today) break
+    const f = food.get(d)
+    out.set(d, gradeDay({ kcal: f?.kcal ?? 0, protein: f?.protein ?? 0, workout: workouts.has(d) }, act.get(d) ?? null, t, d === today))
+  }
+  return out
 }

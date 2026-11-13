@@ -1,10 +1,11 @@
 // «Сегодня»: неделя с кольцами, сводка калорий и БЖУ, совет коуча,
-// вода и вес, приёмы пищи по слотам и состояние ИИ-анализа.
+// вода и вес, приёмы пищи по слотам и состояние ИИ-анализа. В режиме сжигания
+// жира — оценка дня (dayscore.ts), сон и шаги (шаги на вебе — только вручную).
 import { useRef, useState } from 'react'
 import { Avatar } from '../ui/Avatar'
 import {
   type Meal, addWater, allMealDates, getSettings, jobs, latestMeasurement, latestWeight, mealsBetween, mealsOn,
-  waterOn, workoutOn, workoutsBetween, toggleWorkout, deleteJob, favorites
+  waterOn, workoutOn, workoutsBetween, toggleWorkout, deleteJob, favorites, activityOn, setSleptWell, setSteps
 } from '../data/db'
 import {
   SLOTS, type Slot, addDays, calcStreak, dayOverline, dayTitle, dayTotals, daysWord, healthScoreOf, iso,
@@ -14,12 +15,14 @@ import { retryJob, runQueue } from '../data/actions'
 import { effectiveGoals, fatGoalOn } from '../data/body'
 import { type FatPlan, daysBetween } from '../data/fatplan'
 import { checkinWhen } from '../data/checkin'
-import { checkinStatus, type CheckinStatus } from '../data/plan'
+import { checkinStatus, dayGrades, type CheckinStatus } from '../data/plan'
+import { type DayGrade, type DayScore, SCORE, fmtInt, gradeDay, scoreDay } from '../data/dayscore'
+import { plural } from '../data/body'
 import { MeasureSheet } from './Body'
-import { CheckinCard, CheckinSheet } from './Checkin'
-import { Bar, Badge, Photo, Ring, useCountUp, useData, useToast } from '../ui/kit'
+import { CheckinCard, CheckinSheet, LEVEL_COLOR } from './Checkin'
+import { Bar, Badge, Photo, Ring, Sheet, useCountUp, useData, useSheetClose, useToast } from '../ui/kit'
 import {
-  IcCamera, IcCheck, IcChevronR, IcDumbbell, IcKey, IcDrop, IcFire, IcPlus, IcRefresh, IcScale, IcSpark, IcStar, IcTrophy, IcAlert, IcClose
+  IcCamera, IcCheck, IcChevronR, IcDumbbell, IcInfo, IcKey, IcMoon, IcSteps, IcDrop, IcFire, IcPlus, IcRefresh, IcScale, IcSpark, IcStar, IcTrophy, IcAlert, IcClose
 } from '../ui/icons'
 
 const WEEK = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
@@ -39,6 +42,7 @@ export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOp
   const [measuring, setMeasuring] = useState(false)
   // План «до» берём в момент открытия — чек-ин хранит его снимок.
   const [checkin, setCheckin] = useState<FatPlan | null>(null)
+  const [stepsOpen, setStepsOpen] = useState(false)
   const toast = useToast()
   const d = parseIso(date)
   const today = iso(new Date())
@@ -58,6 +62,9 @@ export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOp
       checkin: await checkinStatus(settings),
       weekWorkouts: (await workoutsBetween(iso(monday), iso(addDays(monday, 6)))).length,
       water: await waterOn(date),
+      activity: await activityOn(date),
+      // Оценки дней недели — для цвета полосы (только в режиме и с планом).
+      grades: await dayGrades(iso(monday), iso(addDays(monday, 6)), settings),
       workout: await workoutOn(date),
       weight: w?.weight ?? null,
       weightDays: w ? Math.round((parseIso(today).getTime() - parseIso(w.date).getTime()) / 86400000) : null,
@@ -75,6 +82,17 @@ export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOp
   const fatMode = fatGoalOn(settings)
   const norm = waterNorm(weight, workout)
   const focus = isToday ? nextMealFocus(totals, goals) : null
+  const stepsOn = settings.stepsEnabled
+  const stepGoal = settings.stepGoal || SCORE.stepGoalDefault
+  const steps = data.activity?.steps ?? null
+  // Оценка дня — только в режиме и когда есть план (без плана не от чего считать).
+  const targets = goals.plan ? { calories: goals.plan.calories, protein: goals.plan.protein, stepGoal } : null
+  const grade = fatMode && targets
+    ? gradeDay({ kcal: totals.calories, protein: totals.protein, workout }, data.activity, targets, isToday)
+    : null
+  const score = grade && targets
+    ? grade.score ?? scoreDay({ kcal: totals.calories, protein: totals.protein, workout, steps, sleptWell: data.activity?.sleptWell ?? null }, targets)
+    : null
   const active = data.jobs.filter((j) => j.status !== 'FAILED')
   const failed = data.jobs.filter((j) => j.status === 'FAILED')
 
@@ -109,8 +127,9 @@ export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOp
             <span className="muted"><IcChevronR size={18} /></span>
           </button>
         )}
-        <WeekStrip date={d} weekKcal={data.weekKcal} goal={goals.calories} onSelect={(x) => setDate(iso(x))} />
-        <Hero meals={meals} goal={goals.calories} goals={goals} proteinFirst={fatMode} onLeaderboard={onOpenLeaderboard} />
+        <WeekStrip date={d} weekKcal={data.weekKcal} goal={goals.calories} grades={fatMode ? data.grades : null} onSelect={(x) => setDate(iso(x))} />
+        {/* Оценка дня уже показывает белок с остатком — тогда отдельный блок белка не дублируем. */}
+        <Hero meals={meals} goal={goals.calories} goals={goals} proteinFirst={fatMode && !score} onLeaderboard={onOpenLeaderboard} />
         {fatMode && isToday && goals.plan && data.checkin?.due && (
           <CheckinCard overdue={Math.max(0, daysBetween(data.checkin.next, today))} onOpen={() => setCheckin(goals.plan)} />
         )}
@@ -127,10 +146,25 @@ export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOp
             </button>
           ))}
 
-        {fatMode && (
-          <WorkoutToggle done={workout} week={data.weekWorkouts} goal={settings.workoutGoal}
-            onToggle={async () => { const on = await toggleWorkout(date); if (on) toast('Силовая отмечена 💪') }} />
+        {grade && score && targets && (
+          <DayScoreCard score={score} grade={grade} isToday={isToday} kcal={totals.calories} protein={totals.protein}
+            targets={targets} workout={workout} steps={steps} stepsOn={stepsOn} slept={data.activity?.sleptWell ?? null}
+            onSleep={(v) => setSleptWell(date, v)} />
         )}
+
+        {fatMode && (stepsOn
+          ? (
+            <div className="row gap-12">
+              <WorkoutTile done={workout} week={data.weekWorkouts} goal={settings.workoutGoal}
+                onToggle={async () => { const on = await toggleWorkout(date); if (on) toast('Силовая отмечена 💪') }} />
+              <StepsTile steps={steps} goal={stepGoal} onOpen={() => setStepsOpen(true)} />
+            </div>
+          )
+          : (
+            <WorkoutToggle done={workout} week={data.weekWorkouts} goal={settings.workoutGoal}
+              onToggle={async () => { const on = await toggleWorkout(date); if (on) toast('Силовая отмечена 💪') }} />
+          ))}
+        {!fatMode && stepsOn && <StepsRow steps={steps} goal={stepGoal} onOpen={() => setStepsOpen(true)} />}
 
         {active.length > 0 && <Processing count={active.length} note={active[0].note} />}
         {failed.map((j) => (
@@ -224,6 +258,11 @@ export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOp
       </div>
       {measuring && <MeasureSheet onClose={() => setMeasuring(false)} />}
       {checkin && <CheckinSheet plan={checkin} onClose={() => setCheckin(null)} />}
+      {stepsOpen && (
+        <Sheet label="Шаги" onClose={() => setStepsOpen(false)} keyboardAware>
+          <StepsForm date={date} isToday={isToday} initial={steps} goal={stepGoal} />
+        </Sheet>
+      )}
     </div>
   )
 }
@@ -246,6 +285,206 @@ function WorkoutToggle({ done, week, goal, onToggle }: { done: boolean; week: nu
         background: done ? 'var(--primary)' : 'var(--surface-high)', color: done ? 'var(--on-brand)' : 'transparent'
       }}><IcCheck size={18} /></span>
     </button>
+  )
+}
+
+type ChipState = 'done' | 'partial' | 'none'
+const CHIP_COLOR: Record<ChipState, string> = { done: LEVEL_COLOR.good, partial: 'var(--gold)', none: 'var(--text-3)' }
+const stepsWord = (n: number) => plural(n, 'шаг', 'шага', 'шагов')
+
+/**
+ * «Оценка дня» (режим): балл с кольцом, четыре части с конкретным остатком и
+ * вопрос про сон. Сегодня день не закончен — пишем «пока N» и не ругаем.
+ */
+function DayScoreCard({ score, grade, isToday, kcal, protein, targets, workout, steps, stepsOn, slept, onSleep }: {
+  score: DayScore; grade: DayGrade; isToday: boolean; kcal: number; protein: number
+  targets: { calories: number; protein: number; stepGoal: number }
+  workout: boolean; steps: number | null; stepsOn: boolean; slept: boolean | null; onSleep: (v: boolean | null) => void
+}) {
+  const n = score.total
+  const color = grade.good ? LEVEL_COLOR.good : isToday ? 'var(--primary)' : LEVEL_COLOR[grade.level === 'none' ? 'medium' : grade.level]
+  const title = grade.good
+    ? (isToday ? 'Уже хороший день' : 'Хороший день')
+    : isToday ? `Пока ${n} из 100` : grade.level === 'low' ? 'Завтра — новый день' : 'Неплохой день'
+  const sub = isToday && !grade.good ? `до хорошего дня — ещё ${SCORE.good - n}` : `хороший день — от ${SCORE.good} баллов`
+
+  // Калории: коридор −10%…+5% плана. Остаток — до нижней границы коридора.
+  const r = targets.calories > 0 ? kcal / targets.calories : 0
+  const lo = Math.ceil(targets.calories * SCORE.kcalLo - kcal)
+  const kc: [ChipState, string] = kcal <= 0
+    ? ['none', isToday ? 'пока пусто' : 'не записано']
+    : r < SCORE.kcalLo
+      ? [score.calories > 0 ? 'partial' : 'none', isToday ? `ещё ${fmtInt(lo)} ккал` : `−${fmtInt(targets.calories - kcal)} ккал к плану`]
+      : r > SCORE.kcalHi
+        ? [score.calories > 0 ? 'partial' : 'none', `+${fmtInt(kcal - targets.calories)} ккал к плану`]
+        : ['done', 'в плане']
+  const needP = Math.ceil(targets.protein * SCORE.proteinShare - protein)
+  const pr: [ChipState, string] = needP <= 0
+    ? ['done', 'норма есть']
+    : [protein > 0 ? 'partial' : 'none', isToday ? `ещё ${needP} г белка` : `${Math.round(protein)} из ${targets.protein} г`]
+  const needS = targets.stepGoal - (steps ?? 0)
+  const mv: [ChipState, string] = workout
+    ? ['done', 'силовая есть']
+    : steps != null && needS <= 0
+      ? ['done', `${fmtInt(steps)} ${stepsWord(steps)}`]
+      : steps != null && steps > 0
+        ? ['partial', isToday ? `ещё ${fmtInt(needS)} ${stepsWord(needS)}` : `${fmtInt(steps)} ${stepsWord(steps)}`]
+        : ['none', stepsOn ? 'силовая или шаги' : 'отметь силовую']
+  const sl: [ChipState, string] = slept === true
+    ? ['done', '8 часов есть']
+    : slept === false ? ['none', 'не вышло — бывает'] : ['none', 'ответь ниже']
+
+  return (
+    <div className="card r22 col gap-12" style={{ padding: '14px 14px 12px' }}>
+      <div className="row gap-14">
+        <Ring size={60} stroke={6} fraction={n / 100} from={color} to={color}>
+          <span className="num" style={{ fontSize: 20, fontWeight: 800, letterSpacing: -0.5 }}>{n}</span>
+        </Ring>
+        <div className="col grow" style={{ minWidth: 0 }}>
+          <span className="overline">Оценка дня</span>
+          <span className="title num">{title}</span>
+          <span className="label num">{sub}</span>
+        </div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        <ScoreChip t="Калории" pts={score.calories} max={SCORE.kcalPts} st={kc} />
+        <ScoreChip t="Белок" pts={score.protein} max={SCORE.proteinPts} st={pr} />
+        <ScoreChip t="Движение" pts={score.movement} max={SCORE.movePts} st={mv} />
+        <ScoreChip t="Сон" pts={score.sleep} max={SCORE.sleepPts} st={sl} />
+      </div>
+      <div className="row gap-10" role="radiogroup" aria-label="Поспал 8 часов?" style={{ padding: '0 2px' }}>
+        <span style={{ color: 'var(--secondary)', display: 'flex' }}><IcMoon size={18} /></span>
+        <span className="grow" style={{ fontWeight: 700, fontSize: 14 }}>Поспал 8 часов?</span>
+        {([[true, 'Да'], [false, 'Нет']] as const).map(([v, l]) => {
+          const sel = slept === v
+          return (
+            <button key={l} role="radio" aria-checked={sel} className="pressable"
+              onClick={() => onSleep(sel ? null : v)}
+              style={{
+                height: 36, minWidth: 56, padding: '0 14px', borderRadius: 999, fontSize: 14, fontWeight: 800,
+                background: sel ? (v ? LEVEL_COLOR.good : 'var(--text-2)') : 'var(--surface-high)',
+                color: sel ? '#fff' : 'var(--text)', transition: 'background 200ms'
+              }}>{l}</button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function ScoreChip({ t, pts, max, st: [state, text] }: { t: string; pts: number; max: number; st: [ChipState, string] }) {
+  const c = CHIP_COLOR[state]
+  return (
+    <div className="col" aria-label={`${t}: ${Math.round(pts)} из ${max}, ${text}`}
+      style={{
+        padding: '8px 10px', borderRadius: 14, minWidth: 0, gap: 2,
+        background: state === 'done' ? `color-mix(in srgb, ${c} 11%, var(--surface))` : 'var(--surface-low)',
+        border: '1px solid var(--hairline)'
+      }}>
+      <div className="row between" style={{ gap: 4 }}>
+        <span className="row" style={{ gap: 5, fontSize: 12.5, fontWeight: 800 }}>
+          {state === 'done'
+            ? <span style={{ color: c, display: 'flex' }}><IcCheck size={14} /></span>
+            : <span style={{ width: 7, height: 7, borderRadius: 4, background: c, flex: 'none' }} />}
+          {t}
+        </span>
+        <span className="label num" style={{ fontSize: 11 }}>{Math.round(pts)}/{max}</span>
+      </div>
+      <span className="num ellipsis" style={{ fontSize: 12.5, fontWeight: 600, color: state === 'none' ? 'var(--text-2)' : 'var(--text)' }}>{text}</span>
+    </div>
+  )
+}
+
+/** Силовая — плиткой рядом с шагами (режим и шаги включены). */
+function WorkoutTile({ done, week, goal, onToggle }: { done: boolean; week: number; goal: number; onToggle: () => void }) {
+  return (
+    <button className="card r24 pressable grow pad-14 col" role="switch" aria-checked={done} onClick={onToggle}
+      style={{ textAlign: 'left', gap: 10, flexBasis: 0, minWidth: 0 }}>
+      <div className="row between">
+        <Badge tint="var(--secondary)" size={34}><IcDumbbell size={18} /></Badge>
+        <span className="badge" style={{
+          width: 30, height: 30, borderRadius: 10, transition: 'background 220ms',
+          background: done ? 'var(--primary)' : 'var(--surface-high)', color: done ? 'var(--on-brand)' : 'transparent'
+        }}><IcCheck size={18} /></span>
+      </div>
+      <div>
+        <div className="h2">{done ? 'Силовая ✓' : 'Силовая'}</div>
+        <div className="label num">неделя: {week} из {goal}</div>
+      </div>
+      <Bar fraction={goal > 0 ? week / goal : 0} color="var(--secondary)" />
+    </button>
+  )
+}
+
+/** Шаги — плитка; на вебе вводятся вручную: нажал — поле с числом. */
+function StepsTile({ steps, goal, onOpen }: { steps: number | null; goal: number; onOpen: () => void }) {
+  return (
+    <button className="card r24 pressable grow pad-14 col" onClick={onOpen} aria-label={`Шаги: ${steps ?? 0} из ${goal}. Нажми, чтобы ввести`}
+      style={{ textAlign: 'left', gap: 10, flexBasis: 0, minWidth: 0 }}>
+      <div className="row between">
+        <Badge tint="var(--carbs)" size={34}><IcSteps size={18} /></Badge>
+        {steps == null && <span className="label" style={{ color: 'var(--primary)', fontWeight: 800 }}>ввести</span>}
+      </div>
+      <div>
+        <div className="h2 num ellipsis">{steps != null ? fmtInt(steps) : '—'}</div>
+        <div className="label num">из {fmtInt(goal)} шагов</div>
+      </div>
+      <Bar fraction={steps != null && goal > 0 ? steps / goal : 0} color="var(--carbs)" />
+    </button>
+  )
+}
+
+/** Шаги в обычном режиме — строкой, как отметка силовой. */
+function StepsRow({ steps, goal, onOpen }: { steps: number | null; goal: number; onOpen: () => void }) {
+  return (
+    <button className="card r22 pressable row gap-12" onClick={onOpen} style={{ padding: '12px 16px', textAlign: 'left' }}
+      aria-label={`Шаги: ${steps ?? 0} из ${goal}. Нажми, чтобы ввести`}>
+      <Badge tint="var(--carbs)" size={38}><IcSteps size={20} /></Badge>
+      <span className="col grow gap-6" style={{ minWidth: 0 }}>
+        <span className="row between">
+          <span className="title">Шаги</span>
+          <span className="label num">{steps != null ? `${fmtInt(steps)} из ${fmtInt(goal)}` : 'ввести'}</span>
+        </span>
+        <Bar fraction={steps != null && goal > 0 ? steps / goal : 0} color="var(--carbs)" />
+      </span>
+    </button>
+  )
+}
+
+/** Ручной ввод шагов за выбранный день. Ручное значение — главное за этот день. */
+function StepsForm({ date, isToday, initial, goal }: { date: string; isToday: boolean; initial: number | null; goal: number }) {
+  const close = useSheetClose()
+  const toast = useToast()
+  const [v, setV] = useState(initial != null ? String(initial) : '')
+  const n = Number(v.replace(/\D/g, ''))
+  const ok = v.trim() !== '' && Number.isFinite(n) && n >= 0 && n <= 100000
+  const save = async () => {
+    if (!ok) return
+    await setSteps(date, n)
+    close()
+    toast(n >= goal ? `${fmtInt(n)} ${stepsWord(n)} — цель есть 👟` : `Шаги: ${fmtInt(n)}`)
+  }
+  return (
+    // form — чтобы «Готово» на клавиатуре iPhone сразу сохраняло.
+    <form className="col gap-14" onSubmit={(e) => { e.preventDefault(); void save() }}>
+      <div>
+        <div className="h1">Шаги {isToday ? 'сегодня' : 'за день'}</div>
+        <div className="small num">Цель — {fmtInt(goal)}. Можно поправлять в течение дня.</div>
+      </div>
+      <div>
+        <label className="field-label" htmlFor="steps-n">Шагов</label>
+        <input id="steps-n" className="field num" inputMode="numeric" pattern="[0-9]*" enterKeyHint="done" autoFocus
+          value={v} onChange={(e) => setV(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="8000" style={{ fontSize: 22, fontWeight: 800 }} />
+      </div>
+      <div className="row gap-10 small" style={{ padding: 12, borderRadius: 16, background: 'var(--surface-high)', alignItems: 'flex-start' }}>
+        <span style={{ color: 'var(--secondary)', marginTop: 1 }}><IcInfo size={17} /></span>
+        <span>Шаги не прибавляют калории: расход уже учтён в недельном пересчёте.</span>
+      </div>
+      <button type="submit" className="btn btn-brand full" disabled={!ok}>Сохранить</button>
+      {initial != null && (
+        <button type="button" className="btn btn-soft full" onClick={async () => { await setSteps(date, null); close() }}>Стереть за этот день</button>
+      )}
+    </form>
   )
 }
 
@@ -291,9 +530,12 @@ function Header({ date, streak, isToday, onToday, nickname, avatar, onProfile }:
   )
 }
 
-/** Неделя: кольцо на каждый день, свайп листает недели. */
-function WeekStrip({ date, weekKcal, goal, onSelect }: {
-  date: Date; weekKcal: Map<string, number>; goal: number; onSelect: (d: Date) => void
+/**
+ * Неделя: кольцо на каждый день, свайп листает недели. В режиме (grades) кольцо —
+ * оценка дня, цвет — хорошо / средне / слабо; сегодня — нейтральный «пока».
+ */
+function WeekStrip({ date, weekKcal, goal, grades, onSelect }: {
+  date: Date; weekKcal: Map<string, number>; goal: number; grades: Map<string, DayGrade> | null; onSelect: (d: Date) => void
 }) {
   const monday = mondayOf(date)
   const today = iso(new Date())
@@ -320,16 +562,21 @@ function WeekStrip({ date, weekKcal, goal, onSelect }: {
         const sel = key === iso(date)
         const future = key > today
         const over = goal > 0 && kcal > goal
+        const g = grades?.get(key)
+        const lc = g ? LEVEL_COLOR[g.level] : null
         return (
           <button key={key} disabled={future} onClick={() => onSelect(day)} className="pressable"
-            aria-label={`${label} ${day.getDate()}: ${Math.round(kcal)} ккал`}
+            aria-label={`${label} ${day.getDate()}: ${g?.score ? `оценка ${key === today ? 'пока ' : ''}${g.score.total}` : `${Math.round(kcal)} ккал`}`}
             style={{
               display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '8px 0', borderRadius: 18,
               background: sel ? 'var(--primary-cont)' : 'transparent', transition: 'background 280ms'
             }}>
             <span className="label" style={{ color: sel ? 'var(--on-primary-cont)' : undefined, fontWeight: 700 }}>{label}</span>
-            <Ring size={36} stroke={3.5} fraction={goal > 0 ? kcal / goal : 0}
-              from={over ? 'var(--warn-from)' : 'var(--brand-from)'} to={over ? 'var(--warn-to)' : 'var(--brand-to)'}>
+            {/* В режиме кольцо — оценка дня в её цвете; иначе — калории к цели. */}
+            <Ring size={36} stroke={3.5}
+              fraction={grades ? (g?.score ? g.score.total / 100 : 0) : goal > 0 ? kcal / goal : 0}
+              from={grades ? lc ?? 'var(--surface-high)' : over ? 'var(--warn-from)' : 'var(--brand-from)'}
+              to={grades ? lc ?? 'var(--surface-high)' : over ? 'var(--warn-to)' : 'var(--brand-to)'}>
               <span className="num" style={{
                 fontSize: 13.5, fontWeight: 800,
                 color: future ? 'var(--text-3)' : key === today ? 'var(--primary)' : 'var(--text)'

@@ -3,6 +3,7 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import type { FatPlan } from './fatplan'
 import type { CheckIn } from './checkin'
+import type { DayActivity } from './dayscore'
 
 export interface MealItem {
   name: string
@@ -73,6 +74,9 @@ export interface Settings {
   checkinWeekday: number
   /** Цель по силовым тренировкам в неделю, 2–5 (по умолчанию 3). */
   workoutGoal: number
+  /** Шаги (3.23): плитка на «Сегодня» и цель, 4000–15000. На вебе — только ручной ввод. */
+  stepsEnabled: boolean
+  stepGoal: number
 }
 
 /** Замер тела: один на дату. manualFatPercent (весы, калипер, DEXA) важнее формулы. */
@@ -133,7 +137,9 @@ export const DEFAULT_SETTINGS: Settings = {
   targetFatPercent: null,
   fatPlan: null,
   checkinWeekday: 7,
-  workoutGoal: 3
+  workoutGoal: 3,
+  stepsEnabled: false,
+  stepGoal: 8000
 }
 
 // ---------- Книга рецептов ----------
@@ -194,14 +200,17 @@ interface NutriSchema extends DBSchema {
   chat: { key: string; value: ChatMessage; indexes: { byTime: number } }
   measurements: { key: string; value: BodyMeasurement }
   checkins: { key: string; value: CheckIn }
+  activity: { key: string; value: DayActivity }
 }
 
 let dbPromise: Promise<IDBPDatabase<NutriSchema>> | null = null
 
 export function db(): Promise<IDBPDatabase<NutriSchema>> {
   if (!dbPromise) {
-    dbPromise = openDB<NutriSchema>('nutrilens', 4, {
+    dbPromise = openDB<NutriSchema>('nutrilens', 5, {
       upgrade(d, oldVersion) {
+        // v5: активность по дням — шаги и «поспал 8 часов». Только новое хранилище.
+        if (oldVersion < 5) d.createObjectStore('activity', { keyPath: 'date' })
         // v4: недельные чек-ины режима «Сжигание жира». Только новое хранилище.
         if (oldVersion < 4) d.createObjectStore('checkins', { keyPath: 'date' })
         // v3: замеры тела (процент жира). Остальные хранилища не трогаем.
@@ -404,6 +413,32 @@ export async function putCheckin(c: CheckIn): Promise<void> {
   await (await db()).put('checkins', c)
   notifyChanged()
 }
+
+// ---------- Активность по дням: шаги и сон ----------
+
+export async function activityOn(date: string): Promise<DayActivity | null> {
+  return (await (await db()).get('activity', date)) ?? null
+}
+
+export async function activityBetween(start: string, end: string): Promise<DayActivity[]> {
+  return (await db()).getAll('activity', IDBKeyRange.bound(start, end))
+}
+
+/** Обновляет часть записи дня (одна запись на дату), остальное не трогает. */
+async function patchActivity(date: string, patch: Partial<Omit<DayActivity, 'date'>>): Promise<DayActivity> {
+  const d = await db()
+  const cur = (await d.get('activity', date)) ?? { date, steps: null, stepsSource: null, sleptWell: null }
+  const next = { ...cur, ...patch, date }
+  await d.put('activity', next)
+  notifyChanged()
+  return next
+}
+
+/** Шаги вручную: ручное значение главнее любого другого источника за этот день. null — стереть. */
+export const setSteps = (date: string, steps: number | null) =>
+  patchActivity(date, { steps: steps == null ? null : Math.max(0, Math.round(steps)), stepsSource: steps == null ? null : 'manual' })
+
+export const setSleptWell = (date: string, v: boolean | null) => patchActivity(date, { sleptWell: v })
 
 // ---------- Избранное ----------
 

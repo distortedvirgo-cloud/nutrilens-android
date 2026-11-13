@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { type BodyMeasurement, getSettings, measurementOn, setWeight, weightsBetween } from '../data/db'
 import { type CheckIn, type PlanMacros, type Ratings, type Signal } from '../data/checkin'
 import { completeCheckin } from '../data/plan'
+import { type ScoreLevel, SCORE } from '../data/dayscore'
 import { type FatPlan, addIsoDays, plural } from '../data/fatplan'
 import { fmt1 } from '../data/body'
 import { iso, parseIso } from '../data/insights'
@@ -13,6 +14,10 @@ import { Badge, Sheet, useData, useSheetClose, useToast } from '../ui/kit'
 import { IcCalendar, IcChevronR, IcSpark } from '../ui/icons'
 
 export const SIGNAL_COLOR: Record<Signal, string> = { green: '#1FA463', yellow: 'var(--gold)', red: 'var(--error)' }
+/** Цвета оценки дня: хорошо — зелёный, средне — золотой, слабо — мягкий оранжевый, сегодня — цвет режима. */
+export const LEVEL_COLOR: Record<ScoreLevel, string> = {
+  good: '#1FA463', medium: 'var(--gold)', low: 'var(--warn-to)', pending: 'var(--primary)', none: 'var(--surface-high)'
+}
 const SIGNAL_TITLE: Record<Signal, string> = { green: 'Мышцы под защитой', yellow: 'Мышцам — внимание', red: 'Мышцы под угрозой' }
 
 const M_GEN = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря']
@@ -217,12 +222,22 @@ export function CheckinResult({ c, onDone }: { c: CheckIn; onDone?: () => void }
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        {c.avgScore != null && (
+          <div className="row gap-12" style={{ gridColumn: '1 / -1', padding: '10px 12px', borderRadius: 16, background: 'var(--surface-low)', border: '1px solid var(--hairline)' }}>
+            <span className="h2 num" style={{ color: LEVEL_COLOR[c.avgScore >= SCORE.good ? 'good' : c.avgScore >= SCORE.medium ? 'medium' : 'low'] }}>{c.avgScore}</span>
+            <span className="label grow">средняя оценка дня из 100</span>
+          </div>
+        )}
         <Mini v={`${c.diaryDays} из ${n}`} l="дней в дневнике" ok={c.diaryDays >= Math.ceil(5 * n / 7)} />
         <Mini v={`${c.goodDays} из ${n}`} l="хороших дней" ok={c.goodDays >= Math.ceil(4 * n / 7)} />
         <Mini v={`${c.workouts} из ${c.workoutGoal}`} l="силовых" ok={c.workouts >= c.workoutGoal} />
         <Mini v={`${c.proteinDays} из ${n}`} l="дней с белком" ok={c.proteinDays >= Math.ceil(5 * n / 7)} />
       </div>
-      <div className="label">Хороший день — калории от −10% до +5% плана и белок от 90% нормы.</div>
+      <div className="label">
+        {c.avgScore != null
+          ? `Хороший день — оценка от ${SCORE.good}: калории, белок, движение и сон. Дни без отметок шагов и сна — по калориям и белку.`
+          : 'Хороший день — калории от −10% до +5% плана и белок от 90% нормы.'}
+      </div>
 
       <div className="row gap-12" style={{ padding: 14, borderRadius: 18, alignItems: 'flex-start', background: `color-mix(in srgb, ${SIGNAL_COLOR[c.signal]} 12%, transparent)` }}>
         <span style={{ width: 14, height: 14, borderRadius: 7, background: SIGNAL_COLOR[c.signal], flex: 'none', marginTop: 3 }} aria-hidden="true" />

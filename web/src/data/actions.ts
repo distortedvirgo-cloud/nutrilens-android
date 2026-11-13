@@ -1,13 +1,15 @@
 // Действия приложения: фото, очередь ИИ-анализа, чат, бэкапы.
 import {
   type Job, type Meal, addChat, chatHistory, db, deleteJob, getMeal, getPhoto, getSettings,
-  jobs, lastCheckin, latestMeasurement, latestWeight, mealsBetween, mealsOn, notifyChanged, putJob, putMeal, putPhoto, recentMeals, uid,
+  activityOn, jobs, lastCheckin, workoutOn, latestMeasurement, latestWeight, mealsBetween, mealsOn, notifyChanged, putJob, putMeal, putPhoto, recentMeals, uid,
   type BodyMeasurement, type Recipe } from './db'
 import { analyzeMeal, chat } from '../ai'
 import { addDays, dayTotals, iso, nowTime } from './insights'
 import { bodyContext, effectiveCalories, effectiveGoals, FAT_TARGET_MAX, FAT_TARGET_MIN } from './body'
 import { fatPlanFromFlat, fatPlanToFlat, parseFatPlan } from './fatplan'
 import { CHECKIN, type CheckIn, checkinContext, parseCheckin } from './checkin'
+import { type DayActivity, SCORE, averageScore, clampStepGoal, parseActivity, scoreContext, scoreDay } from './dayscore'
+import { dayGrades } from './plan'
 
 // ---------- Фото: сжатие перед ИИ и хранением ----------
 
@@ -155,6 +157,15 @@ export async function sendChat(text: string): Promise<void> {
   const bodyLine = bodyContext(settings, w, body)
   // Итог последнего чек-ина — коуч знает, что поменялось в плане и над чем неделя.
   const ci = g.plan ? await lastCheckin() : undefined
+  // Оценка дня (только в режиме): части сегодня и средняя за 7 прошлых дней.
+  let scoreLine = ''
+  if (g.plan) {
+    const act = await activityOn(today)
+    const sc = scoreDay({ kcal: t.calories, protein: t.protein, workout: await workoutOn(today), steps: act?.steps ?? null, sleptWell: act?.sleptWell ?? null },
+      { calories: g.plan.calories, protein: g.plan.protein, stepGoal: settings.stepGoal || SCORE.stepGoalDefault })
+    const past = await dayGrades(iso(addDays(new Date(), -7)), iso(addDays(new Date(), -1)), settings)
+    scoreLine = scoreContext(sc, true, past ? averageScore([...past.values()]) : null)
+  }
   const remaining = Math.round(g.calories) - Math.round(t.calories)
   const week = await mealsBetween(iso(addDays(new Date(), -6)), iso(addDays(new Date(), -1)))
   const byDay = new Map<string, number>()
@@ -169,6 +180,7 @@ export async function sendChat(text: string): Promise<void> {
       `БЖУ сегодня: Б ${Math.round(t.protein)}/${g.protein} г, Ж ${Math.round(t.fat)}/${g.fat} г, У ${Math.round(t.carbs)}/${g.carbs} г (съедено/цель).`,
     bodyLine ? `СОСТАВ ТЕЛА: ${bodyLine}` : '',
     ci ? `ЧЕК-ИН: ${checkinContext(ci)}` : '',
+    scoreLine ? `ОЦЕНКА ДНЯ (калории, белок, движение — силовая или шаги, сон 8 часов): ${scoreLine}` : '',
     `СЕГОДНЯ В ДНЕВНИКЕ: ${meals.map((m) => `${m.name} — ${Math.round(m.calories)} ккал`).join('; ') || 'пока ничего'}.`,
     recentDays ? `ПОСЛЕДНИЕ ДНИ:\n${recentDays}` : '',
     '',
@@ -201,7 +213,10 @@ export async function exportBackup(): Promise<Blob> {
       ...fatPlanToFlat(s.fatPlan),
       // День чек-ина — ISO 1..7 (1 — понедельник, 7 — воскресенье), как java.time.DayOfWeek.
       checkinWeekday: s.checkinWeekday,
-      workoutGoal: s.workoutGoal
+      workoutGoal: s.workoutGoal,
+      // Шаги (3.23): цель и включена ли плитка.
+      stepGoal: s.stepGoal,
+      stepsEnabled: s.stepsEnabled
     },
     meals: meals.map(({ items: _i, photoIds: _p, ...m }) => m),
     meal_items: meals.flatMap((m) => m.items.map((i) => ({ ...i, mealId: m.id }))),
@@ -212,6 +227,8 @@ export async function exportBackup(): Promise<Blob> {
     workouts: await d.getAll('workouts'),
     habits: (await d.getAll('habits')).map((h) => ({ date: h.date, habitId: h.habitId })),
     checkins: await d.getAll('checkins'),
+    // Активность по дням (3.23): шаги, источник и «поспал 8 часов».
+    daily_activity: (await d.getAll('activity')).map((a) => ({ date: a.date, steps: a.steps, stepsSource: a.stepsSource, sleptWell: a.sleptWell })),
     chat_history: (await d.getAll('chat')).map((c) => ({ role: c.role, text: c.text })),
     // Рецепты — тем же форматом читает и Android-приложение. Обложки-фото не
     // переносятся (фото живут отдельно), ссылки-превью остаются.
@@ -251,7 +268,13 @@ export async function importBackup(file: Blob): Promise<number> {
   const body = Array.isArray(root.body_measurements) ? parseMeasurements(root.body_measurements) : null
   // Чек-ины: как замеры — нет в файле (старый бэкап) — текущие не трогаем.
   const cis = Array.isArray(root.checkins) ? (root.checkins as unknown[]).map(parseCheckin).filter((c): c is CheckIn => c != null) : null
-  const tx = d.transaction(['meals', 'favorites', 'weights', 'water', 'workouts', 'habits', 'settings', 'chat', 'measurements', 'checkins'], 'readwrite')
+  // Активность: нет в файле (бэкап до 3.23) — текущие записи не трогаем.
+  const acts = Array.isArray(root.daily_activity) ? (root.daily_activity as unknown[]).map(parseActivity).filter((a): a is DayActivity => a != null) : null
+  const tx = d.transaction(['meals', 'favorites', 'weights', 'water', 'workouts', 'habits', 'settings', 'chat', 'measurements', 'checkins', 'activity'], 'readwrite')
+  if (acts) {
+    await tx.objectStore('activity').clear()
+    for (const a of acts) await tx.objectStore('activity').put(a)
+  }
   if (body) {
     await tx.objectStore('measurements').clear()
     for (const m of body) await tx.objectStore('measurements').put(m)
@@ -323,6 +346,8 @@ export async function importBackup(file: Blob): Promise<number> {
       fatPlan: parseFatPlan(s.fatPlan) ?? fatPlanFromFlat(s),
       checkinWeekday: intIn(s.checkinWeekday, 1, 7) ?? current?.checkinWeekday ?? CHECKIN.weekdayDefault,
       workoutGoal: intIn(s.workoutGoal, CHECKIN.workoutGoalMin, CHECKIN.workoutGoalMax) ?? current?.workoutGoal ?? CHECKIN.workoutGoalDefault,
+      stepGoal: s.stepGoal != null && Number.isFinite(Number(s.stepGoal)) ? clampStepGoal(Number(s.stepGoal)) : (current?.stepGoal ?? SCORE.stepGoalDefault),
+      stepsEnabled: typeof s.stepsEnabled === 'boolean' ? s.stepsEnabled : (current?.stepsEnabled ?? false),
       onboarded: true
     })
   }
