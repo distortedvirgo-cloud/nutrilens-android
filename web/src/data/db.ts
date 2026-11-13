@@ -2,6 +2,7 @@
 // Схема повторяет Android-версию, чтобы бэкапы переносились в обе стороны.
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import type { FatPlan } from './fatplan'
+import type { CheckIn } from './checkin'
 
 export interface MealItem {
   name: string
@@ -63,11 +64,15 @@ export interface Settings {
   targetFatPercent: number | null
   /**
    * Режим «Сжигание жира»: посчитанный план калорий и БЖУ. Хранится, чтобы цифры
-   * не прыгали между пересчётами (раз в 7 дней). Ручные цели выше не трогаются —
+   * не прыгали между пересчётами (на недельном чек-ине). Ручные цели выше не трогаются —
    * выключил режим, и они снова действуют. Хранилище settings — один объект,
    * поэтому новое поле не требует новой версии базы: старые записи получают null.
    */
   fatPlan: FatPlan | null
+  /** День недельного чек-ина по ISO: 1 — понедельник … 7 — воскресенье (по умолчанию). */
+  checkinWeekday: number
+  /** Цель по силовым тренировкам в неделю, 2–5 (по умолчанию 3). */
+  workoutGoal: number
 }
 
 /** Замер тела: один на дату. manualFatPercent (весы, калипер, DEXA) важнее формулы. */
@@ -126,7 +131,9 @@ export const DEFAULT_SETTINGS: Settings = {
   heightCm: null,
   sex: null,
   targetFatPercent: null,
-  fatPlan: null
+  fatPlan: null,
+  checkinWeekday: 7,
+  workoutGoal: 3
 }
 
 // ---------- Книга рецептов ----------
@@ -186,14 +193,17 @@ interface NutriSchema extends DBSchema {
   jobs: { key: string; value: Job }
   chat: { key: string; value: ChatMessage; indexes: { byTime: number } }
   measurements: { key: string; value: BodyMeasurement }
+  checkins: { key: string; value: CheckIn }
 }
 
 let dbPromise: Promise<IDBPDatabase<NutriSchema>> | null = null
 
 export function db(): Promise<IDBPDatabase<NutriSchema>> {
   if (!dbPromise) {
-    dbPromise = openDB<NutriSchema>('nutrilens', 3, {
+    dbPromise = openDB<NutriSchema>('nutrilens', 4, {
       upgrade(d, oldVersion) {
+        // v4: недельные чек-ины режима «Сжигание жира». Только новое хранилище.
+        if (oldVersion < 4) d.createObjectStore('checkins', { keyPath: 'date' })
         // v3: замеры тела (процент жира). Остальные хранилища не трогаем.
         if (oldVersion < 3) d.createObjectStore('measurements', { keyPath: 'date' })
         // v2: книга рецептов. Хранилища v1 создаются только на свежей базе.
@@ -342,6 +352,10 @@ export async function toggleWorkout(date: string): Promise<boolean> {
   return next
 }
 
+export async function workoutsBetween(start: string, end: string): Promise<string[]> {
+  return (await (await db()).getAll('workouts', IDBKeyRange.bound(start, end))).filter((w) => w.done).map((w) => w.date)
+}
+
 export async function habitsOn(date: string): Promise<Set<string>> {
   const all = await (await db()).getAll('habits')
   return new Set(all.filter((h) => h.date === date).map((h) => h.habitId))
@@ -372,6 +386,22 @@ export async function measurementOn(date: string): Promise<BodyMeasurement | und
 /** Запись на ту же дату перезаписывается. */
 export async function putMeasurement(m: BodyMeasurement): Promise<void> {
   await (await db()).put('measurements', m)
+  notifyChanged()
+}
+
+// ---------- Чек-ины ----------
+
+/** Все чек-ины, от старых к новым. */
+export async function checkins(): Promise<CheckIn[]> {
+  return (await (await db()).getAll('checkins')).sort((a, b) => a.date.localeCompare(b.date))
+}
+
+export async function lastCheckin(): Promise<CheckIn | undefined> {
+  return (await checkins()).at(-1)
+}
+
+export async function putCheckin(c: CheckIn): Promise<void> {
+  await (await db()).put('checkins', c)
   notifyChanged()
 }
 

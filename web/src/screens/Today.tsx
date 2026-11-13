@@ -4,7 +4,7 @@ import { useRef, useState } from 'react'
 import { Avatar } from '../ui/Avatar'
 import {
   type Meal, addWater, allMealDates, getSettings, jobs, latestMeasurement, latestWeight, mealsBetween, mealsOn,
-  waterOn, workoutOn, deleteJob, favorites
+  waterOn, workoutOn, workoutsBetween, toggleWorkout, deleteJob, favorites
 } from '../data/db'
 import {
   SLOTS, type Slot, addDays, calcStreak, dayOverline, dayTitle, dayTotals, daysWord, healthScoreOf, iso,
@@ -12,11 +12,14 @@ import {
 } from '../data/insights'
 import { retryJob, runQueue } from '../data/actions'
 import { effectiveGoals, fatGoalOn } from '../data/body'
-import { type FatPlan, daysBetween, plural } from '../data/fatplan'
+import { type FatPlan, daysBetween } from '../data/fatplan'
+import { checkinWhen } from '../data/checkin'
+import { checkinStatus, type CheckinStatus } from '../data/plan'
 import { MeasureSheet } from './Body'
+import { CheckinCard, CheckinSheet } from './Checkin'
 import { Bar, Badge, Photo, Ring, useCountUp, useData, useToast } from '../ui/kit'
 import {
-  IcCamera, IcChevronR, IcKey, IcDrop, IcFire, IcPlus, IcRefresh, IcScale, IcSpark, IcStar, IcTrophy, IcAlert, IcClose
+  IcCamera, IcCheck, IcChevronR, IcDumbbell, IcKey, IcDrop, IcFire, IcPlus, IcRefresh, IcScale, IcSpark, IcStar, IcTrophy, IcAlert, IcClose
 } from '../ui/icons'
 
 const WEEK = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
@@ -34,6 +37,8 @@ export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOp
 }) {
   const [date, setDate] = useState(() => iso(new Date()))
   const [measuring, setMeasuring] = useState(false)
+  // План «до» берём в момент открытия — чек-ин хранит его снимок.
+  const [checkin, setCheckin] = useState<FatPlan | null>(null)
   const toast = useToast()
   const d = parseIso(date)
   const today = iso(new Date())
@@ -45,10 +50,13 @@ export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOp
     const weekKcal = new Map<string, number>()
     week.forEach((m) => weekKcal.set(m.date, (weekKcal.get(m.date) ?? 0) + m.calories))
     const w = await latestWeight()
+    const settings = await getSettings()
     return {
       meals: await mealsOn(date),
       weekKcal,
-      settings: await getSettings(),
+      settings,
+      checkin: await checkinStatus(settings),
+      weekWorkouts: (await workoutsBetween(iso(monday), iso(addDays(monday, 6)))).length,
       water: await waterOn(date),
       workout: await workoutOn(date),
       weight: w?.weight ?? null,
@@ -103,8 +111,11 @@ export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOp
         )}
         <WeekStrip date={d} weekKcal={data.weekKcal} goal={goals.calories} onSelect={(x) => setDate(iso(x))} />
         <Hero meals={meals} goal={goals.calories} goals={goals} proteinFirst={fatMode} onLeaderboard={onOpenLeaderboard} />
+        {fatMode && isToday && goals.plan && data.checkin?.due && (
+          <CheckinCard overdue={Math.max(0, daysBetween(data.checkin.next, today))} onOpen={() => setCheckin(goals.plan)} />
+        )}
         {fatMode && isToday && (goals.plan
-          ? <PlanMini plan={goals.plan} today={today} onOpen={onOpenProgress} />
+          ? <PlanMini plan={goals.plan} today={today} status={data.checkin} onOpen={onOpenProgress} />
           : weight == null && (
             <button className="card r22 pressable row gap-12" onClick={onWeigh} style={{ padding: '14px 16px', textAlign: 'left' }}>
               <Badge tint="var(--primary)" size={38}><IcScale size={20} /></Badge>
@@ -115,6 +126,11 @@ export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOp
               <span className="muted"><IcChevronR size={18} /></span>
             </button>
           ))}
+
+        {fatMode && (
+          <WorkoutToggle done={workout} week={data.weekWorkouts} goal={settings.workoutGoal}
+            onToggle={async () => { const on = await toggleWorkout(date); if (on) toast('Силовая отмечена 💪') }} />
+        )}
 
         {active.length > 0 && <Processing count={active.length} note={active[0].note} />}
         {failed.map((j) => (
@@ -207,13 +223,34 @@ export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOp
         )}
       </div>
       {measuring && <MeasureSheet onClose={() => setMeasuring(false)} />}
+      {checkin && <CheckinSheet plan={checkin} onClose={() => setCheckin(null)} />}
     </div>
   )
 }
 
-/** «Сегодня» → компактный план режима: цифры дня и когда пересчёт. Подробно — в «Прогрессе». */
-function PlanMini({ plan, today, onOpen }: { plan: FatPlan; today: string; onOpen: () => void }) {
-  const left = Math.max(0, daysBetween(today, plan.nextDate))
+/**
+ * Отметка «Силовая сделана» за выбранный день — в режиме прямо на «Сегодня»:
+ * чек-ин сравнивает силовые недели с целью, и без отметок сигнал мышц не зелёный.
+ */
+function WorkoutToggle({ done, week, goal, onToggle }: { done: boolean; week: number; goal: number; onToggle: () => void }) {
+  return (
+    <button className="card r22 pressable row gap-12" role="switch" aria-checked={done} onClick={onToggle}
+      style={{ padding: '12px 16px', textAlign: 'left' }}>
+      <Badge tint="var(--secondary)" size={38}><IcDumbbell size={20} /></Badge>
+      <span className="col grow">
+        <span className="title">Силовая сделана</span>
+        <span className="label num">на этой неделе {week} из {goal}</span>
+      </span>
+      <span className="badge" style={{
+        width: 30, height: 30, borderRadius: 10, transition: 'background 220ms',
+        background: done ? 'var(--primary)' : 'var(--surface-high)', color: done ? 'var(--on-brand)' : 'transparent'
+      }}><IcCheck size={18} /></span>
+    </button>
+  )
+}
+
+/** «Сегодня» → компактный план режима: цифры дня и когда чек-ин. Подробно — в «Прогрессе». */
+function PlanMini({ plan, today, status, onOpen }: { plan: FatPlan; today: string; status: CheckinStatus | null; onOpen: () => void }) {
   return (
     <button className="card r22 pressable col gap-8" onClick={onOpen} style={{ padding: '14px 16px', textAlign: 'left' }}>
       <div className="row gap-12">
@@ -227,7 +264,7 @@ function PlanMini({ plan, today, onOpen }: { plan: FatPlan; today: string; onOpe
         <span className="muted"><IcChevronR size={18} /></span>
       </div>
       <div className="label num" style={{ paddingLeft: 50 }}>
-        Расход ≈ {plan.tdee} ккал ({plan.observed ? 'по твоим данным' : 'по формуле'}) · пересчёт {left === 0 ? 'сегодня' : `через ${left} ${plural(left, 'день', 'дня', 'дней')}`}
+        Расход ≈ {plan.tdee} ккал ({plan.observed ? 'по твоим данным' : 'по формуле'}) · чек-ин {status?.due ? 'ждёт' : checkinWhen(status?.next ?? plan.nextDate, today)}
       </div>
     </button>
   )

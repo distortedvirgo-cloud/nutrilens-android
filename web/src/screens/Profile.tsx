@@ -4,13 +4,14 @@ import { type Settings, getSettings, latestMeasurement, latestWeight, saveSettin
 import { exportBackup, importBackup } from '../data/actions'
 import { bodyProfile, defaultFatTarget, effectiveGoals, fatGoalOn, fmt1 } from '../data/body'
 import { FatGoalForm, MeasureSheet } from './Body'
+import { CHECKIN, WEEKDAYS_SHORT, weekdayAcc } from '../data/checkin'
 import { dailyResetTime, usageToday } from '../ai/gemini'
 import { activeProvider, hasSelectedKey } from '../ai'
 import { KeyField, ProviderCards } from '../ui/AiSetup'
 import { Avatar, avatarFromFile } from '../ui/Avatar'
 import { schedulePush } from '../data/leaderboard'
 import { Badge, Segmented, Sheet, useData, useSheetClose, useToast } from '../ui/kit'
-import { IcCamera, IcChevronL, IcChevronR, IcDownload, IcInfo, IcKey, IcRuler, IcShare, IcTarget, IcTrophy, IcUpload, IcUser } from '../ui/icons'
+import { IcCamera, IcChevronL, IcChevronR, IcDownload, IcInfo, IcKey, IcMinus, IcPlus, IcRuler, IcShare, IcTarget, IcTrophy, IcUpload, IcUser } from '../ui/icons'
 
 type Section = 'goals' | 'fat' | 'measure' | 'about' | 'ai' | 'data' | 'install' | 'leaderboard' | null
 
@@ -108,9 +109,10 @@ export function ProfileScreen({ openAi = 0, onOpenLeaderboard, onBack }: { openA
                 <Segmented options={[[0, 'Похудение'], [1, 'Сжигание жира']]} value={fatOn ? 1 : 0} onChange={(v) => setMode(v === 1)} />
                 <div className="small" style={{ padding: '0 4px' }}>
                   {fatOn
-                    ? 'Меньше жира при тех же мышцах: калории и БЖУ считаются сами и подстраиваются раз в неделю по весу и дневнику.'
+                    ? 'Меньше жира при тех же мышцах: калории и БЖУ считаются сами и меняются на недельном чек-ине — по тренду веса, дневнику и самочувствию.'
                     : 'Свои цели по калориям и БЖУ. «Сжигание жира» посчитает план сам — от процента жира и сухой массы.'}
                 </div>
+                {fatOn && <ModeSettings s={s} />}
               </div>
             )}
             <div className="card r24" style={{ overflow: 'hidden' }}>
@@ -136,6 +138,43 @@ export function ProfileScreen({ openAi = 0, onOpenLeaderboard, onBack }: { openA
       {open === 'ai' && <Sheet label="Нейросеть" onClose={() => setOpen(null)}><AiForm s={s} /></Sheet>}
       {open === 'data' && <Sheet label="Данные" onClose={() => setOpen(null)}><DataForm /></Sheet>}
       {open === 'install' && <Sheet label="Установка" onClose={() => setOpen(null)}><InstallHelp /></Sheet>}
+    </div>
+  )
+}
+
+/** Режим «Сжигание жира»: день чек-ина и цель по силовым. Меняется сразу, без кнопки «Сохранить». */
+function ModeSettings({ s }: { s: Settings }) {
+  const goal = s.workoutGoal || CHECKIN.workoutGoalDefault
+  const setGoal = (d: number) => saveSettings({ workoutGoal: Math.min(CHECKIN.workoutGoalMax, Math.max(CHECKIN.workoutGoalMin, goal + d)) })
+  return (
+    <div className="col gap-12" style={{ borderTop: '1px solid var(--hairline)', paddingTop: 12 }}>
+      <div className="col gap-8">
+        <div className="row between" style={{ padding: '0 4px' }}>
+          <span style={{ fontWeight: 700 }}>День чек-ина</span>
+          <span className="small">{weekdayAcc(s.checkinWeekday)}</span>
+        </div>
+        <div role="radiogroup" aria-label="День чек-ина" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+          {WEEKDAYS_SHORT.map((l, i) => {
+            const sel = s.checkinWeekday === i + 1
+            return (
+              <button key={l} role="radio" aria-checked={sel} onClick={() => saveSettings({ checkinWeekday: i + 1 })}
+                style={{
+                  height: 40, borderRadius: 12, fontSize: 13, fontWeight: 800, minWidth: 0,
+                  background: sel ? 'var(--primary)' : 'var(--surface-high)', color: sel ? 'var(--on-brand)' : 'var(--text)', transition: 'background 200ms'
+                }}>{l}</button>
+            )
+          })}
+        </div>
+      </div>
+      <div className="row gap-12" style={{ padding: '0 4px' }}>
+        <span className="col grow">
+          <span style={{ fontWeight: 700 }}>Силовых в неделю</span>
+          <span className="label">чтобы мышцы было зачем сохранять</span>
+        </span>
+        <button className="icon-btn" aria-label="Меньше силовых" disabled={goal <= CHECKIN.workoutGoalMin} onClick={() => setGoal(-1)}><IcMinus size={18} /></button>
+        <span className="h2 num" aria-live="polite" style={{ minWidth: 18, textAlign: 'center' }}>{goal}</span>
+        <button className="icon-btn" aria-label="Больше силовых" disabled={goal >= CHECKIN.workoutGoalMax} onClick={() => setGoal(1)}><IcPlus size={18} /></button>
+      </div>
     </div>
   )
 }
@@ -174,7 +213,7 @@ function GoalsForm({ s }: { s: Settings }) {
       {auto && (
         <div className="row gap-10 small" style={{ padding: 14, borderRadius: 18, background: 'color-mix(in srgb, var(--primary) 10%, var(--surface))', alignItems: 'flex-start' }}>
           <span style={{ color: 'var(--primary)', marginTop: 1 }}><IcInfo size={18} /></span>
-          <span><b style={{ color: 'var(--text)' }}>В режиме сжигания жира считается автоматически</b> — по весу, замерам и дневнику, пересчёт раз в неделю.
+          <span><b style={{ color: 'var(--text)' }}>В режиме сжигания жира считается автоматически</b> — по весу, замерам и дневнику, пересчёт на недельном чек-ине.
             {plan ? '' : ' Запиши вес — и план появится.'} Твои цели сохранены и вернутся в режиме «Похудение».</span>
         </div>
       )}

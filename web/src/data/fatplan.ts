@@ -164,12 +164,30 @@ export function assessData(input: Pick<PlanInput, 'weights' | 'days' | 'today'>)
   }
 }
 
-/** Пора ли пересчитывать: нет плана, сменили цель, появился первый замер или прошла неделя. */
+/**
+ * Пора ли пересчитывать без чек-ина: нет плана (режим только включили), сменили
+ * цель или появился первый замер. Раньше план тихо пересчитывался раз в 7 дней —
+ * теперь недельные изменения делает только чек-ин (checkin.ts), чтобы человек
+ * видел, почему цифры поменялись, а не находил их другими «вдруг».
+ */
 export function planDue(prev: FatPlan | null, p: { today: string; targetFat: number; fatPercent: number | null }): boolean {
   if (!prev) return true
   if (prev.target !== p.targetFat) return true
-  if (prev.fatPercent == null && p.fatPercent != null) return true
-  return daysBetween(prev.date, p.today) >= PLAN.recalcDays
+  return prev.fatPercent == null && p.fatPercent != null
+}
+
+/** Нижняя граница калорий: не ниже основного обмена и бытового минимума. */
+export function planFloor(female: boolean, bmr: number): number {
+  return Math.ceil(Math.max(bmr, female ? 1200 : 1500) / 10) * 10
+}
+
+/** БЖУ под калории: белок от сухой массы, жир — не меньше 45 г (гормоны), остальное — углеводы. */
+export function macrosFor(calories: number, weight: number, fatPercent: number): { protein: number; fat: number; carbs: number } {
+  const lean = weight * (1 - fatPercent / 100)
+  const protein = round5(lean * PLAN.proteinPerLean)
+  const fat = Math.max(PLAN.minFat, round5(weight * PLAN.fatPerKg))
+  const carbs = Math.max(PLAN.minCarbs, round5((calories - protein * 4 - fat * 9) / 4))
+  return { protein, fat, carbs }
 }
 
 export function computePlan(input: PlanInput): FatPlan {
@@ -219,9 +237,7 @@ export function computePlan(input: PlanInput): FatPlan {
   calories = Math.max(round10(calories), Math.ceil(floor / 10) * 10)
 
   // 8. БЖУ: белок от сухой массы, жир — не меньше 45 г (гормоны), остальное — углеводы.
-  const protein = round5(lean * PLAN.proteinPerLean)
-  const fat = Math.max(PLAN.minFat, round5(weight * PLAN.fatPerKg))
-  const carbs = Math.max(PLAN.minCarbs, round5((calories - protein * 4 - fat * 9) / 4))
+  const { protein, fat, carbs } = macrosFor(calories, weight, fp)
 
   if (!note) {
     const delta = prev ? calories - prev.calories : 0

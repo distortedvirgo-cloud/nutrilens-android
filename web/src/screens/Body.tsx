@@ -27,8 +27,15 @@ export function MeasureSheet({ onClose }: { onClose: () => void }) {
   )
 }
 
-function MeasureForm({ s, weight, today }: { s: Settings; weight: number | null; today: BodyMeasurement | null }) {
-  const close = useSheetClose()
+/**
+ * Форма замера. В листе «Замер тела» после сохранения закрывает лист; в чек-ине
+ * (onSaved) — переходит к следующему шагу, а extra — кнопка «замерю позже».
+ */
+export function MeasureForm({ s, weight, today, onSaved, extra, title }: {
+  s: Settings; weight: number | null; today: BodyMeasurement | null; onSaved?: () => void; extra?: React.ReactNode; title?: string
+}) {
+  const sheetClose = useSheetClose()
+  const close = onSaved ?? sheetClose
   const toast = useToast()
   const prof = bodyProfile(s)
   const [female, setFemale] = useState<boolean>(prof.female ?? false)
@@ -50,7 +57,7 @@ function MeasureForm({ s, weight, today }: { s: Settings; weight: number | null;
   return (
     <div className="col gap-14">
       <div>
-        <div className="h1">{today ? 'Замер за сегодня' : 'Новый замер'}</div>
+        <div className="h1">{title ?? (today ? 'Замер за сегодня' : 'Новый замер')}</div>
         {today && <div className="small">Сохранишь — сегодняшний замер обновится</div>}
       </div>
       <div className="row gap-10 small" style={{ padding: 14, borderRadius: 18, background: 'var(--surface-high)', alignItems: 'flex-start' }}>
@@ -91,6 +98,7 @@ function MeasureForm({ s, weight, today }: { s: Settings; weight: number | null;
         close()
         toast(`Замер сохранён: ${fmt1(fat!)}% жира`)
       }}>Сохранить замер</button>
+      {extra}
     </div>
   )
 }
@@ -122,7 +130,7 @@ export function FatGoalForm({ s, hasMeasurement, onMeasure }: { s: Settings; has
       <div className="h1">Цель по жиру</div>
       <div className="small" style={{ fontSize: 14 }}>
         Не просто меньше килограммов, а меньше жира при тех же мышцах. Калории и БЖУ посчитаю сам и буду подстраивать
-        раз в неделю по весу и дневнику; белок — 2,6 г на кг сухой массы. Прогресс — по замерам талии и шеи раз в неделю.
+        на недельном чек-ине по весу и дневнику; белок — 2,6 г на кг сухой массы. Прогресс — по замерам талии и шеи раз в неделю.
       </div>
       <Segmented options={[[0, 'Похудение'], [1, 'Сжигание жира']]} value={on ? 1 : 0} onChange={(v) => setOn(v === 1)} />
       {on && (

@@ -24,10 +24,33 @@ export function useData<T>(load: () => Promise<T>, deps: unknown[], initial: T):
 
 // ---------- Нижний лист ----------
 
-export function Sheet({ onClose, children, label }: { onClose: () => void; children: ReactNode; label: string }) {
+/**
+ * Высота экранной клавиатуры, px. На iPhone fixed-лист остаётся под клавиатурой:
+ * окно не сжимается, сжимается только visualViewport — по нему и считаем.
+ */
+export function useKeyboardInset(enabled = true): number {
+  const [kb, setKb] = useState(0)
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!enabled || !vv) return
+    const update = () => setKb(Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)))
+    update()
+    vv.addEventListener('resize', update)
+    vv.addEventListener('scroll', update)
+    return () => { vv.removeEventListener('resize', update); vv.removeEventListener('scroll', update) }
+  }, [enabled])
+  return kb
+}
+
+export function Sheet({ onClose, children, label, keyboardAware }: {
+  onClose: () => void; children: ReactNode; label: string
+  /** Поднимать лист над клавиатурой — для листов, где главное — поле ввода. */
+  keyboardAware?: boolean
+}) {
   const [closing, setClosing] = useState(false)
   const sheetRef = useRef<HTMLDivElement>(null)
   const drag = useRef<{ y0: number; dy: number } | null>(null)
+  const kb = useKeyboardInset(!!keyboardAware)
 
   const close = useCallback(() => {
     setClosing(true)
@@ -64,6 +87,11 @@ export function Sheet({ onClose, children, label }: { onClose: () => void; child
       <div
         ref={sheetRef}
         className={`sheet${closing ? ' closing' : ''}`}
+        style={kb > 40 ? {
+          bottom: kb, maxHeight: `calc(100% - var(--safe-top) - 24px - ${kb}px)`,
+          // Над клавиатурой домашней полоски нет — нижний отступ не нужен.
+          paddingBottom: 16, borderRadius: 30
+        } : undefined}
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}

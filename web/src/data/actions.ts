@@ -1,12 +1,13 @@
 // Действия приложения: фото, очередь ИИ-анализа, чат, бэкапы.
 import {
   type Job, type Meal, addChat, chatHistory, db, deleteJob, getMeal, getPhoto, getSettings,
-  jobs, latestMeasurement, latestWeight, mealsBetween, mealsOn, notifyChanged, putJob, putMeal, putPhoto, recentMeals, uid,
+  jobs, lastCheckin, latestMeasurement, latestWeight, mealsBetween, mealsOn, notifyChanged, putJob, putMeal, putPhoto, recentMeals, uid,
   type BodyMeasurement, type Recipe } from './db'
 import { analyzeMeal, chat } from '../ai'
 import { addDays, dayTotals, iso, nowTime } from './insights'
 import { bodyContext, effectiveCalories, effectiveGoals, FAT_TARGET_MAX, FAT_TARGET_MIN } from './body'
 import { fatPlanFromFlat, fatPlanToFlat, parseFatPlan } from './fatplan'
+import { CHECKIN, type CheckIn, checkinContext, parseCheckin } from './checkin'
 
 // ---------- Фото: сжатие перед ИИ и хранением ----------
 
@@ -152,6 +153,8 @@ export async function sendChat(text: string): Promise<void> {
   const body = await latestMeasurement()
   const g = effectiveGoals(settings, w, body)
   const bodyLine = bodyContext(settings, w, body)
+  // Итог последнего чек-ина — коуч знает, что поменялось в плане и над чем неделя.
+  const ci = g.plan ? await lastCheckin() : undefined
   const remaining = Math.round(g.calories) - Math.round(t.calories)
   const week = await mealsBetween(iso(addDays(new Date(), -6)), iso(addDays(new Date(), -1)))
   const byDay = new Map<string, number>()
@@ -162,9 +165,10 @@ export async function sendChat(text: string): Promise<void> {
     '',
     `СЕЙЧАС: ${today} ${nowTime()}.`,
     `ПОЛЬЗОВАТЕЛЬ: ${settings.userContext || 'о себе ничего не написал'}${w != null ? `. Вес ${w.toFixed(1)} кг` : ''}.`,
-    `ЦЕЛЬ: ${Math.round(g.calories)} ккал/день${g.plan ? ' (режим «Сжигание жира»: калории и БЖУ посчитаны автоматически по весу и дневнику, пересчёт раз в неделю — не предлагай менять цель вручную)' : ''}. Сегодня съедено ${Math.round(t.calories)} ккал, ${remaining >= 0 ? `осталось ${remaining}` : `перебор ${-remaining}`} ккал. ` +
+    `ЦЕЛЬ: ${Math.round(g.calories)} ккал/день${g.plan ? ' (режим «Сжигание жира»: калории и БЖУ посчитаны автоматически по весу и дневнику, меняется только на недельном чек-ине — не предлагай менять цель вручную)' : ''}. Сегодня съедено ${Math.round(t.calories)} ккал, ${remaining >= 0 ? `осталось ${remaining}` : `перебор ${-remaining}`} ккал. ` +
       `БЖУ сегодня: Б ${Math.round(t.protein)}/${g.protein} г, Ж ${Math.round(t.fat)}/${g.fat} г, У ${Math.round(t.carbs)}/${g.carbs} г (съедено/цель).`,
     bodyLine ? `СОСТАВ ТЕЛА: ${bodyLine}` : '',
+    ci ? `ЧЕК-ИН: ${checkinContext(ci)}` : '',
     `СЕГОДНЯ В ДНЕВНИКЕ: ${meals.map((m) => `${m.name} — ${Math.round(m.calories)} ккал`).join('; ') || 'пока ничего'}.`,
     recentDays ? `ПОСЛЕДНИЕ ДНИ:\n${recentDays}` : '',
     '',
@@ -194,7 +198,10 @@ export async function exportBackup(): Promise<Blob> {
       // План режима «Сжигание жира»: целиком для веба и плоскими полями, как их
       // пишет Android. Старые версии эти поля просто не знают.
       fatPlan: s.fatPlan,
-      ...fatPlanToFlat(s.fatPlan)
+      ...fatPlanToFlat(s.fatPlan),
+      // День чек-ина — ISO 1..7 (1 — понедельник, 7 — воскресенье), как java.time.DayOfWeek.
+      checkinWeekday: s.checkinWeekday,
+      workoutGoal: s.workoutGoal
     },
     meals: meals.map(({ items: _i, photoIds: _p, ...m }) => m),
     meal_items: meals.flatMap((m) => m.items.map((i) => ({ ...i, mealId: m.id }))),
@@ -204,6 +211,7 @@ export async function exportBackup(): Promise<Blob> {
     water: await d.getAll('water'),
     workouts: await d.getAll('workouts'),
     habits: (await d.getAll('habits')).map((h) => ({ date: h.date, habitId: h.habitId })),
+    checkins: await d.getAll('checkins'),
     chat_history: (await d.getAll('chat')).map((c) => ({ role: c.role, text: c.text })),
     // Рецепты — тем же форматом читает и Android-приложение. Обложки-фото не
     // переносятся (фото живут отдельно), ссылки-превью остаются.
@@ -241,10 +249,16 @@ export async function importBackup(file: Blob): Promise<number> {
   }
   // Замеры тела: старые бэкапы их не содержат — тогда текущие не трогаем.
   const body = Array.isArray(root.body_measurements) ? parseMeasurements(root.body_measurements) : null
-  const tx = d.transaction(['meals', 'favorites', 'weights', 'water', 'workouts', 'habits', 'settings', 'chat', 'measurements'], 'readwrite')
+  // Чек-ины: как замеры — нет в файле (старый бэкап) — текущие не трогаем.
+  const cis = Array.isArray(root.checkins) ? (root.checkins as unknown[]).map(parseCheckin).filter((c): c is CheckIn => c != null) : null
+  const tx = d.transaction(['meals', 'favorites', 'weights', 'water', 'workouts', 'habits', 'settings', 'chat', 'measurements', 'checkins'], 'readwrite')
   if (body) {
     await tx.objectStore('measurements').clear()
     for (const m of body) await tx.objectStore('measurements').put(m)
+  }
+  if (cis) {
+    await tx.objectStore('checkins').clear()
+    for (const c of cis) await tx.objectStore('checkins').put(c)
   }
   await Promise.all(['meals', 'favorites', 'weights', 'water', 'workouts', 'habits', 'chat'].map((s) => tx.objectStore(s as 'meals').clear()))
   const meals = root.meals as Record<string, unknown>[]
@@ -307,12 +321,19 @@ export async function importBackup(file: Blob): Promise<number> {
       // Веб-план, иначе Android-поля; старый бэкап без плана — null, и план
       // пересчитается по импортированным данным.
       fatPlan: parseFatPlan(s.fatPlan) ?? fatPlanFromFlat(s),
+      checkinWeekday: intIn(s.checkinWeekday, 1, 7) ?? current?.checkinWeekday ?? CHECKIN.weekdayDefault,
+      workoutGoal: intIn(s.workoutGoal, CHECKIN.workoutGoalMin, CHECKIN.workoutGoalMax) ?? current?.workoutGoal ?? CHECKIN.workoutGoalDefault,
       onboarded: true
     })
   }
   await tx.done
   notifyChanged()
   return meals.length
+}
+
+const intIn = (v: unknown, lo: number, hi: number): number | null => {
+  const n = Number(v)
+  return v != null && Number.isInteger(n) && n >= lo && n <= hi ? n : null
 }
 
 const optNum = (v: unknown, fallback: number | null | undefined): number | null => {

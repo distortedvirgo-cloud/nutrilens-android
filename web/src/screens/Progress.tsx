@@ -4,8 +4,11 @@ import { getSettings, mealsBetween, waterBetween, weightsBetween } from '../data
 import { addDays, calcStreak, iso, parseIso, waterNorm } from '../data/insights'
 import { type BodyMeasurement, allMealDates, latestWeight, measurements } from '../data/db'
 import { composition, effectiveCalories, etaText, fatGoalOn, fmt1, plural } from '../data/body'
-import { type DataStatus, type FatPlan, daysBetween } from '../data/fatplan'
-import { planDataStatus } from '../data/plan'
+import { type DataStatus, type FatPlan, addIsoDays } from '../data/fatplan'
+import { type CheckIn, type TrendPoint, checkinWhen, trendChange, trendSeries } from '../data/checkin'
+import { type CheckinStatus, checkinStatus, planDataStatus } from '../data/plan'
+import { checkins } from '../data/db'
+import { CheckinHistory, CheckinResultSheet } from './Checkin'
 import { Badge, Bar, Segmented, useData } from '../ui/kit'
 import { IcAlert, IcChart, IcDrop, IcFire, IcFood, IcInfo, IcPlus, IcRuler, IcScale, IcSpark, IcTarget } from '../ui/icons'
 import { MeasureSheet } from './Body'
@@ -16,6 +19,7 @@ const SHORT_M = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'и
 export function ProgressScreen() {
   const [period, setPeriod] = useState<7 | 30 | 365>(7)
   const [measuring, setMeasuring] = useState(false)
+  const [openCheckin, setOpenCheckin] = useState<CheckIn | null>(null)
   const data = useData(async () => {
     const today = new Date()
     const start = iso(addDays(today, -(period - 1)))
@@ -33,6 +37,8 @@ export function ProgressScreen() {
     const goal = effectiveCalories(settings)
     const water = await waterBetween(start, end)
     const w = (await latestWeight())?.weight ?? null
+    // Тренд считаем с запасом в месяц до начала периода — чтобы линия не стартовала с сырой цифры.
+    const trend = trendSeries((await weightsBetween(addIsoDays(start, -30), end)).map((x) => ({ date: x.date, value: x.weight })))
     return {
       days, goal,
       avg: active.length ? active.reduce((a, d) => a + d.kcal, 0) / active.length : 0,
@@ -41,7 +47,7 @@ export function ProgressScreen() {
       over: active.filter((d) => d.kcal > goal).length,
       activeCount: active.length,
       streak: calcStreak(await allMealDates(), today),
-      weights: (await weightsBetween(start, end)).sort((a, b) => a.date.localeCompare(b.date)),
+      trend, start, end,
       waterAvg: water.length ? Math.round(water.reduce((a, x) => a + x.ml, 0) / water.length) : 0,
       waterNorm: waterNorm(w, false),
       weight: w,
@@ -49,7 +55,9 @@ export function ProgressScreen() {
       body: await measurements(),
       fatMode: fatGoalOn(settings),
       plan: settings.fatPlan,
-      status: fatGoalOn(settings) ? await planDataStatus() : null
+      status: fatGoalOn(settings) ? await planDataStatus() : null,
+      checkin: await checkinStatus(settings),
+      checkins: fatGoalOn(settings) ? await checkins() : []
     }
   }, [period], null)
 
@@ -61,7 +69,7 @@ export function ProgressScreen() {
           <div className="small">Как проходит твой период</div>
         </div>
         <Segmented options={[[7, 'Неделя'], [30, 'Месяц'], [365, 'Год']]} value={period} onChange={setPeriod} />
-        {data?.fatMode && <PlanCard plan={data.plan} status={data.status} />}
+        {data?.fatMode && <PlanCard plan={data.plan} status={data.status} checkin={data.checkin} trend={data.trend} />}
         {data && (data.targetFat != null || data.body.length > 0) && (
           <BodyCard list={data.body} weight={data.weight} target={data.targetFat} onMeasure={() => setMeasuring(true)} />
         )}
@@ -81,7 +89,7 @@ export function ProgressScreen() {
               <Stat icon={<IcFood size={19} />} tint="var(--protein)" v={`${Math.round(data.avgProtein)} г`} l="белка в день" />
             </div>
             <Calories days={period === 365 ? monthly(data.days) : data.days} goal={data.goal} mode={period === 7 ? 'wd' : period === 30 ? 'date' : 'month'} key={period} />
-            <Weight weights={data.weights} key={`w${period}`} />
+            <Weight trend={data.trend} start={data.start} end={data.end} key={`w${period}`} />
             <div className="card pad-18 row gap-14">
               <Badge tint="var(--water-deep)" size={44}><IcDrop size={22} /></Badge>
               <div className="grow col gap-8">
@@ -92,8 +100,10 @@ export function ProgressScreen() {
             </div>
           </>
         )}
+        {data && data.checkins.length > 0 && <CheckinHistory list={data.checkins} onOpen={setOpenCheckin} />}
       </div>
       {measuring && <MeasureSheet onClose={() => setMeasuring(false)} />}
+      {openCheckin && <CheckinResultSheet c={openCheckin} onClose={() => setOpenCheckin(null)} />}
     </div>
   )
 }
@@ -168,8 +178,13 @@ const Legend = ({ c, t }: { c: string; t: string }) => (
   <span className="row" style={{ gap: 5 }}><span style={{ width: 8, height: 8, borderRadius: 4, background: c }} />{t}</span>
 )
 
-function Weight({ weights }: { weights: { date: string; weight: number }[] }) {
-  if (weights.length < 2) {
+/**
+ * Вес: главная линия — сглаженный тренд, сырые взвешивания — бледные точки.
+ * Крупная цифра — тренд: вчерашняя солёная еда не должна «портить» неделю.
+ */
+function Weight({ trend, start, end }: { trend: TrendPoint[]; start: string; end: string }) {
+  const pts = trend.filter((p) => p.date >= start && p.date <= end)
+  if (pts.length < 2) {
     return (
       <div className="card pad-18 row gap-14">
         <Badge tint="var(--secondary)" size={40}><IcScale size={20} /></Badge>
@@ -180,29 +195,46 @@ function Weight({ weights }: { weights: { date: string; weight: number }[] }) {
       </div>
     )
   }
-  const min = Math.min(...weights.map((w) => w.weight)), max = Math.max(...weights.map((w) => w.weight))
-  const delta = weights.at(-1)!.weight - weights[0].weight
+  const last = pts.at(-1)!
+  const ch = trendChange(trend, start, end)
+  const delta = ch?.kg ?? last.value - pts[0].value
   const dc = delta > 0 ? 'var(--tertiary)' : 'var(--primary)'
+  const raw = pts.map((p) => p.raw)
+  const min = Math.min(...raw), max = Math.max(...raw)
   return (
     <div className="card pad-18 col gap-12">
       <div className="row between">
         <div className="title">Вес</div>
         <span className="chip num" style={{ height: 30, fontSize: 13, color: dc, background: `color-mix(in srgb, ${dc} 13%, transparent)` }}>
-          {delta > 0 ? '+' : ''}{delta.toFixed(1).replace('.', ',')} кг
+          {delta > 0 ? '+' : delta < 0 ? '−' : ''}{fmt1(Math.abs(delta))} кг
         </span>
       </div>
-      <LineChart values={weights.map((w) => w.weight)} color="var(--secondary)" id="wfill" label={`Вес от ${min} до ${max} кг`} />
-      <div className="row between label num"><span>мин {min.toFixed(1).replace(".", ",")}</span><span>макс {max.toFixed(1).replace(".", ",")}</span></div>
+      <div>
+        <div className="row gap-8" style={{ alignItems: 'baseline' }}>
+          <span className="small">тренд</span>
+          <span className="h1 num">{fmt1(last.value)} кг</span>
+        </div>
+        <div className="small num">
+          {ch ? `${rateText(ch.pctPerWeek)} · ` : ''}последний вес {fmt1(last.raw)} кг
+        </div>
+      </div>
+      <LineChart values={pts.map((p) => p.value)} dots={raw} color="var(--secondary)" id="wfill" label={`Тренд веса ${fmt1(last.value)} кг, взвешивания от ${fmt1(min)} до ${fmt1(max)} кг`} />
+      <div className="row between label num"><span>мин {fmt1(min)}</span><span className="row gap-8"><LegendLine />тренд<span style={{ opacity: 0.5 }}>●</span>весы</span><span>макс {fmt1(max)}</span></div>
     </div>
   )
 }
 
-/** Линия с заливкой — для веса и процента жира. */
-function LineChart({ values, color, id, label, minSpan = 1 }: { values: number[]; color: string; id: string; label: string; minSpan?: number }) {
+const LegendLine = () => <span style={{ width: 14, height: 3, borderRadius: 2, background: 'var(--secondary)', display: 'inline-block' }} />
+
+/** Линия с заливкой — для веса и процента жира. dots — сырые значения бледными точками поверх тренда. */
+function LineChart({ values, dots, color, id, label, minSpan = 1 }: { values: number[]; dots?: number[]; color: string; id: string; label: string; minSpan?: number }) {
   const W = 320, H = 120, pad = 10
-  const min = Math.min(...values), max = Math.max(...values)
+  const all = dots ? [...values, ...dots] : values
+  const min = Math.min(...all), max = Math.max(...all)
   const span = Math.max(minSpan, max - min)
-  const pts = values.map((v, i) => [pad + (i * (W - pad * 2)) / (values.length - 1), H - pad - ((v - min) / span) * (H - pad * 2)])
+  const x = (i: number) => pad + (i * (W - pad * 2)) / (values.length - 1)
+  const y = (v: number) => H - pad - ((v - min) / span) * (H - pad * 2)
+  const pts = values.map((v, i) => [x(i), y(v)])
   const line = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(' ')
   return (
     <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} role="img" aria-label={label}>
@@ -215,7 +247,12 @@ function LineChart({ values, color, id, label, minSpan = 1 }: { values: number[]
       <path d={`${line} L${pts.at(-1)![0]} ${H} L${pts[0][0]} ${H} Z`} fill={`url(#${id})`} />
       <path d={line} fill="none" stroke={color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
         pathLength={1} strokeDasharray={1} style={{ animation: 'draw 1200ms var(--ease-emph) both' }} />
-      {pts.map((p, i) => <circle key={i} cx={p[0]} cy={p[1]} r="4.5" fill="var(--surface)" stroke={color} strokeWidth="2.5" />)}
+      {dots
+        ? <>
+            {dots.map((v, i) => <circle key={i} cx={x(i)} cy={y(v)} r="3.5" fill={color} opacity="0.3" />)}
+            <circle cx={pts.at(-1)![0]} cy={pts.at(-1)![1]} r="4.5" fill="var(--surface)" stroke={color} strokeWidth="2.5" />
+          </>
+        : pts.map((p, i) => <circle key={i} cx={p[0]} cy={p[1]} r="4.5" fill="var(--surface)" stroke={color} strokeWidth="2.5" />)}
       <style>{'@keyframes draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }'}</style>
     </svg>
   )
@@ -244,17 +281,22 @@ function BodyCard({ list, weight, target, onMeasure }: {
     )
   }
   const days = Math.round((parseIso(iso(new Date())).getTime() - parseIso(last.date).getTime()) / 86400000)
-  const c = weight != null ? composition(weight, last.fatPercent, target) : null
+  // Домашние замеры шумят на ±1–2% — главная цифра тоже тренд, сырой замер вторым.
+  const ft = trendSeries(list.map((m) => ({ date: m.date, value: m.fatPercent })))
+  const now = ft.at(-1)?.value ?? last.fatPercent
+  const c = weight != null ? composition(weight, now, target) : null
   const start = list[0].fatPercent
-  const progress = target == null ? 0 : start <= target ? 1 : (start - last.fatPercent) / (start - target)
-  const delta = list.length > 1 ? last.fatPercent - start : 0
+  const progress = target == null ? 0 : start <= target ? 1 : (start - now) / (start - target)
+  const delta = list.length > 1 ? now - start : 0
   return (
     <div className="card pad-18 col gap-14">
       {head}
       <div className="row gap-12" style={{ alignItems: 'flex-end' }}>
         <div className="grow">
-          <div className="display num">{fmt1(last.fatPercent)}%</div>
-          <div className="small">жира · {days === 0 ? 'замер сегодня' : `замер ${days} ${plural(days, 'день', 'дня', 'дней')} назад`}</div>
+          <div className="display num">{fmt1(now)}%</div>
+          <div className="small num">
+            {list.length > 1 ? 'тренд жира · ' : 'жира · '}{list.length > 1 ? `замер ${fmt1(last.fatPercent)}% ` : ''}{days === 0 ? (list.length > 1 ? 'сегодня' : 'замер сегодня') : `${list.length > 1 ? '' : 'замер '}${days} ${plural(days, 'день', 'дня', 'дней')} назад`}
+          </div>
         </div>
         {list.length > 1 && Math.abs(delta) >= 0.1 && (
           <span className="chip num" style={{ height: 30, fontSize: 13, color: delta > 0 ? 'var(--tertiary)' : 'var(--primary)', background: `color-mix(in srgb, ${delta > 0 ? 'var(--tertiary)' : 'var(--primary)'} 13%, transparent)` }}>
@@ -283,8 +325,8 @@ function BodyCard({ list, weight, target, onMeasure }: {
         </div>
       )}
       {list.length > 1 && (
-        <LineChart values={list.slice(-30).map((m) => m.fatPercent)} color="var(--secondary)" id="ffill" minSpan={2}
-          label={`Процент жира: от ${fmt1(start)}% до ${fmt1(last.fatPercent)}%`} />
+        <LineChart values={ft.slice(-30).map((p) => p.value)} dots={ft.slice(-30).map((p) => p.raw)} color="var(--secondary)" id="ffill" minSpan={2}
+          label={`Тренд процента жира: от ${fmt1(start)}% до ${fmt1(now)}%`} />
       )}
       {days > 7 && (
         <div className="row gap-10 small" style={{ padding: 12, borderRadius: 16, background: 'color-mix(in srgb, var(--warn-to) 10%, transparent)', alignItems: 'flex-start' }}>
@@ -313,7 +355,7 @@ const rateText = (r: number) => `${r > 0 ? '−' : r < 0 ? '+' : ''}${fmt1(Math.
  * по живым цифрам, а не по сохранённому плану — иначе «нужно ещё 3 взвешивания»
  * висело бы до пересчёта.
  */
-function PlanCard({ plan, status }: { plan: FatPlan | null; status: DataStatus | null }) {
+function PlanCard({ plan, status, checkin, trend }: { plan: FatPlan | null; status: DataStatus | null; checkin: CheckinStatus | null; trend: TrendPoint[] }) {
   const head = (
     <div className="row gap-12">
       <Badge tint="var(--primary)" size={40}><IcFire size={20} /></Badge>
@@ -321,7 +363,7 @@ function PlanCard({ plan, status }: { plan: FatPlan | null; status: DataStatus |
       <span className="chip primary" style={{ height: 30, fontSize: 13 }}>авто</span>
     </div>
   )
-  const explain = <div className="label">План сам подстраивается по весу и дневнику еды. Точнее он станет примерно через 2 недели записей и 4+ взвешиваний.</div>
+  const explain = <div className="label">План меняется только на недельном чек-ине — по тренду веса, дневнику и самочувствию. Точнее он станет примерно через 2 недели записей и 4+ взвешиваний.</div>
   if (!plan) {
     return (
       <div className="card pad-18 col gap-12">
@@ -331,7 +373,9 @@ function PlanCard({ plan, status }: { plan: FatPlan | null; status: DataStatus |
       </div>
     )
   }
-  const left = Math.max(0, daysBetween(iso(new Date()), plan.nextDate))
+  const today = iso(new Date())
+  // Темп в интерфейсе — по тренду за 2 недели; МНК-наклон остаётся внутри расчёта плана.
+  const rate = trendChange(trend, addIsoDays(today, -14), today)?.pctPerWeek ?? null
   return (
     <div className="card pad-18 col gap-14">
       {head}
@@ -349,7 +393,7 @@ function PlanCard({ plan, status }: { plan: FatPlan | null; status: DataStatus |
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
         <MiniStat v={rateText(plan.targetRate)} l="цель темпа" color="var(--primary)" small />
-        <MiniStat v={plan.actualRate != null ? rateText(plan.actualRate) : '—'} l={plan.actualRate != null ? 'по факту, 3 недели' : 'факт — пока мало данных'} color="var(--text)" small />
+        <MiniStat v={rate != null ? rateText(rate) : '—'} l={rate != null ? 'по тренду, 2 недели' : 'факт — пока мало данных'} color="var(--text)" small />
       </div>
       {plan.note && (
         <div className="row gap-10 small" style={{ padding: 12, borderRadius: 16, background: 'color-mix(in srgb, var(--primary) 10%, transparent)', alignItems: 'flex-start' }}>
@@ -364,7 +408,7 @@ function PlanCard({ plan, status }: { plan: FatPlan | null; status: DataStatus |
         </div>
       )}
       <div className="small" style={{ fontWeight: 700 }}>
-        Следующий пересчёт — {left === 0 ? 'сегодня' : `через ${left} ${plural(left, 'день', 'дня', 'дней')}`}
+        {checkin?.due ? 'Чек-ин ждёт — открой «Сегодня»' : `Чек-ин — ${checkinWhen(checkin?.next ?? plan.nextDate, today)}`}
       </div>
       {explain}
     </div>

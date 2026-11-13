@@ -1,8 +1,13 @@
 // Связка плана «Сжигание жира» с хранилищем: собрать вход из IndexedDB,
-// пересчитать, если пора, и сохранить в настройки. Сам алгоритм — в fatplan.ts.
-import { getSettings, latestMeasurement, latestWeight, mealsBetween, saveSettings, weightsBetween, type Settings } from './db'
+// пересчитать, если пора, и сохранить в настройки. Сам алгоритм — в fatplan.ts,
+// правила чек-ина — в checkin.ts.
+import {
+  getSettings, lastCheckin, latestMeasurement, latestWeight, measurements, mealsBetween, putCheckin, saveSettings,
+  weightsBetween, workoutsBetween, type Settings
+} from './db'
 import { activityFactor, bodyProfile, fatGoalOn } from './body'
-import { type DataStatus, type PlanInput, PLAN, addIsoDays, assessData, computePlan, planDue } from './fatplan'
+import { type DataStatus, type FatPlan, type PlanInput, PLAN, addIsoDays, assessData, computePlan, planDue } from './fatplan'
+import { type CheckIn, type Ratings, CHECKIN, buildCheckin, checkinDue, checkinPeriod, nextCheckinDate } from './checkin'
 import { iso } from './insights'
 
 /** Вход для алгоритма; null — режим выключен или веса ещё нет (без веса плана не посчитать). */
@@ -34,28 +39,92 @@ export async function planDataStatus(): Promise<DataStatus | null> {
   return input ? assessData(input) : null
 }
 
-let busy = false
-let again = false
+// Пересчёт без чек-ина и сохранение чек-ина не должны перетереть друг друга:
+// оба пишут fatPlan. Идут по очереди — следующий ждёт предыдущий.
+let queue: Promise<unknown> = Promise.resolve()
+function serial<T>(fn: () => Promise<T>): Promise<T> {
+  const run = queue.then(fn, fn)
+  queue = run.catch(() => {})
+  return run
+}
+
+let pending = false
 
 /**
- * Пересчитывает план, если пора (неделя прошла, режим только включили, сменили
- * цель, появился первый замер). Вызывается при запуске и при изменении данных —
- * дёшево: без пересчёта читает только настройки, вес и последний замер.
+ * Пересчитывает план, если пора: режим только включили, сменили цель или
+ * появился первый замер. Недельные изменения — только через чек-ин.
+ * Вызывается при запуске и при изменении данных — дёшево: без пересчёта читает
+ * только настройки и последний замер.
  */
-export async function ensureFatPlan(): Promise<void> {
-  // Изменение во время расчёта (сменили цель) не теряем — проверим ещё раз после.
-  if (busy) { again = true; return }
-  busy = true
-  try {
+export function ensureFatPlan(): Promise<void> {
+  // Пока один пересчёт ждёт в очереди, второй не нужен — он прочтёт свежие данные.
+  if (pending) return Promise.resolve()
+  pending = true
+  return serial(async () => {
+    pending = false
     const s = await getSettings()
     if (!fatGoalOn(s)) return
     const fatPercent = (await latestMeasurement())?.fatPercent ?? null
     if (!planDue(s.fatPlan, { today: iso(new Date()), targetFat: s.targetFatPercent!, fatPercent })) return
     const input = await loadPlanInput(s)
     if (!input) return
-    await saveSettings({ fatPlan: computePlan(input) })
-  } finally {
-    busy = false
-    if (again) { again = false; void ensureFatPlan().catch(() => {}) }
-  }
+    const plan = computePlan(input)
+    const last = await lastCheckin()
+    await saveSettings({ fatPlan: { ...plan, nextDate: nextCheckinDate(last?.date ?? plan.date, s.checkinWeekday) } })
+  })
+}
+
+export interface CheckinStatus {
+  due: boolean
+  /** Дата ближайшего чек-ина (или с какого дня он ждёт). */
+  next: string
+  last: CheckIn | null
+}
+
+/** Пора ли чек-ин; null — режим выключен или плана ещё нет (нечего подводить). */
+export async function checkinStatus(s?: Settings): Promise<CheckinStatus | null> {
+  s ??= await getSettings()
+  if (!fatGoalOn(s) || !s.fatPlan) return null
+  const last = (await lastCheckin()) ?? null
+  const anchor = last?.date ?? s.fatPlan.date
+  const today = iso(new Date())
+  return { due: checkinDue(anchor, s.checkinWeekday, today), next: nextCheckinDate(anchor, s.checkinWeekday), last }
+}
+
+/**
+ * Подводит неделю: собирает дневник, силовые, вес и замеры за период, считает
+ * итог и новый план, сохраняет чек-ин и план. prevPlan — план на момент
+ * открытия чек-ина: замер внутри чек-ина мог уже пересчитать план, а «было»
+ * должно показывать то, по чему человек жил неделю.
+ */
+export function completeCheckin(ratings: Ratings, prevPlan: FatPlan): Promise<CheckIn | null> {
+  return serial(async () => {
+    const s = await getSettings()
+    const input = await loadPlanInput(s)
+    if (!input) return null
+    const today = input.today
+    const prev = (await lastCheckin()) ?? null
+    const { start } = checkinPeriod(prev?.date ?? prevPlan.date, today)
+    const meals = await mealsBetween(start, addIsoDays(today, -1))
+    const byDay = new Map<string, { kcal: number; protein: number }>()
+    meals.forEach((m) => {
+      const d = byDay.get(m.date) ?? { kcal: 0, protein: 0 }
+      byDay.set(m.date, { kcal: d.kcal + m.calories, protein: d.protein + m.protein })
+    })
+    const { checkin, plan } = buildCheckin({
+      today,
+      plan: { ...input, prev: prevPlan },
+      days: [...byDay].map(([date, v]) => ({ date, ...v })),
+      workouts: await workoutsBetween(start, addIsoDays(today, -1)),
+      // Месяц до начала периода — тренд успевает «разогреться» и не стартует с сырой цифры.
+      weights: await weightsBetween(addIsoDays(start, -30), today),
+      measurements: (await measurements()).map((m) => ({ date: m.date, fatPercent: m.fatPercent })),
+      workoutGoal: s.workoutGoal || CHECKIN.workoutGoalDefault,
+      prev,
+      ratings
+    })
+    await saveSettings({ fatPlan: { ...plan, nextDate: nextCheckinDate(today, s.checkinWeekday) } })
+    await putCheckin(checkin)
+    return checkin
+  })
 }
