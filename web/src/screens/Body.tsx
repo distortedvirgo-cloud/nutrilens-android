@@ -1,12 +1,14 @@
-// Состав тела: лист замера (талия, шея, бёдра → процент жира) и форма цели по жиру.
+// Состав тела: лист замера (талия, шея, бёдра → процент жира), степпер и форма цели по жиру.
 import { useState } from 'react'
 import {
   type BodyMeasurement, type Settings, getSettings, latestWeight, measurementOn, putMeasurement, saveSettings
 } from '../data/db'
-import { FAT_TARGET_MAX, FAT_TARGET_MIN, bodyProfile, composition, defaultFatTarget, fatGoalOn, fmt1, measurementFat, navyFatPercent } from '../data/body'
+import { FAT_TARGET_MAX, bodyProfile, composition, defaultFatTarget, fmt1, measurementFat, navyFatPercent } from '../data/body'
+import { targetFloor, targetWarn } from '../data/program'
+import { retarget } from '../data/plan'
 import { iso } from '../data/insights'
 import { Segmented, Sheet, useData, useSheetClose, useToast } from '../ui/kit'
-import { IcInfo, IcMinus, IcPlus } from '../ui/icons'
+import { IcAlert, IcInfo, IcMinus, IcPlus } from '../ui/icons'
 
 const num = (v: string): number | null => {
   const n = parseFloat(v.replace(',', '.'))
@@ -112,57 +114,76 @@ function Field({ id, label, value, onChange, placeholder }: { id: string; label:
   )
 }
 
-/** Профиль → «Цель по жиру»: режим, целевой процент, рост и пол для формулы. */
-export function FatGoalForm({ s, hasMeasurement, onMeasure }: { s: Settings; hasMeasurement: boolean; onMeasure: () => void }) {
+/**
+ * Степпер целевого процента: ниже 10% у мужчин и 18% у женщин не опускается —
+ * дальше это уже не здоровье; ниже 12% / 20% — спокойное предупреждение.
+ */
+export function TargetStepper({ target, onChange, female, currentFat }: {
+  target: number; onChange: (v: number) => void; female: boolean; currentFat: number | null
+}) {
+  const min = targetFloor(female)
+  const step = (d: number) => onChange(Math.min(FAT_TARGET_MAX, Math.max(min, target + d)))
+  return (
+    <div className="col gap-10">
+      <div className="card pad-16 row gap-12" style={{ background: 'var(--surface-low)' }}>
+        <button className="icon-btn" aria-label="Меньше" disabled={target <= min} onClick={() => step(-1)}><IcMinus size={20} /></button>
+        <div className="grow col" style={{ alignItems: 'center' }}>
+          <span className="display num" aria-live="polite">{target}%</span>
+          <span className="label">целевой процент жира</span>
+        </div>
+        <button className="icon-btn" aria-label="Больше" disabled={target >= FAT_TARGET_MAX} onClick={() => step(1)}><IcPlus size={20} /></button>
+      </div>
+      <div className="small">
+        Ориентир: {female ? 'у женщин 20–25% — спортивная форма, 25–31% — норма' : 'у мужчин 12–15% — видный пресс, 15–20% — подтянутая форма'}.
+      </div>
+      {target < targetWarn(female) && (
+        <div className="row gap-10 small" style={{ padding: 12, borderRadius: 16, background: 'color-mix(in srgb, var(--warn-to) 10%, transparent)', alignItems: 'flex-start' }}>
+          <span style={{ color: 'var(--warn-to)', marginTop: 1 }}><IcAlert size={17} /></span>
+          <span>Ниже {targetWarn(female)}% держаться трудно и не всегда полезно — гормоны, сон и настроение страдают. Если цель именно такая, иди к ней медленно.</span>
+        </div>
+      )}
+      {currentFat != null && target >= currentFat - 0.5 && (
+        <div className="small" style={{ color: 'var(--warn-to)', fontWeight: 700 }}>Цель должна быть ниже текущих {fmt1(currentFat)}%.</div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Профиль → «Цель по жиру» (режим уже включён): целевой процент, рост и пол.
+ * Новая цель пересчитывает блоки программы от текущего блока. Выключается режим
+ * переключателем в Профиле — там подтверждение, что программа закончится.
+ */
+export function FatGoalForm({ s, currentFat, hasMeasurement, onMeasure }: { s: Settings; currentFat: number | null; hasMeasurement: boolean; onMeasure: () => void }) {
   const close = useSheetClose()
   const toast = useToast()
   const prof = bodyProfile(s)
-  const [on, setOn] = useState(fatGoalOn(s))
   const [female, setFemale] = useState(prof.female ?? false)
   const [target, setTarget] = useState<number>(s.targetFatPercent ?? defaultFatTarget(prof.female))
   const [height, setHeight] = useState(str(prof.heightCm))
   const h = num(height)
   const heightOk = h == null || (h >= 120 && h <= 230)
-  const step = (d: number) => setTarget((t) => Math.min(FAT_TARGET_MAX, Math.max(FAT_TARGET_MIN, t + d)))
+  const t = Math.max(targetFloor(female), target)
 
   return (
     <div className="col gap-14">
       <div className="h1">Цель по жиру</div>
       <div className="small" style={{ fontSize: 14 }}>
-        Не просто меньше килограммов, а меньше жира при тех же мышцах. Калории и БЖУ посчитаю сам и буду подстраивать
-        на недельном чек-ине по весу и дневнику; белок — 2,6 г на кг сухой массы. Прогресс — по замерам талии и шеи раз в неделю.
+        Не просто меньше килограммов, а меньше жира при тех же мышцах. Сменишь цель — блоки программы пересчитаются
+        от текущего, пройденные этапы останутся.
       </div>
-      <Segmented options={[[0, 'Похудение'], [1, 'Сжигание жира']]} value={on ? 1 : 0} onChange={(v) => setOn(v === 1)} />
-      {on && (
-        <>
-          <div className="card pad-16 row gap-12" style={{ background: 'var(--surface-low)' }}>
-            <button className="icon-btn" aria-label="Меньше" disabled={target <= FAT_TARGET_MIN} onClick={() => step(-1)}><IcMinus size={20} /></button>
-            <div className="grow col" style={{ alignItems: 'center' }}>
-              <span className="display num" aria-live="polite">{target}%</span>
-              <span className="label">целевой процент жира</span>
-            </div>
-            <button className="icon-btn" aria-label="Больше" disabled={target >= FAT_TARGET_MAX} onClick={() => step(1)}><IcPlus size={20} /></button>
-          </div>
-          <div className="small">
-            Ориентир: {female ? 'у женщин 20–25% — спортивная форма, 25–31% — норма' : 'у мужчин 12–15% — видный пресс, 15–20% — подтянутая форма'}.
-          </div>
-          <Segmented options={[[1, 'Мужчина'], [0, 'Женщина']]} value={female ? 0 : 1} onChange={(v) => setFemale(v === 0)} />
-          <Field id="fg-h" label="Рост, см" value={height} onChange={setHeight} placeholder="178" />
-        </>
-      )}
+      <TargetStepper target={t} onChange={setTarget} female={female} currentFat={currentFat} />
+      <Segmented options={[[1, 'Мужчина'], [0, 'Женщина']]} value={female ? 0 : 1} onChange={(v) => setFemale(v === 0)} />
+      <Field id="fg-h" label="Рост, см" value={height} onChange={setHeight} placeholder="178" />
       <button className="btn btn-brand full" disabled={!heightOk} onClick={async () => {
-        // Выключили — план стираем (ручные цели и так целы); сменили цель — план пересчитается сам.
-        const patch: Partial<Settings> = { targetFatPercent: on ? target : null }
-        if (!on) patch.fatPlan = null
-        if (on) {
-          patch.sex = female ? 'female' : 'male'
-          if (h != null) patch.heightCm = Math.round(h)
-        }
+        const patch: Partial<Settings> = { sex: female ? 'female' : 'male' }
+        if (h != null) patch.heightCm = Math.round(h)
         await saveSettings(patch)
+        if (t !== s.targetFatPercent) await retarget(t)
         close()
-        if (on && !hasMeasurement) setTimeout(onMeasure, 260)
-        toast(on ? `Цель: ${target}% жира` : 'Режим «Похудение» — снова твои цели')
-      }}>{on && !hasMeasurement ? 'Сохранить и сделать замер' : 'Сохранить'}</button>
+        if (!hasMeasurement) setTimeout(onMeasure, 260)
+        toast(`Цель: ${t}% жира`)
+      }}>{!hasMeasurement ? 'Сохранить и сделать замер' : 'Сохранить'}</button>
     </div>
   )
 }

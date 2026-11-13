@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { getSettings, mealsBetween, waterBetween, weightsBetween } from '../data/db'
 import { addDays, calcStreak, iso, parseIso, waterNorm } from '../data/insights'
 import { type BodyMeasurement, allMealDates, latestWeight, measurements } from '../data/db'
-import { composition, effectiveCalories, etaText, fatGoalOn, fmt1, plural } from '../data/body'
+import { composition, effectiveCalories, etaText, fatGoalOn, fmt1, livePlan, plural } from '../data/body'
 import { type DataStatus, type FatPlan, addIsoDays } from '../data/fatplan'
 import { type CheckIn, type TrendPoint, checkinWhen, trendChange, trendSeries } from '../data/checkin'
 import { type CheckinStatus, checkinStatus, dayGrades, planDataStatus } from '../data/plan'
@@ -13,6 +13,8 @@ import { CheckinHistory, CheckinResultSheet, LEVEL_COLOR } from './Checkin'
 import { Badge, Bar, Segmented, useData } from '../ui/kit'
 import { IcAlert, IcChart, IcDrop, IcFire, IcFood, IcInfo, IcPlus, IcRuler, IcScale, IcSpark, IcTarget } from '../ui/icons'
 import { MeasureSheet } from './Body'
+import { PhaseList, ProgramTimeline, phaseTitle } from './Program'
+import { type Program, PROGRAM, forecast, inDeficit } from '../data/program'
 
 const SHORT_WD = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб']
 const SHORT_M = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
@@ -55,7 +57,9 @@ export function ProgressScreen() {
       targetFat: fatGoalOn(settings) ? settings.targetFatPercent : null,
       body: await measurements(),
       fatMode: fatGoalOn(settings),
-      plan: settings.fatPlan,
+      // В перерыве и удержании карточка плана показывает то, по чему живём сейчас — расход.
+      plan: livePlan(settings),
+      program: fatGoalOn(settings) ? settings.program : null,
       status: fatGoalOn(settings) ? await planDataStatus() : null,
       checkin: await checkinStatus(settings),
       checkins: fatGoalOn(settings) ? await checkins() : [],
@@ -72,7 +76,8 @@ export function ProgressScreen() {
           <div className="small">Как проходит твой период</div>
         </div>
         <Segmented options={[[7, 'Неделя'], [30, 'Месяц'], [365, 'Год']]} value={period} onChange={setPeriod} />
-        {data?.fatMode && <PlanCard plan={data.plan} status={data.status} checkin={data.checkin} trend={data.trend} />}
+        {data?.program && <ProgramPath p={data.program} body={data.body} today={data.end} />}
+        {data?.fatMode && <PlanCard plan={data.plan} status={data.status} checkin={data.checkin} trend={data.trend} deficit={inDeficit(data.program)} />}
         {data?.fatMode && data.grades && <ProgramCard grades={data.grades} checkins={data.checkins} today={data.end} />}
         {data && (data.targetFat != null || data.body.length > 0) && (
           <BodyCard list={data.body} weight={data.weight} target={data.targetFat} onMeasure={() => setMeasuring(true)} />
@@ -359,11 +364,11 @@ const rateText = (r: number) => `${r > 0 ? '−' : r < 0 ? '+' : ''}${fmt1(Math.
  * по живым цифрам, а не по сохранённому плану — иначе «нужно ещё 3 взвешивания»
  * висело бы до пересчёта.
  */
-function PlanCard({ plan, status, checkin, trend }: { plan: FatPlan | null; status: DataStatus | null; checkin: CheckinStatus | null; trend: TrendPoint[] }) {
+function PlanCard({ plan, status, checkin, trend, deficit }: { plan: FatPlan | null; status: DataStatus | null; checkin: CheckinStatus | null; trend: TrendPoint[]; deficit: boolean }) {
   const head = (
     <div className="row gap-12">
       <Badge tint="var(--primary)" size={40}><IcFire size={20} /></Badge>
-      <div className="grow title">План на неделю</div>
+      <div className="grow title">{deficit ? 'План на неделю' : 'План — на уровне расхода'}</div>
       <span className="chip primary" style={{ height: 30, fontSize: 13 }}>авто</span>
     </div>
   )
@@ -396,10 +401,10 @@ function PlanCard({ plan, status, checkin, trend }: { plan: FatPlan | null; stat
         Твой расход ≈ <b style={{ color: 'var(--text)' }}>{plan.tdee} ккал</b> ({plan.observed ? 'по твоим данным' : 'по формуле'})
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-        <MiniStat v={rateText(plan.targetRate)} l="цель темпа" color="var(--primary)" small />
+        <MiniStat v={deficit ? rateText(plan.targetRate) : 'держим вес'} l="цель темпа" color="var(--primary)" small />
         <MiniStat v={rate != null ? rateText(rate) : '—'} l={rate != null ? 'по тренду, 2 недели' : 'факт — пока мало данных'} color="var(--text)" small />
       </div>
-      {plan.note && (
+      {deficit && plan.note && (
         <div className="row gap-10 small" style={{ padding: 12, borderRadius: 16, background: 'color-mix(in srgb, var(--primary) 10%, transparent)', alignItems: 'flex-start' }}>
           <span style={{ color: 'var(--primary)', marginTop: 1 }}><IcSpark size={17} /></span>
           <span style={{ color: 'var(--text)' }}>{plan.note}</span>
@@ -472,6 +477,45 @@ function ProgramCard({ grades, checkins: list, today }: { grades: Map<string, Da
           <Legend c={LEVEL_COLOR.low} t={`до ${SCORE.medium}`} /><Legend c="var(--primary)" t="сегодня — пока" />
         </div>
       </div>
+    </div>
+  )
+}
+
+/**
+ * «Путь программы»: этапы на горизонтальной полосе (блоки — оранжевые, перерывы —
+ * зелёные, удержание — серое) с отметкой «ты здесь», тренд процента жира с
+ * начала программы и прогноз вилкой дат — жир уходит неровно, одна дата врала бы.
+ */
+function ProgramPath({ p, body, today }: { p: Program; body: BodyMeasurement[]; today: string }) {
+  const [list, setList] = useState(false)
+  const ft = trendSeries(body.map((m) => ({ date: m.date, value: m.fatPercent }))).filter((x) => x.date >= addIsoDays(p.startDate, -7))
+  const now = ft.at(-1)?.value ?? null
+  const fc = forecast(p, today)
+  return (
+    <div className="card pad-18 col gap-14">
+      <div className="row gap-12">
+        <Badge tint="var(--primary)" size={40}><IcTarget size={20} /></Badge>
+        <div className="grow col" style={{ minWidth: 0 }}>
+          <span className="title">Путь программы</span>
+          <span className="label ellipsis">{phaseTitle(p, today)}</span>
+        </div>
+      </div>
+      <div className="row gap-8 num" style={{ alignItems: 'baseline', flexWrap: 'wrap' }}>
+        <span className="h1">{fmt1(p.startFat)}% → {p.target}%</span>
+        {now != null && <span className="small">сейчас {fmt1(now)}%</span>}
+      </div>
+      <ProgramTimeline p={p} today={today} />
+      {ft.length > 1 && (
+        <LineChart values={ft.map((x) => x.value)} dots={ft.map((x) => x.raw)} color="var(--secondary)" id="pfill" minSpan={2}
+          label={`Тренд процента жира с начала программы: от ${fmt1(ft[0].value)}% до ${fmt1(now!)}%`} />
+      )}
+      {ft.length <= 1 && <div className="small">Тренд жира появится после второго замера — мерь раз в неделю на чек-ине.</div>}
+      {fc
+        ? <div className="small num">Цель — примерно <b style={{ color: 'var(--text)' }}>{fc.text}</b> (через {fc.loWeeks}–{fc.hiWeeks} {plural(fc.hiWeeks, 'неделю', 'недели', 'недель')})</div>
+        : <div className="small">{p.completedDate ? 'Программа завершена — ты на удержании.' : `Цель достигнута — ${PROGRAM.maintenanceWeeks} недели удержания закрепляют результат.`}</div>}
+      <button className="btn btn-soft full sm" aria-expanded={list} onClick={() => setList(!list)}>{list ? 'Скрыть этапы' : 'Все этапы'}</button>
+      {list && <PhaseList p={p} today={today} />}
+      <div className="label">Перерывы — обязательная часть плана: 2 недели на уровне расхода дают отдых телу и голове. Этапы меняются на чек-ине.</div>
     </div>
   )
 }

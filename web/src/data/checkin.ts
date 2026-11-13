@@ -164,6 +164,12 @@ export interface CheckIn extends Ratings {
   note: string
   /** Одно конкретное действие на неделю. */
   action: string
+  /**
+   * Смена этапа программы на этом чек-ине (3.24): «Блок 1 завершён → 2 недели
+   * перерыва» и почему. null/нет — этап не менялся (и у старых чек-инов).
+   */
+  phaseTitle?: string | null
+  phaseText?: string | null
 }
 
 export interface CheckinInput {
@@ -371,7 +377,9 @@ export function parseCheckin(v: unknown): CheckIn | null {
     flatWeeks: n('flatWeeks'),
     planBefore: pm(o.planBefore), planAfter: after,
     note: typeof o.note === 'string' ? o.note : '',
-    action: typeof o.action === 'string' ? o.action : ''
+    action: typeof o.action === 'string' ? o.action : '',
+    phaseTitle: typeof o.phaseTitle === 'string' ? o.phaseTitle : null,
+    phaseText: typeof o.phaseText === 'string' ? o.phaseText : null
   }
 }
 
@@ -385,5 +393,6 @@ export function checkinContext(c: CheckIn): string {
   if (c.hunger != null) parts.push(`голод ${c.hunger}/5, энергия ${c.energy ?? '—'}/5, сон ${c.sleep ?? '—'}/5`)
   parts.push(`план ${c.planBefore ? `${c.planBefore.calories} → ` : ''}${c.planAfter.calories} ккал (${c.note})`)
   parts.push(`задача недели: ${c.action}`)
+  if (c.phaseTitle) parts.push(`смена этапа: ${c.phaseTitle}`)
   return parts.join('; ') + '.'
 }

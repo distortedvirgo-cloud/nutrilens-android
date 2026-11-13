@@ -10,6 +10,7 @@ import { type FatPlan, addIsoDays, plural } from '../data/fatplan'
 import { fmt1 } from '../data/body'
 import { iso, parseIso } from '../data/insights'
 import { MeasureForm } from './Body'
+import { PhaseChangeBanner } from './Program'
 import { Badge, Sheet, useData, useSheetClose, useToast } from '../ui/kit'
 import { IcCalendar, IcChevronR, IcSpark } from '../ui/icons'
 
@@ -200,6 +201,9 @@ export function CheckinResult({ c, onDone }: { c: CheckIn; onDone?: () => void }
         <div className="h1">Итог недели</div>
         <div className="small">{dayMonth(c.periodStart)} — {dayMonth(end)}{n !== 7 ? ` · ${n} ${plural(n, 'день', 'дня', 'дней')}` : ''}</div>
       </div>
+
+      {/* Этап программы сменился на этом чек-ине — это главное, поэтому сверху. */}
+      {c.phaseTitle && <PhaseChangeBanner title={c.phaseTitle} text={c.phaseText} />}
 
       <div className="card pad-16 col gap-6" style={{ background: 'var(--surface-low)' }}>
         <div className="label">Тренд веса</div>

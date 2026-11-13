@@ -10,6 +10,7 @@ import { fatPlanFromFlat, fatPlanToFlat, parseFatPlan } from './fatplan'
 import { CHECKIN, type CheckIn, checkinContext, parseCheckin } from './checkin'
 import { type DayActivity, SCORE, averageScore, clampStepGoal, parseActivity, scoreContext, scoreDay } from './dayscore'
 import { dayGrades } from './plan'
+import { parseProgram, programContext } from './program'
 
 // ---------- Фото: сжатие перед ИИ и хранением ----------
 
@@ -176,9 +177,10 @@ export async function sendChat(text: string): Promise<void> {
     '',
     `СЕЙЧАС: ${today} ${nowTime()}.`,
     `ПОЛЬЗОВАТЕЛЬ: ${settings.userContext || 'о себе ничего не написал'}${w != null ? `. Вес ${w.toFixed(1)} кг` : ''}.`,
-    `ЦЕЛЬ: ${Math.round(g.calories)} ккал/день${g.plan ? ' (режим «Сжигание жира»: калории и БЖУ посчитаны автоматически по весу и дневнику, меняется только на недельном чек-ине — не предлагай менять цель вручную)' : ''}. Сегодня съедено ${Math.round(t.calories)} ккал, ${remaining >= 0 ? `осталось ${remaining}` : `перебор ${-remaining}`} ккал. ` +
+    `ЦЕЛЬ: ${Math.round(g.calories)} ккал/день${g.plan ? ' (режим «Сжигание жира»: калории и БЖУ посчитаны автоматически по весу и дневнику и этапу программы, меняется только на недельном чек-ине — не предлагай менять цель вручную; в перерыве и удержании калории на уровне расхода — это часть плана, не срыв)' : ''}. Сегодня съедено ${Math.round(t.calories)} ккал, ${remaining >= 0 ? `осталось ${remaining}` : `перебор ${-remaining}`} ккал. ` +
       `БЖУ сегодня: Б ${Math.round(t.protein)}/${g.protein} г, Ж ${Math.round(t.fat)}/${g.fat} г, У ${Math.round(t.carbs)}/${g.carbs} г (съедено/цель).`,
     bodyLine ? `СОСТАВ ТЕЛА: ${bodyLine}` : '',
+    g.plan && settings.program ? `ПРОГРАММА: ${programContext(settings.program, today)}` : '',
     ci ? `ЧЕК-ИН: ${checkinContext(ci)}` : '',
     scoreLine ? `ОЦЕНКА ДНЯ (калории, белок, движение — силовая или шаги, сон 8 часов): ${scoreLine}` : '',
     `СЕГОДНЯ В ДНЕВНИКЕ: ${meals.map((m) => `${m.name} — ${Math.round(m.calories)} ккал`).join('; ') || 'пока ничего'}.`,
@@ -216,7 +218,9 @@ export async function exportBackup(): Promise<Blob> {
       workoutGoal: s.workoutGoal,
       // Шаги (3.23): цель и включена ли плитка.
       stepGoal: s.stepGoal,
-      stepsEnabled: s.stepsEnabled
+      stepsEnabled: s.stepsEnabled,
+      // Программа с этапами (3.24): блоки, перерывы, удержание — целиком.
+      program: s.program
     },
     meals: meals.map(({ items: _i, photoIds: _p, ...m }) => m),
     meal_items: meals.flatMap((m) => m.items.map((i) => ({ ...i, mealId: m.id }))),
@@ -348,6 +352,9 @@ export async function importBackup(file: Blob): Promise<number> {
       workoutGoal: intIn(s.workoutGoal, CHECKIN.workoutGoalMin, CHECKIN.workoutGoalMax) ?? current?.workoutGoal ?? CHECKIN.workoutGoalDefault,
       stepGoal: s.stepGoal != null && Number.isFinite(Number(s.stepGoal)) ? clampStepGoal(Number(s.stepGoal)) : (current?.stepGoal ?? SCORE.stepGoalDefault),
       stepsEnabled: typeof s.stepsEnabled === 'boolean' ? s.stepsEnabled : (current?.stepsEnabled ?? false),
+      // Программы нет в файле (бэкап до 3.24) — null: при запуске она создастся
+      // из импортированных замеров и чек-инов, как у тех, кто обновился.
+      program: parseProgram(s.program),
       onboarded: true
     })
   }

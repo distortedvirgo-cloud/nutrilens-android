@@ -2,9 +2,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { type Settings, getSettings, latestMeasurement, latestWeight, saveSettings } from '../data/db'
 import { exportBackup, importBackup } from '../data/actions'
-import { bodyProfile, defaultFatTarget, effectiveGoals, fatGoalOn, fmt1 } from '../data/body'
+import { effectiveGoals, fatGoalOn, fmt1, livePlan } from '../data/body'
 import { FatGoalForm, MeasureSheet } from './Body'
-import { CHECKIN, WEEKDAYS_SHORT, weekdayAcc } from '../data/checkin'
+import { setProgramPaused } from '../data/plan'
+import { EndProgramSheet, LaunchSheet, RhythmSettings } from './Program'
 import { SCORE, clampStepGoal, fmtInt } from '../data/dayscore'
 import { dailyResetTime, usageToday } from '../ai/gemini'
 import { activeProvider, hasSelectedKey } from '../ai'
@@ -12,9 +13,9 @@ import { KeyField, ProviderCards } from '../ui/AiSetup'
 import { Avatar, avatarFromFile } from '../ui/Avatar'
 import { schedulePush } from '../data/leaderboard'
 import { Badge, Segmented, Sheet, useData, useSheetClose, useToast } from '../ui/kit'
-import { IcCamera, IcChevronL, IcChevronR, IcDownload, IcInfo, IcKey, IcMinus, IcPlus, IcRuler, IcShare, IcSteps, IcTarget, IcTrophy, IcUpload, IcUser } from '../ui/icons'
+import { IcCamera, IcChevronL, IcChevronR, IcDownload, IcInfo, IcKey, IcMinus, IcPause, IcPlay, IcPlus, IcRuler, IcShare, IcSteps, IcTarget, IcTrophy, IcUpload, IcUser } from '../ui/icons'
 
-type Section = 'goals' | 'steps' | 'fat' | 'measure' | 'about' | 'ai' | 'data' | 'install' | 'leaderboard' | null
+type Section = 'goals' | 'steps' | 'fat' | 'measure' | 'about' | 'ai' | 'data' | 'install' | 'leaderboard' | 'launch' | 'endProgram' | null
 
 export function ProfileScreen({ openAi = 0, onOpenLeaderboard, onBack }: { openAi?: number; onOpenLeaderboard: () => void; onBack: () => void }) {
   const [open, setOpen] = useState<Section>(openAi ? 'ai' : null)
@@ -32,14 +33,12 @@ export function ProfileScreen({ openAi = 0, onOpenLeaderboard, onBack }: { openA
     try { await saveSettings({ avatar: await avatarFromFile(f) }); schedulePush(500) } catch { /* не картинка */ }
   }
   const g = effectiveGoals(s, w, body)
-  // Переключатель режима. Выключение стирает только план — ручные цели не трогались
-  // и снова действуют. Включение — цель по умолчанию, план посчитается сразу (App).
-  const setMode = async (fat: boolean) => {
+  // Переключатель режима. Включение — сначала предупреждение «продвинутый режим»
+  // и мастер запуска (режим включится только на «Начать программу»). Выключение —
+  // с подтверждением: программа закончится; ручные цели не трогались и снова действуют.
+  const setMode = (fat: boolean) => {
     if (fat === fatOn) return
-    await saveSettings(fat
-      ? { targetFatPercent: defaultFatTarget(bodyProfile(s).female), fatPlan: null }
-      : { targetFatPercent: null, fatPlan: null })
-    toast(fat ? 'Режим «Сжигание жира» включён' : 'Режим «Похудение» — снова твои цели')
+    setOpen(fat ? 'launch' : 'endProgram')
   }
 
   const groups: [string, [Section, React.ReactNode, string, string, string][]][] = [
@@ -111,10 +110,10 @@ export function ProfileScreen({ openAi = 0, onOpenLeaderboard, onBack }: { openA
                 <Segmented options={[[0, 'Похудение'], [1, 'Сжигание жира']]} value={fatOn ? 1 : 0} onChange={(v) => setMode(v === 1)} />
                 <div className="small" style={{ padding: '0 4px' }}>
                   {fatOn
-                    ? 'Меньше жира при тех же мышцах: калории и БЖУ считаются сами и меняются на недельном чек-ине — по тренду веса, дневнику и самочувствию.'
+                    ? 'Меньше жира при тех же мышцах: программа из блоков дефицита и обязательных перерывов. Калории и БЖУ считаются сами и меняются на недельном чек-ине.'
                     : 'Свои цели по калориям и БЖУ. «Сжигание жира» посчитает план сам — от процента жира и сухой массы.'}
                 </div>
-                {fatOn && <ModeSettings s={s} />}
+                {fatOn && <ModeSettings s={s} toast={toast} />}
               </div>
             )}
             <div className="card r24" style={{ overflow: 'hidden' }}>
@@ -135,49 +134,36 @@ export function ProfileScreen({ openAi = 0, onOpenLeaderboard, onBack }: { openA
 
       {open === 'goals' && <Sheet label="Цели" onClose={() => setOpen(null)}><GoalsForm s={s} /></Sheet>}
       {open === 'steps' && <Sheet label="Шаги" onClose={() => setOpen(null)}><StepsSettings s={s} /></Sheet>}
-      {open === 'fat' && <Sheet label="Цель по жиру" onClose={() => setOpen(null)}><FatGoalForm s={s} hasMeasurement={!!body} onMeasure={() => setOpen('measure')} /></Sheet>}
+      {open === 'fat' && <Sheet label="Цель по жиру" onClose={() => setOpen(null)}><FatGoalForm s={s} currentFat={body?.fatPercent ?? null} hasMeasurement={!!body} onMeasure={() => setOpen('measure')} /></Sheet>}
       {open === 'measure' && <MeasureSheet onClose={() => setOpen(null)} />}
       {open === 'about' && <Sheet label="О себе" onClose={() => setOpen(null)}><AboutForm s={s} /></Sheet>}
       {open === 'ai' && <Sheet label="Нейросеть" onClose={() => setOpen(null)}><AiForm s={s} /></Sheet>}
       {open === 'data' && <Sheet label="Данные" onClose={() => setOpen(null)}><DataForm /></Sheet>}
       {open === 'install' && <Sheet label="Установка" onClose={() => setOpen(null)}><InstallHelp /></Sheet>}
+      {open === 'launch' && <LaunchSheet onClose={() => setOpen(null)} />}
+      {open === 'endProgram' && <EndProgramSheet onClose={() => setOpen(null)} />}
     </div>
   )
 }
 
-/** Режим «Сжигание жира»: день чек-ина и цель по силовым. Меняется сразу, без кнопки «Сохранить». */
-function ModeSettings({ s }: { s: Settings }) {
-  const goal = s.workoutGoal || CHECKIN.workoutGoalDefault
-  const setGoal = (d: number) => saveSettings({ workoutGoal: Math.min(CHECKIN.workoutGoalMax, Math.max(CHECKIN.workoutGoalMin, goal + d)) })
+/**
+ * Режим «Сжигание жира»: день чек-ина, цель по силовым и пауза программы.
+ * Пауза: тема зелёная, план на уровне расхода, чек-ин не ждёт; «Продолжить» —
+ * текущий этап идёт дальше, а дни паузы в его недели не считаются.
+ */
+function ModeSettings({ s, toast }: { s: Settings; toast: (t: string) => void }) {
+  const paused = !!s.program?.pausedSince
   return (
     <div className="col gap-12" style={{ borderTop: '1px solid var(--hairline)', paddingTop: 12 }}>
-      <div className="col gap-8">
-        <div className="row between" style={{ padding: '0 4px' }}>
-          <span style={{ fontWeight: 700 }}>День чек-ина</span>
-          <span className="small">{weekdayAcc(s.checkinWeekday)}</span>
-        </div>
-        <div role="radiogroup" aria-label="День чек-ина" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
-          {WEEKDAYS_SHORT.map((l, i) => {
-            const sel = s.checkinWeekday === i + 1
-            return (
-              <button key={l} role="radio" aria-checked={sel} onClick={() => saveSettings({ checkinWeekday: i + 1 })}
-                style={{
-                  height: 40, borderRadius: 12, fontSize: 13, fontWeight: 800, minWidth: 0,
-                  background: sel ? 'var(--primary)' : 'var(--surface-high)', color: sel ? 'var(--on-brand)' : 'var(--text)', transition: 'background 200ms'
-                }}>{l}</button>
-            )
-          })}
-        </div>
-      </div>
-      <div className="row gap-12" style={{ padding: '0 4px' }}>
-        <span className="col grow">
-          <span style={{ fontWeight: 700 }}>Силовых в неделю</span>
-          <span className="label">чтобы мышцы было зачем сохранять</span>
-        </span>
-        <button className="icon-btn" aria-label="Меньше силовых" disabled={goal <= CHECKIN.workoutGoalMin} onClick={() => setGoal(-1)}><IcMinus size={18} /></button>
-        <span className="h2 num" aria-live="polite" style={{ minWidth: 18, textAlign: 'center' }}>{goal}</span>
-        <button className="icon-btn" aria-label="Больше силовых" disabled={goal >= CHECKIN.workoutGoalMax} onClick={() => setGoal(1)}><IcPlus size={18} /></button>
-      </div>
+      <RhythmSettings s={s} />
+      {s.program && !s.program.completedDate && (
+        <button className="btn btn-soft full sm" onClick={async () => {
+          await setProgramPaused(!paused)
+          toast(paused ? 'Программа продолжается' : 'Программа на паузе — питание на уровне расхода')
+        }}>
+          {paused ? <><IcPlay size={18} />Продолжить программу</> : <><IcPause size={18} />Приостановить программу</>}
+        </button>
+      )}
     </div>
   )
 }
@@ -238,7 +224,7 @@ function GoalsForm({ s }: { s: Settings }) {
   // В режиме сжигания жира поля только показывают план: ручные цели не меняем,
   // чтобы при возврате в «Похудение» они остались как были.
   const auto = fatGoalOn(s)
-  const plan = auto ? s.fatPlan : null
+  const plan = auto ? livePlan(s) : null
   const shown = (manual: string, v: number | undefined) => (plan && v != null ? String(v) : manual)
   return (
     <div className="col gap-14">

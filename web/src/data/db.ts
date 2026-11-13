@@ -4,6 +4,7 @@ import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import type { FatPlan } from './fatplan'
 import type { CheckIn } from './checkin'
 import type { DayActivity } from './dayscore'
+import type { Program } from './program'
 
 export interface MealItem {
   name: string
@@ -77,6 +78,12 @@ export interface Settings {
   /** Шаги (3.23): плитка на «Сегодня» и цель, 4000–15000. На вебе — только ручной ввод. */
   stepsEnabled: boolean
   stepGoal: number
+  /**
+   * Программа режима (3.24): этапы — блоки дефицита, перерывы, удержание (program.ts).
+   * Как и fatPlan, лежит в объекте настроек — новой версии базы не нужно.
+   * null — режим выключен или программа ещё не создана (старые данные создадут её сами).
+   */
+  program: Program | null
 }
 
 /** Замер тела: один на дату. manualFatPercent (весы, калипер, DEXA) важнее формулы. */
@@ -139,7 +146,8 @@ export const DEFAULT_SETTINGS: Settings = {
   checkinWeekday: 7,
   workoutGoal: 3,
   stepsEnabled: false,
-  stepGoal: 8000
+  stepGoal: 8000,
+  program: null
 }
 
 // ---------- Книга рецептов ----------

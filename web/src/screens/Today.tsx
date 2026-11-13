@@ -20,9 +20,11 @@ import { type DayGrade, type DayScore, SCORE, fmtInt, gradeDay, scoreDay } from 
 import { plural } from '../data/body'
 import { MeasureSheet } from './Body'
 import { CheckinCard, CheckinSheet, LEVEL_COLOR } from './Checkin'
+import { CompletedCard, CompletedSheet, NoticeCard, phaseTitle } from './Program'
+import { type Program, currentPhase, inDeficit, phaseBadge, phaseLine } from '../data/program'
 import { Bar, Badge, Photo, Ring, Sheet, useCountUp, useData, useSheetClose, useToast } from '../ui/kit'
 import {
-  IcCamera, IcCheck, IcChevronR, IcDumbbell, IcInfo, IcKey, IcMoon, IcSteps, IcDrop, IcFire, IcPlus, IcRefresh, IcScale, IcSpark, IcStar, IcTrophy, IcAlert, IcClose
+  IcCamera, IcCheck, IcChevronR, IcDumbbell, IcHeart, IcInfo, IcKey, IcMoon, IcPause, IcTarget, IcSteps, IcDrop, IcFire, IcPlus, IcRefresh, IcScale, IcSpark, IcStar, IcTrophy, IcAlert, IcClose
 } from '../ui/icons'
 
 const WEEK = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
@@ -43,6 +45,7 @@ export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOp
   // План «до» берём в момент открытия — чек-ин хранит его снимок.
   const [checkin, setCheckin] = useState<FatPlan | null>(null)
   const [stepsOpen, setStepsOpen] = useState(false)
+  const [summary, setSummary] = useState(false)
   const toast = useToast()
   const d = parseIso(date)
   const today = iso(new Date())
@@ -93,6 +96,7 @@ export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOp
   const score = grade && targets
     ? grade.score ?? scoreDay({ kcal: totals.calories, protein: totals.protein, workout, steps, sleptWell: data.activity?.sleptWell ?? null }, targets)
     : null
+  const program = fatMode ? settings.program : null
   const active = data.jobs.filter((j) => j.status !== 'FAILED')
   const failed = data.jobs.filter((j) => j.status === 'FAILED')
 
@@ -112,10 +116,14 @@ export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOp
         {fatMode && (
           <button className="mode-pill pressable num" onClick={data.body ? onOpenProgress : () => setMeasuring(true)}
             aria-label={data.body ? 'Режим сжигания жира — открыть прогресс' : 'Режим сжигания жира — сделать первый замер'}>
-            <span aria-hidden="true">🔥</span>
-            Сжигание жира · {data.body ? `${Math.round(data.body.fatPercent)}% → ${settings.targetFatPercent}%` : 'сделай первый замер'}
+            {program
+              // Этап программы: «🔥 Блок 2 из 3 · неделя 5 · 21% → 17%», «Перерыв · ещё 9 дней»…
+              ? phaseBadge(program, today)
+              : <><span aria-hidden="true">🔥</span>Сжигание жира · {data.body ? `${Math.round(data.body.fatPercent)}% → ${settings.targetFatPercent}%` : 'сделай первый замер'}</>}
           </button>
         )}
+        {program?.notice && isToday && <NoticeCard title={program.notice.title} text={program.notice.text} />}
+        {program?.completedDate && !program.stayMaintenance && isToday && <CompletedCard onOpen={() => setSummary(true)} />}
         {needsKey && (
           <button className="card pad-16 pressable row gap-14" onClick={onSetupAi}
             style={{ textAlign: 'left', border: '1.5px solid color-mix(in srgb, var(--primary) 50%, transparent)', background: 'color-mix(in srgb, var(--primary) 12%, var(--surface))' }}>
@@ -134,7 +142,7 @@ export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOp
           <CheckinCard overdue={Math.max(0, daysBetween(data.checkin.next, today))} onOpen={() => setCheckin(goals.plan)} />
         )}
         {fatMode && isToday && (goals.plan
-          ? <PlanMini plan={goals.plan} today={today} status={data.checkin} onOpen={onOpenProgress} />
+          ? <PlanMini plan={goals.plan} deficitPlan={settings.fatPlan ?? goals.plan} program={program} today={today} status={data.checkin} onOpen={onOpenProgress} />
           : weight == null && (
             <button className="card r22 pressable row gap-12" onClick={onWeigh} style={{ padding: '14px 16px', textAlign: 'left' }}>
               <Badge tint="var(--primary)" size={38}><IcScale size={20} /></Badge>
@@ -258,6 +266,7 @@ export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOp
       </div>
       {measuring && <MeasureSheet onClose={() => setMeasuring(false)} />}
       {checkin && <CheckinSheet plan={checkin} onClose={() => setCheckin(null)} />}
+      {summary && program && <CompletedSheet p={program} onClose={() => setSummary(false)} />}
       {stepsOpen && (
         <Sheet label="Шаги" onClose={() => setStepsOpen(false)} keyboardAware>
           <StepsForm date={date} isToday={isToday} initial={steps} goal={stepGoal} />
@@ -488,22 +497,34 @@ function StepsForm({ date, isToday, initial, goal }: { date: string; isToday: bo
   )
 }
 
-/** «Сегодня» → компактный план режима: цифры дня и когда чек-ин. Подробно — в «Прогрессе». */
-function PlanMini({ plan, today, status, onOpen }: { plan: FatPlan; today: string; status: CheckinStatus | null; onOpen: () => void }) {
+/**
+ * «Сегодня» → карточка этапа: что за этап, одна строка «что делать сейчас»
+ * (в блоке — дефицит и белок, в перерыве — «ешь на уровне расхода, это часть
+ * плана») и цифры дня. Подробно и весь путь — в «Прогрессе».
+ */
+function PlanMini({ plan, deficitPlan, program, today, status, onOpen }: {
+  plan: FatPlan; deficitPlan: FatPlan; program: Program | null; today: string; status: CheckinStatus | null; onOpen: () => void
+}) {
+  const deficit = inDeficit(program)
+  const tint = deficit ? 'var(--primary)' : '#1FA463'
+  const icon = !program || deficit ? <IcFire size={20} /> : program.pausedSince ? <IcPause size={20} /> : currentPhase(program).type === 'break' ? <IcHeart size={20} /> : <IcTarget size={20} />
   return (
     <button className="card r22 pressable col gap-8" onClick={onOpen} style={{ padding: '14px 16px', textAlign: 'left' }}>
       <div className="row gap-12">
-        <Badge tint="var(--primary)" size={38}><IcFire size={20} /></Badge>
-        <div className="grow">
-          <div className="row gap-6"><span className="title">План на неделю</span><span className="label">· авто</span></div>
+        <Badge tint={tint} size={38}>{icon}</Badge>
+        <div className="grow" style={{ minWidth: 0 }}>
+          <div className="row gap-6"><span className="title ellipsis">{program ? phaseTitle(program, today) : 'План на неделю'}</span>{!program && <span className="label">· авто</span>}</div>
           <div className="small num">
             <b style={{ color: 'var(--text)' }}>{plan.calories} ккал</b> · Б {plan.protein} · Ж {plan.fat} · У {plan.carbs} г
           </div>
         </div>
         <span className="muted"><IcChevronR size={18} /></span>
       </div>
+      {program && (
+        <div className="small" style={{ paddingLeft: 50, color: 'var(--text)', fontWeight: 700 }}>{phaseLine(program, deficitPlan)}</div>
+      )}
       <div className="label num" style={{ paddingLeft: 50 }}>
-        Расход ≈ {plan.tdee} ккал ({plan.observed ? 'по твоим данным' : 'по формуле'}) · чек-ин {status?.due ? 'ждёт' : checkinWhen(status?.next ?? plan.nextDate, today)}
+        Расход ≈ {plan.tdee} ккал ({plan.observed ? 'по твоим данным' : 'по формуле'}) · чек-ин {program?.pausedSince ? 'после паузы' : status?.due ? 'ждёт' : checkinWhen(status?.next ?? plan.nextDate, today)}
       </div>
     </button>
   )

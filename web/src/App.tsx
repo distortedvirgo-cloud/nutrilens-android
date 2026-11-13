@@ -5,6 +5,7 @@ import { type Meal, type Settings, getSettings, onDataChanged } from './data/db'
 import { runQueue } from './data/actions'
 import { fatGoalOn } from './data/body'
 import { ensureFatPlan } from './data/plan'
+import { inDeficit } from './data/program'
 import { applyMode } from './ui/theme'
 import { applyUpdate, checkUpdate, remindLater, skipVersion, type UpdateInfo } from './data/update'
 import { TodayScreen } from './screens/Today'
@@ -78,8 +79,9 @@ function Shell() {
     const off = onDataChanged(() => { load(); plan(); schedulePush() })
     return () => { off(); document.removeEventListener('visibilitychange', onVis) }
   }, [])
-  // Акцент приложения: оранжевый в режиме сжигания жира — сразу, без перезапуска.
-  const fatMode = settings ? fatGoalOn(settings) : null
+  // Акцент приложения: оранжевый только в блоке дефицита программы (без паузы) —
+  // в перерыве, удержании и на паузе приложение возвращается к спокойному зелёному.
+  const fatMode = settings ? fatGoalOn(settings) && inDeficit(settings.program) : null
   useEffect(() => { if (fatMode != null) applyMode(fatMode) }, [fatMode])
   const openAiSetup = () => { setChat(null); setBoard(false); setRecipeId(null); setTab('profile'); setProfileAi((n) => n + 1) }
 

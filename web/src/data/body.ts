@@ -3,6 +3,7 @@
 import type { BodyMeasurement, Settings } from './db'
 import { macroGoals, type MacroGoals } from './insights'
 import type { FatPlan } from './fatplan'
+import { activePlan } from './program'
 
 export const FAT_TARGET_MIN = 8
 export const FAT_TARGET_MAX = 35
@@ -108,8 +109,16 @@ export interface EffectiveGoals extends MacroGoals {
  * Калорийная цель дня — единая точка для «Сегодня», коуча, лидерборда и снимка
  * цели в записи еды. В режиме сжигания жира — из плана, иначе ручная.
  */
-export function effectiveCalories(s: Pick<Settings, 'targetFatPercent' | 'fatPlan' | 'dailyGoal'>): number {
-  return fatGoalOn(s) && s.fatPlan ? s.fatPlan.calories : s.dailyGoal
+export function effectiveCalories(s: Pick<Settings, 'targetFatPercent' | 'fatPlan' | 'dailyGoal' | 'program'>): number {
+  return fatGoalOn(s) && s.fatPlan ? activePlan(s.fatPlan, s.program)!.calories : s.dailyGoal
+}
+
+/**
+ * План, по которому живём сегодня: в блоке — дефицит, в перерыве, удержании и
+ * на паузе — расход (program.ts). null — режим выключен или плана ещё нет.
+ */
+export function livePlan(s: Pick<Settings, 'targetFatPercent' | 'fatPlan' | 'program'>): FatPlan | null {
+  return fatGoalOn(s) ? activePlan(s.fatPlan, s.program) : null
 }
 
 /**
@@ -119,7 +128,7 @@ export function effectiveCalories(s: Pick<Settings, 'targetFatPercent' | 'fatPla
  */
 export function effectiveGoals(s: Settings, weight: number | null, latest: BodyMeasurement | null | undefined): EffectiveGoals {
   if (fatGoalOn(s) && s.fatPlan) {
-    const p = s.fatPlan
+    const p = activePlan(s.fatPlan, s.program)!
     return { calories: p.calories, protein: p.protein, fat: p.fat, carbs: p.carbs, plan: p }
   }
   const g = { ...macroGoals(s.proteinGoal, s.fatGoal, s.carbsGoal, s.dailyGoal, weight), calories: s.dailyGoal, plan: null }
