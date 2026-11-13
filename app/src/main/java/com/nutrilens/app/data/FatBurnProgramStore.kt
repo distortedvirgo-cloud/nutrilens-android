@@ -36,8 +36,18 @@ fun programWarnTarget(male: Boolean): Int = if (male) FatBurnProgram.WARN_TARGET
 fun fatTrendNow(measurements: List<BodyMeasurementEntity>): Double? =
     fatTrendPoints(measurements).lastOrNull()?.trend
 
-fun fatTrendPoints(measurements: List<BodyMeasurementEntity>): List<Trend.Point> = Trend.smooth(
+fun fatTrendPoints(measurements: List<BodyMeasurementEntity>): List<Trend.Point> = Trend.smoothByCount(
     measurements.mapNotNull { m ->
         runCatching { FatBurnPlanner.DayValue(LocalDate.parse(m.date), m.fatPercent) }.getOrNull()
     }
 )
+
+/**
+ * Подтверждение цели (3.28): худший из двух последних замеров. Цель блока или программы
+ * засчитывается, только если и тренд, и оба последних замера до неё дошли. null — замеров меньше двух.
+ */
+fun fatConfirmNow(measurements: List<BodyMeasurementEntity>): Double? {
+    val pts = fatTrendPoints(measurements)
+    if (pts.size < 2) return null
+    return maxOf(pts[pts.size - 1].raw, pts[pts.size - 2].raw)
+}

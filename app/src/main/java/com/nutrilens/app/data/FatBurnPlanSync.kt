@@ -261,7 +261,7 @@ object FatBurnPlanSync {
                 val before = repo.get()
                 val male = BodyComposition.isMale(before)
                 val fat = fatTrendNow(db.bodyMeasurementDao().all()) ?: if (male) 25.0 else 32.0
-                val program = FatBurnProgram.create(today, fat, target, weight, male)
+                val program = FatBurnProgram.create(today, fat, target, weight, male, FatBurnPlanner.Pace.of(before.fatBurnPace))
                 repo.update {
                     it.copy(
                         targetFatPercent = target,
@@ -309,14 +309,39 @@ object FatBurnPlanSync {
                     fatPercent = fat,
                     targetFatPercent = target,
                     activity = FatBurnPlanner.activityFromText(settings.userContext),
-                    today = today
+                    today = today,
+                    pace = FatBurnPlanner.Pace.of(settings.fatBurnPace)
                 )).copy(weightKg = weight, fatPercent = fat)
-                val program = FatBurnProgram.create(today, fat, target, weight, male)
+                val program = FatBurnProgram.create(today, fat, target, weight, male, FatBurnPlanner.Pace.of(settings.fatBurnPace))
                 LaunchPreview(program, phasePlan(input, program, freshBlock = false), FatBurnProgram.forecast(program, today))
             } catch (e: Exception) {
                 null
             }
         }
+
+    /**
+     * Сменить темп (3.28): в блоке — свежий план под новый темп (без шага ±150: человек сам
+     * решил), в перерыве и удержании — только запоминаем, темп понадобится в следующем блоке.
+     */
+    suspend fun setPace(context: Context, key: String) {
+        val pace = FatBurnPlanner.Pace.of(key) ?: return
+        val appContext = context.applicationContext
+        mutex.withLock {
+            withContext(Dispatchers.IO) {
+                val db = NutriLensDatabase.getInstance(appContext)
+                val repo = SettingsRepository(db.settingsDao())
+                repo.update { it.copy(fatBurnPace = pace.key) }
+                val settings = repo.get()
+                val target = settings.targetFatPercent ?: return@withContext
+                val program = settings.fatBurnProgramState
+                if (program != null && !program.inActiveBlock) return@withContext
+                val input = buildInput(db, settings, target, LocalDate.now(), usePrevious = false) ?: return@withContext
+                val plan = FatBurnPlanner.compute(input).let { it.copy(note = "Темп «${pace.title.lowercase()}» — план пересчитан: ${it.note.replaceFirstChar { c -> c.lowercase() }}") }
+                repo.update { it.withPlan(plan, target) }
+            }
+        }
+        afterChange(appContext)
+    }
 
     /** Приостановить: план — на уровне расхода, чек-инов и напоминаний нет. */
     suspend fun pauseProgram(context: Context) = mutateProgram(context, recalc = true, freshBlock = false) { p, today ->
@@ -528,7 +553,13 @@ object FatBurnPlanSync {
                 signal = FatBurnPlanner.MuscleSignal.valueOf(muscleSignal.uppercase()),
                 hungerHighTwice = hunger == 5 && previous?.hunger == 5,
                 previousFlatWeeks = previous?.flatWeeks ?: 0,
-                waterPhase = waterPhase
+                waterPhase = waterPhase,
+                daysInPhase = programNow?.takeIf { it.inActiveBlock }?.let { FatBurnProgram.daysInPhase(it, today) },
+                checkInsSinceCut = checkInsSinceCut(db.checkInDao().all(), today),
+                previousSlowWeeks = previous?.slowWeeks ?: 0,
+                previousRedWeeks = previous?.redWeeks ?: 0,
+                // Прошлый темп — только того же этапа: смена этапа (phaseChange) обнуляет историю.
+                previousRatePercent = previous?.takeIf { it.phaseChange == null && programNow?.inActiveBlock != false }?.decisionRate
             )
         )
 
@@ -546,7 +577,8 @@ object FatBurnPlanSync {
             if (!programBefore.inActiveBlock) flatWeeks = 0
             val t = FatBurnProgram.onCheckIn(
                 programBefore, today, fatTrendNow(measurements), flatWeeks, weightKg, male,
-                strengthDrop = strength?.earlyBreak == true
+                strengthDrop = strength?.earlyBreak == true,
+                confirmFat = fatConfirmNow(measurements)
             )
             val after = t.program
             programAfter = after
@@ -588,6 +620,9 @@ object FatBurnPlanSync {
             muscleSignal = muscleSignal,
             signalNote = signalNote,
             flatWeeks = flatWeeks,
+            slowWeeks = if (programAfter?.inActiveBlock == false) 0 else decision.slowWeeks,
+            redWeeks = decision.redWeeks,
+            decisionRate = decision.ratePercent,
             caloriesBefore = settings.planCalories ?: kcalBefore,
             caloriesAfter = plan.calories,
             proteinBefore = settings.planProtein ?: goalsBefore.protein,
@@ -659,6 +694,21 @@ object FatBurnPlanSync {
         return StrengthCheck.outcome(report, history.firstOrNull()?.strengthSignal)
     }
 
+    /**
+     * Сколько чек-инов назад план снижали правилом чек-ина (99 — не снижали). Смена этапа —
+     * граница: новый блок начинается со своего плана, прошлые снижения не в счёт.
+     */
+    private fun checkInsSinceCut(all: List<CheckInEntity>, today: LocalDate): Int {
+        val past = all.filter { it.date < today.toString() }.sortedByDescending { it.date }
+        past.forEachIndexed { i, c ->
+            if (c.phaseChange != null) return 99
+            val before = c.caloriesBefore
+            val after = c.caloriesAfter
+            if (before != null && after != null && after < before - 5) return i + 1
+        }
+        return 99
+    }
+
     private suspend fun buildInput(
         db: NutriLensDatabase,
         settings: SettingsEntity,
@@ -666,7 +716,14 @@ object FatBurnPlanSync {
         today: LocalDate,
         usePrevious: Boolean
     ): FatBurnPlanner.Input? {
-        val weight = db.weightDao().latest()?.weight?.takeIf { it > 0 } ?: return null
+        val latest = db.weightDao().latest()?.weight?.takeIf { it > 0 } ?: return null
+        // Вес и процент жира — по трендам (3.28): одно взвешивание или один замер лентой
+        // не должны сдвигать сухую массу, белок и минимум калорий.
+        val weight = Trend.smooth(
+            db.weightDao().since(today.minusDays(90).toString()).mapNotNull { w ->
+                runCatching { FatBurnPlanner.DayValue(LocalDate.parse(w.date), w.weight) }.getOrNull()
+            }
+        ).lastOrNull()?.trend ?: latest
         val start = today.minusDays(FatBurnPlanner.WINDOW_DAYS)
         val weights = db.weightDao().since(start.toString()).mapNotNull { w ->
             runCatching { FatBurnPlanner.DayValue(LocalDate.parse(w.date), w.weight) }.getOrNull()
@@ -676,7 +733,13 @@ object FatBurnPlanSync {
             .mapNotNull { (date, meals) ->
                 runCatching { FatBurnPlanner.DayValue(LocalDate.parse(date), meals.sumOf { it.calories }) }.getOrNull()
             }
-        val fatPercent = db.bodyMeasurementDao().latest()?.fatPercent?.takeIf { it > 0 }
+        val fatPercent = fatTrendNow(db.bodyMeasurementDao().all())?.takeIf { it > 0 }
+        // Активность: по шагам за 2 недели, если шаги включены и их хватает, иначе из «О себе».
+        val steps = if (settings.stepsEnabled) {
+            db.dayActivityDao().between(today.minusDays(14).toString(), today.minusDays(1).toString()).mapNotNull { it.steps }
+        } else emptyList()
+        val activity = FatBurnPlanner.activityFromSteps(steps) ?: FatBurnPlanner.activityFromText(settings.userContext)
+        val phaseStart = settings.fatBurnProgramState?.currentPhase?.startDate
         return FatBurnPlanner.Input(
             male = BodyComposition.isMale(settings),
             heightCm = BodyComposition.heightCm(settings),
@@ -685,10 +748,14 @@ object FatBurnPlanSync {
             dailyCalories = calories,
             fatPercent = fatPercent,
             targetFatPercent = target,
-            activity = FatBurnPlanner.activityFromText(settings.userContext),
+            activity = activity,
             previousCalories = if (usePrevious) settings.planCalories else null,
             previousDate = if (usePrevious) settings.planDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() } else null,
-            today = today
+            today = today,
+            pace = FatBurnPlanner.Pace.of(settings.fatBurnPace),
+            phaseStart = phaseStart,
+            // Расход прошлого плана — подсказка, пока окно данных захватывает прошлый этап.
+            tdeeHint = settings.planTdee?.takeIf { settings.planCalories != null }
         )
     }
 }

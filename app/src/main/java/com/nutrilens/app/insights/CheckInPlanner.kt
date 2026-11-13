@@ -20,7 +20,7 @@ object CheckInPlanner {
     const val MAX_PERIOD_DAYS = 21
 
     const val DEFAULT_WEEKDAY = 7 // воскресенье, ISO-номер
-    const val DEFAULT_WORKOUT_GOAL = 3
+    const val DEFAULT_WORKOUT_GOAL = 2
     const val MIN_WORKOUT_GOAL = 2
     const val MAX_WORKOUT_GOAL = 5
 

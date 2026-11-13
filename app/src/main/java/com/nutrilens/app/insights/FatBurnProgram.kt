@@ -139,7 +139,7 @@ object FatBurnProgram {
      * Сколько недель дефицита до цели при темпе планировщика (0,6% веса в неделю,
      * ближе к цели 0,4%). Считаем по неделям: уходит жир, сухая масса та же. 0 — цель уже есть.
      */
-    fun estimateWeeks(weightKg: Double, fatPercent: Double, target: Double, male: Boolean): Int {
+    fun estimateWeeks(weightKg: Double, fatPercent: Double, target: Double, male: Boolean, pace: FatBurnPlanner.Pace? = null): Int {
         if (weightKg <= 0.0 || fatPercent <= target) return 0
         var weight = weightKg
         var fatKg = weightKg * fatPercent / 100
@@ -148,7 +148,7 @@ object FatBurnProgram {
         while (weeks < MAX_WEEKS) {
             val pct = fatKg / weight * 100
             if (pct <= target) break
-            fatKg -= weight * FatBurnPlanner.weeklyRate(pct, target, male)
+            fatKg -= weight * FatBurnPlanner.weeklyRate(pct, target, male, pace)
             weight = lean + fatKg
             weeks++
         }
@@ -165,10 +165,11 @@ object FatBurnProgram {
         target: Double,
         weightKg: Double,
         male: Boolean,
-        firstBlockIndex: Int = 1
+        firstBlockIndex: Int = 1,
+        pace: FatBurnPlanner.Pace? = null
     ): List<Phase> {
         if (fromFat - target <= TARGET_TOLERANCE) return emptyList()
-        val weeks = estimateWeeks(weightKg, fromFat, target, male).coerceAtLeast(MIN_BLOCK_WEEKS)
+        val weeks = estimateWeeks(weightKg, fromFat, target, male, pace).coerceAtLeast(MIN_BLOCK_WEEKS)
         val n = ceil(weeks / BLOCK_WEEKS.toDouble()).toInt().coerceAtLeast(1)
         val out = mutableListOf<Phase>()
         var prevTarget = fromFat
@@ -187,8 +188,15 @@ object FatBurnProgram {
     }
 
     /** Новая программа: первый этап начинается [startDate]. Уже у цели — сразу удержание. */
-    fun create(startDate: LocalDate, startFat: Double, target: Double, weightKg: Double, male: Boolean): Program {
-        val blocks = planBlocks(startFat, target, weightKg, male)
+    fun create(
+        startDate: LocalDate,
+        startFat: Double,
+        target: Double,
+        weightKg: Double,
+        male: Boolean,
+        pace: FatBurnPlanner.Pace? = null
+    ): Program {
+        val blocks = planBlocks(startFat, target, weightKg, male, pace = pace)
         val phases = (blocks + Phase(PhaseType.MAINTENANCE, 1, MAINTENANCE_WEEKS, target)).toMutableList()
         phases[0] = phases[0].copy(startDate = startDate, startFat = startFat)
         return Program(
@@ -270,8 +278,12 @@ object FatBurnProgram {
         weightKg: Double,
         male: Boolean,
         /** Сила падает (красный сигнал) второй чек-ин подряд — мышцам нужен перерыв раньше (3.27). */
-        strengthDrop: Boolean = false
+        strengthDrop: Boolean = false,
+        /** Худший из двух последних замеров (3.28): цель засчитывается, только если и он до неё дошёл. */
+        confirmFat: Double? = trendFat
     ): Transition {
+        fun reached(level: Double): Boolean =
+            trendFat != null && trendFat <= level && confirmFat != null && confirmFat <= level
         if (p.paused || p.completed) return Transition(p)
         val phase = p.currentPhase ?: return Transition(p)
         val days = daysInPhase(p, today)
@@ -279,9 +291,9 @@ object FatBurnProgram {
             PhaseType.BLOCK -> {
                 val blockTarget = phase.targetFat
                 when {
-                    trendFat != null && trendFat <= p.target + TARGET_TOLERANCE ->
+                    reached(p.target + TARGET_TOLERANCE) ->
                         toMaintenance(p, today, EndReason.FINAL, trendFat)
-                    trendFat != null && blockTarget != null && trendFat <= blockTarget ->
+                    blockTarget != null && reached(blockTarget) ->
                         toBreak(p, today, EndReason.TARGET, Event.BLOCK_TARGET, trendFat, weightKg, male)
                     flatWeeks >= PLATEAU_WEEKS ->
                         toBreak(p, today, EndReason.PLATEAU, Event.PLATEAU, trendFat, weightKg, male)
@@ -294,7 +306,7 @@ object FatBurnProgram {
             }
             PhaseType.BREAK -> when {
                 // Цель пришла и в перерыве — сразу удержание, новый блок уже не нужен.
-                trendFat != null && trendFat <= p.target + TARGET_TOLERANCE -> toMaintenance(p, today, EndReason.FINAL, trendFat)
+                reached(p.target + TARGET_TOLERANCE) -> toMaintenance(p, today, EndReason.FINAL, trendFat)
                 days >= BREAK_DAYS -> afterBreak(p, today, trendFat)
                 else -> Transition(p)
             }

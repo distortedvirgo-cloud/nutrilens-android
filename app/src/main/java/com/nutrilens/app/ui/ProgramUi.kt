@@ -220,6 +220,9 @@ class FatBurnProgramViewModel(application: Application) : AndroidViewModel(appli
 
     fun setCheckInWeekday(value: Int) = updateSettings { it.copy(checkInWeekday = value.coerceIn(1, 7)) }
 
+    /** Темп выбирают в мастере до запуска — план посчитается при старте. */
+    fun setPace(key: String) = updateSettings { it.copy(fatBurnPace = key) }
+
     fun setWorkoutGoal(value: Int) = updateSettings {
         it.copy(workoutGoal = value.coerceIn(CheckInPlanner.MIN_WORKOUT_GOAL, CheckInPlanner.MAX_WORKOUT_GOAL))
     }
@@ -539,7 +542,10 @@ fun ProgramLaunchSheet(onDismiss: () -> Unit, viewModel: FatBurnProgramViewModel
                     weekday = settings.checkInWeekday,
                     workoutGoal = settings.workoutGoal,
                     onWeekday = viewModel::setCheckInWeekday,
-                    onWorkoutGoal = viewModel::setWorkoutGoal
+                    onWorkoutGoal = viewModel::setWorkoutGoal,
+                    pace = settings.fatBurnPace,
+                    male = BodyComposition.isMale(settings),
+                    onPace = viewModel::setPace
                 )
                 Spacer(Modifier.height(14.dp))
                 StepsSettingsSection()

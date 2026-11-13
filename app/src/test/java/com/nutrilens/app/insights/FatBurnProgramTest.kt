@@ -75,6 +75,20 @@ class FatBurnProgramTest {
         assertEquals(null, inBreak.event)
     }
 
+    @Test fun `один удачный замер не закрывает блок — нужно подтверждение`() {
+        val p0 = FatBurnProgram.create(start, 25.0, 13.0, 90.0, true)
+        val blockTarget = p0.currentPhase!!.targetFat!!
+        // Тренд дошёл до цели блока, но прошлый замер был выше — ждём второй.
+        val single = FatBurnProgram.onCheckIn(p0, start.plusWeeks(3), blockTarget - 0.2, 0, 88.0, true, confirmFat = blockTarget + 1.5)
+        assertEquals(null, single.event)
+        // Нет второго замера вовсе — тоже ждём.
+        val none = FatBurnProgram.onCheckIn(p0, start.plusWeeks(3), blockTarget - 0.2, 0, 88.0, true, confirmFat = null)
+        assertEquals(null, none.event)
+        // Оба последних замера у цели — блок засчитан.
+        val both = FatBurnProgram.onCheckIn(p0, start.plusWeeks(4), blockTarget - 0.2, 0, 88.0, true, confirmFat = blockTarget - 0.1)
+        assertEquals(FatBurnProgram.Event.BLOCK_TARGET, both.event)
+    }
+
     @Test fun `итоговая цель — удержание — программа завершена`() {
         val (p, events) = run(FatBurnProgram.create(start, 16.0, 13.0, 80.0, true), 16, { w -> (16.0 - 0.4 * w).coerceAtLeast(13.2) })
         assertEquals(FatBurnProgram.Event.FINAL_TARGET, events.first { it.second == FatBurnProgram.Event.FINAL_TARGET }.second)

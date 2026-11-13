@@ -152,6 +152,11 @@ class BodyFatViewModel(application: Application) : AndroidViewModel(application)
     /** День недельного чек-ина, ISO: 1 — понедельник … 7 — воскресенье. */
     fun setCheckInWeekday(value: Int) = updateSettings { it.copy(checkInWeekday = value.coerceIn(1, 7)) }
 
+    /** Темп программы (3.28): план сразу пересчитывается под новый темп. */
+    fun setPace(key: String) {
+        viewModelScope.launch { FatBurnPlanSync.setPace(getApplication(), key) }
+    }
+
     /** Цель силовых в неделю (2–5) — для сигнала сохранения мышц на чек-ине. */
     fun setWorkoutGoal(value: Int) = updateSettings {
         it.copy(workoutGoal = value.coerceIn(CheckInPlanner.MIN_WORKOUT_GOAL, CheckInPlanner.MAX_WORKOUT_GOAL))
@@ -458,7 +463,10 @@ fun BodyFatGoalSection(
                     weekday = settings.checkInWeekday,
                     workoutGoal = settings.workoutGoal,
                     onWeekday = viewModel::setCheckInWeekday,
-                    onWorkoutGoal = viewModel::setWorkoutGoal
+                    onWorkoutGoal = viewModel::setWorkoutGoal,
+                    pace = settings.fatBurnPace,
+                    male = male,
+                    onPace = viewModel::setPace
                 )
                 BodyComposition.proteinTarget(lastWeight, latest?.fatPercent)?.let { protein ->
                     Text(
@@ -542,9 +550,33 @@ fun CheckInSettingsBlock(
     weekday: Int,
     workoutGoal: Int,
     onWeekday: (Int) -> Unit,
-    onWorkoutGoal: (Int) -> Unit
+    onWorkoutGoal: (Int) -> Unit,
+    /** Темп (3.28): ключ из настроек (null — по умолчанию для пола); onPace null — не показываем. */
+    pace: String? = null,
+    male: Boolean = true,
+    onPace: ((String) -> Unit)? = null
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (onPace != null) {
+            val chosen = FatBurnPlanner.Pace.of(pace) ?: FatBurnPlanner.Pace.default(male)
+            Text("Темп", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+            Text(
+                when (chosen) {
+                    FatBurnPlanner.Pace.GENTLE -> "0,4% веса в неделю — легче держать, мышцам спокойнее. Хорошо, если жира немного или тяжело с голодом."
+                    FatBurnPlanner.Pace.NORMAL -> "0,6% веса в неделю — баланс скорости и сохранения мышц."
+                    FatBurnPlanner.Pace.FAST -> "0,8% веса в неделю — быстрее, но голоднее. Подходит, если жира много и силовые идут регулярно."
+                } + " Ближе к цели темп сам снизится.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            SegmentedSwitcher(
+                options = FatBurnPlanner.Pace.entries.map { it.key to it.title },
+                selected = chosen.key,
+                onSelect = onPace,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(2.dp))
+        }
         Text("День чек-ина", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
         Text(
             "Раз в неделю подводим итоги за 2 минуты — только тогда план и меняется.",
@@ -711,7 +743,7 @@ private fun BodyCompositionDetails(
     val target = settings.targetFatPercent
     // Главное число — сглаженный тренд: один замер лентой гуляет на ±1%, тренд — нет.
     val fatTrend = remember(measurements) {
-        Trend.smooth(
+        Trend.smoothByCount(
             measurements.mapNotNull { m ->
                 runCatching { FatBurnPlanner.DayValue(LocalDate.parse(m.date), m.fatPercent) }.getOrNull()
             }

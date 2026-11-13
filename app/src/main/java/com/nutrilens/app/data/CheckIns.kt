@@ -16,7 +16,7 @@ import java.time.LocalDate
  * Хранится всё, что было на экране итогов: так история показывает ровно то,
  * что человек видел, даже если формулы потом поменяются.
  * Схема таблицы обязана совпадать с MIGRATION_10_11 (+ avgScore из MIGRATION_11_12, phaseChange из MIGRATION_12_13,
- * strength* из MIGRATION_13_14) один-в-один.
+ * strength* из MIGRATION_13_14, slowWeeks/redWeeks из MIGRATION_14_15) один-в-один.
  */
 @Serializable
 @Entity(tableName = "check_ins")
@@ -67,7 +67,12 @@ data class CheckInEntity(
     val strengthNote: String? = null,
     // До трёх упражнений карточки (StrengthCheck.encode) и одна подсказка на неделю.
     val strengthLifts: String? = null,
-    val strengthTip: String? = null
+    val strengthTip: String? = null,
+    // 3.28: недель подряд темп ниже 60% цели и подряд красный сигнал мышц — для правил чек-ина.
+    val slowWeeks: Int = 0,
+    val redWeeks: Int = 0,
+    // Темп, по которому решал чек-ин (% в неделю, МНК внутри этапа); null — не оценивали.
+    val decisionRate: Double? = null
 )
 
 @Dao

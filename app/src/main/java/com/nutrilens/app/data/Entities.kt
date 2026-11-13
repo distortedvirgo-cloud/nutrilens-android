@@ -140,7 +140,8 @@ data class SettingsEntity(
     // Недельный чек-ин (3.22): день недели ISO (1 — пн … 7 — вс), цель силовых в неделю,
     // день включения режима и дата прошлого чек-ина ("YYYY-MM-DD"). План меняется только на чек-ине.
     val checkInWeekday: Int = 7,
-    val workoutGoal: Int = 3,
+    // С 3.28 по умолчанию 2: две силовые в неделю достаточно, чтобы держать мышцы на дефиците.
+    val workoutGoal: Int = 2,
     val fatBurnStartDate: String? = null,
     val lastCheckInDate: String? = null,
     // Шаги (3.23): включены ли (разрешение спрашивается только при включении) и цель на день.
@@ -149,7 +150,9 @@ data class SettingsEntity(
     val stepGoal: Int = 8000,
     // Программа с этапами (3.24): блоки, перерывы, удержание и пауза — JSON-строкой
     // (см. FatBurnProgramCodec), чтобы не заводить таблицу ради одного объекта. null — программы нет.
-    val fatBurnProgram: String? = null
+    val fatBurnProgram: String? = null,
+    // Темп программы (3.28): "gentle" / "normal" / "fast"; null — по умолчанию для пола.
+    val fatBurnPace: String? = null
 )
 
 @Entity(tableName = "analysis_jobs")

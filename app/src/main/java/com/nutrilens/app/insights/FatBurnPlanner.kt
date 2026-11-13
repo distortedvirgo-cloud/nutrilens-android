@@ -37,9 +37,44 @@ object FatBurnPlanner {
     const val MAX_STEP_KCAL = 150.0
     const val DEFAULT_ACTIVITY = 1.4
 
-    // Темп: 0,6% веса в неделю, ближе к цели (или уже сухо) — бережнее, 0,4%.
-    private const val RATE_NORMAL = 0.006
-    private const val RATE_GENTLE = 0.004
+    /**
+     * Темп (3.28): бережный 0,4%, обычный 0,6%, быстрый 0,8% веса в неделю. Не выбран —
+     * мужчинам обычный, женщинам бережный. Ближе к цели — на треть медленнее (не ниже 0,3%).
+     */
+    enum class Pace(val rate: Double, val key: String, val title: String) {
+        GENTLE(0.004, "gentle", "Бережный"),
+        NORMAL(0.006, "normal", "Обычный"),
+        FAST(0.008, "fast", "Быстрый");
+
+        companion object {
+            fun of(key: String?): Pace? = entries.firstOrNull { it.key == key }
+            fun default(male: Boolean): Pace = if (male) NORMAL else GENTLE
+        }
+    }
+
+    private const val NEAR_TARGET_RATE_MIN = 0.003
+
+    /**
+     * Первые дни этапа вес гуляет от воды и гликогена (в перерыве набирается, в новом блоке
+     * уходит) — они не идут в темп. Темп этапа оцениваем, когда после них набралось ≥ 10 дней.
+     */
+    const val WATER_DAYS = 5L
+    const val EARLY_PHASE_DAYS = 15
+
+    /** Прибавки (мышцы, голод, быстрый темп) не поднимают план выше расхода минус 10%. */
+    const val MIN_DEFICIT_SHARE = 0.10
+
+    /**
+     * Средний темп за два чек-ина ниже 75% цели — план чуть снижается. Среднее, а не «две недели
+     * подряд»: недельный темп по весам гуляет на ±0,2%, и серия «подряд» рвётся шумом.
+     */
+    const val SLOW_SHARE = 0.75
+
+    /** Снижать снова — не раньше чем через 2 чек-ина после прошлого снижения: правке нужно время. */
+    const val CUT_GAP_CHECKINS = 2
+
+    /** Красный сигнал мышц столько недель подряд — прибавки не помогают, нужен перерыв или белок/силовые. */
+    const val RED_STOP_WEEKS = 3
 
     /** Значение на дату: вес (кг) или калории за день. */
     data class DayValue(val date: LocalDate, val value: Double)
@@ -58,7 +93,13 @@ object FatBurnPlanner {
         /** Калории прошлого плана; null — это первый план. */
         val previousCalories: Double? = null,
         val previousDate: LocalDate? = null,
-        val today: LocalDate
+        val today: LocalDate,
+        /** Выбранный темп; null — по умолчанию для пола. */
+        val pace: Pace? = null,
+        /** Начало текущего этапа программы: темп считается только внутри этапа. */
+        val phaseStart: LocalDate? = null,
+        /** Расход прошлого плана — пока окно захватывает прошлый этап, он надёжнее «факта». */
+        val tdeeHint: Double? = null
     )
 
     /** Хватает ли данных для фактического расхода и чего не хватает. */
@@ -114,9 +155,27 @@ object FatBurnPlanner {
      * сухо (меньше 15% мужчинам / 23% женщинам) — бережнее, 0,4%. Тот же темп берёт
      * программа с этапами (FatBurnProgram), когда оценивает длину блоков.
      */
-    fun weeklyRate(fatPercent: Double, targetFatPercent: Double, male: Boolean): Double {
+    fun weeklyRate(fatPercent: Double, targetFatPercent: Double, male: Boolean, pace: Pace? = null): Double {
+        val base = (pace ?: Pace.default(male)).rate
         val nearTarget = fatPercent - targetFatPercent <= 3.0 || fatPercent < (if (male) 15.0 else 23.0)
-        return if (nearTarget) RATE_GENTLE else RATE_NORMAL
+        return if (nearTarget) maxOf(NEAR_TARGET_RATE_MIN, base * 2 / 3) else base
+    }
+
+    /**
+     * Множитель активности по средним шагам за 2 недели (нужно ≥ 7 дней с шагами);
+     * null — данных мало, берём из «О себе».
+     */
+    fun activityFromSteps(steps: List<Int>): Double? {
+        val days = steps.filter { it > 0 }
+        if (days.size < 7) return null
+        val avg = days.average()
+        return when {
+            avg < 5000 -> 1.35
+            avg < 7500 -> 1.45
+            avg < 10000 -> 1.55
+            avg < 12500 -> 1.65
+            else -> 1.75
+        }
     }
 
     /** Пора ли пересчитать: плана нет, прошла неделя или дата из будущего (сменили часы). */
@@ -162,14 +221,21 @@ object FatBurnPlanner {
         val win = window(input)
         val slope = win.slopeKgPerDay
         val meanKcal = win.meanKcal
-        val observed = win.status.enough && slope != null && meanKcal != null
-        val tdee = if (observed && slope != null && meanKcal != null) {
+        val windowObserved = win.status.enough && slope != null && meanKcal != null
+        // Окно захватывает начало этапа (перерыв ↔ блок): вода и гликоген исказят «факт» —
+        // держим расход прошлого плана, пока окно не окажется целиком внутри этапа.
+        val hint = input.tdeeHint?.takeIf { win.crossesPhase && it > 0 }
+        val observed = windowObserved || hint != null
+        val tdee = when {
+            hint != null -> hint.coerceIn(baseTdee * 0.75, baseTdee * 1.30)
             // Клэмп защищает от недозаписанной еды и скачков воды.
-            (meanKcal - slope * KCAL_PER_KG).coerceIn(baseTdee * 0.75, baseTdee * 1.30)
-        } else baseTdee
+            windowObserved && slope != null && meanKcal != null ->
+                (meanKcal - slope * KCAL_PER_KG).coerceIn(baseTdee * 0.75, baseTdee * 1.30)
+            else -> baseTdee
+        }
 
         // 4. Целевой темп и дефицит.
-        val rate = weeklyRate(fatPct, input.targetFatPercent, input.male)
+        val rate = weeklyRate(fatPct, input.targetFatPercent, input.male, input.pace)
         val deficit = (w * rate * KCAL_PER_KG / 7).coerceIn(tdee * 0.15, tdee * 0.25)
 
         // 5. Калории не ниже обмена в покое и бытового минимума.
@@ -177,7 +243,7 @@ object FatBurnPlanner {
         var calories = (tdee - deficit).coerceAtLeast(floor)
 
         // 6. Защита темпа: слишком быстро — теряем мышцы; стоит — чуть урезаем.
-        val actualWeekly = if (win.status.enough && slope != null) -slope * 7 / w * 100 else null
+        val actualWeekly = win.rateSlopeKgPerDay?.let { -it * 7 / w * 100 }
         var guardNote: String? = null
         if (actualWeekly != null) {
             if (actualWeekly > 1.0) {
@@ -209,6 +275,7 @@ object FatBurnPlanner {
         val carbs = round5((calories - protein * 4 - fat * 9) / 4).coerceAtLeast(50.0)
 
         val note = guardNote ?: when {
+            prev == null && hint != null -> "План от расхода прошлого этапа ≈ ${tdee.roundToInt()} ккал"
             prev == null && observed -> "Первый план по твоим данным: расход ≈ ${tdee.roundToInt()} ккал"
             prev == null -> "Первый план по формуле — уточню, когда накопятся записи"
             abs(calories - prev) < 10 -> "Темп в норме — план без изменений"
@@ -261,7 +328,17 @@ object FatBurnPlanner {
         /** Сколько прошлых чек-инов подряд вес стоял при полном дневнике. */
         val previousFlatWeeks: Int,
         /** Чек-ин в «водной фазе» цикла (3.27): «вес стоит» не считается, решение — через неделю. */
-        val waterPhase: Boolean = false
+        val waterPhase: Boolean = false,
+        /** Дней в текущем блоке; null — программы нет. Первые [EARLY_PHASE_DAYS] темп не оцениваем. */
+        val daysInPhase: Int? = null,
+        /** Сколько чек-инов назад план снижали (99 — давно или никогда). */
+        val checkInsSinceCut: Int = 99,
+        /** Прошлых чек-инов подряд с темпом ниже 60% цели. */
+        val previousSlowWeeks: Int = 0,
+        /** Прошлых чек-инов подряд с красным сигналом мышц. */
+        val previousRedWeeks: Int = 0,
+        /** Темп, по которому решал прошлый чек-ин этого этапа; null — не было. */
+        val previousRatePercent: Double? = null
     )
 
     data class CheckInPlan(
@@ -270,32 +347,50 @@ object FatBurnPlanner {
         /** Темп, по которому принималось решение (МНК, иначе тренд); null — данных мало. */
         val ratePercent: Double?,
         /** Недель подряд «вес стоит» с учётом этой. */
-        val flatWeeks: Int
+        val flatWeeks: Int,
+        /** Недель подряд темп ниже 60% цели (включая «стоит»). */
+        val slowWeeks: Int = 0,
+        /** Недель подряд красный сигнал мышц. */
+        val redWeeks: Int = 0
     )
 
     /**
-     * Решение чек-ина. Темп считается тем же МНК, что и раньше (математику не трогаем),
-     * а правила — по таблице: в норме — без изменений, быстро — +100, стоит две недели
-     * при полном дневнике — −50…100, три недели — не режем дальше и советуем поддержку,
-     * красный сигнал мышц или голод 5 дважды — +100, неполный дневник — без изменений.
-     * Шаг ±150 и безопасный минимум сохраняются.
+     * Решение чек-ина (3.28). Темп — МНК внутри этапа (иначе тренд). Правила по порядку:
+     * неполный дневник — без изменений; красный сигнал мышц или голод 5 дважды — +100,
+     * но не выше «расход − 10%» и не дольше 3 недель подряд; начало этапа — темп не оцениваем;
+     * быстрее 1% — +100 (с тем же потолком); водная фаза цикла — ждём; вес стоит 3 недели —
+     * дальше не режем (программа уйдёт в перерыв); темп ниже 60% цели две недели подряд —
+     * −50…100, но не чаще раза в 2 чек-ина. Шаг ±150 и безопасный минимум сохраняются.
      */
     fun checkIn(input: Input, ctx: CheckInContext): CheckInPlan {
         val base = compute(input)
-        val rate = base.actualWeeklyPercent ?: ctx.trendWeeklyPercent
+        val early = ctx.daysInPhase != null && ctx.daysInPhase < EARLY_PHASE_DAYS
+        val rate = if (early) null else base.actualWeeklyPercent ?: ctx.trendWeeklyPercent
         val prev = input.previousCalories?.takeIf { it > 0 }
             ?: return CheckInPlan(base, true, rate, 0) // плана ещё не было — первый план как обычно
 
+        val target = base.targetWeeklyPercent
         val diaryOk = ctx.diaryDays >= ctx.diaryNeeded
-        val flatNow = rate != null && rate < 0.2
-        // Водная фаза цикла: неделя «вес стоит» не засчитывается, но и счётчик не сбрасываем.
+        val flatNow = rate != null && rate < FLAT_PERCENT
+        // Темп для «ниже цели» — среднее с прошлым чек-ином, если он был.
+        val avgRate = rate?.let { r -> ctx.previousRatePercent?.let { (r + it) / 2 } ?: r }
+        val slowNow = avgRate != null && avgRate < target * SLOW_SHARE
+        // Водная фаза цикла: неделя «ниже цели» не засчитывается, но и счётчики не сбрасываем.
         val flatWeeks = when {
             diaryOk && flatNow && ctx.waterPhase -> ctx.previousFlatWeeks
             diaryOk && flatNow -> ctx.previousFlatWeeks + 1
             else -> 0
         }
+        val slowWeeks = when {
+            diaryOk && slowNow && ctx.waterPhase -> ctx.previousSlowWeeks
+            diaryOk && slowNow -> ctx.previousSlowWeeks + 1
+            else -> 0
+        }
+        val redWeeks = if (ctx.signal == MuscleSignal.RED) ctx.previousRedWeeks + 1 else 0
 
-        fun keep(note: String): CheckInPlan = CheckInPlan(
+        fun result(plan: Plan, changed: Boolean) = CheckInPlan(plan, changed, rate, flatWeeks, slowWeeks, redWeeks)
+
+        fun keep(note: String): CheckInPlan = result(
             base.copy(
                 calories = prev,
                 protein = ctx.previousProtein ?: base.protein,
@@ -303,9 +398,7 @@ object FatBurnPlanner {
                 carbs = ctx.previousCarbs ?: base.carbs,
                 note = note
             ),
-            changed = false,
-            ratePercent = rate,
-            flatWeeks = flatWeeks
+            changed = false
         )
 
         fun shift(delta: Double, note: String): CheckInPlan {
@@ -314,13 +407,30 @@ object FatBurnPlanner {
             val carbs = round5((calories - base.protein * 4 - base.fat * 9) / 4).coerceAtLeast(50.0)
             // Минимум важнее правила: если упёрлись в него — честно говорим.
             val floorNote = if (delta < 0 && calories > bounded + 1) ". Ниже не опускаю — это безопасный минимум" else ""
-            return CheckInPlan(
+            return result(
                 base.copy(calories = calories, carbs = carbs, note = note + floorNote),
-                changed = abs(calories - prev) >= 10,
-                ratePercent = rate,
-                flatWeeks = flatWeeks
+                changed = abs(calories - prev) >= 10
             )
         }
+
+        // Прибавка с потолком: дефицит не исчезает из-за прибавок, сколько бы их ни было.
+        val ceiling = round10(base.tdee * (1 - MIN_DEFICIT_SHARE))
+        fun boost(note: String): CheckInPlan {
+            val room = ceiling - prev
+            if (room < 10) {
+                return keep(
+                    "Калории уже почти на уровне расхода — дальше не добавляю. " +
+                        "Если легче не становится, лучше 2 недели перерыва, чем дефицит без дефицита"
+                )
+            }
+            val step = minOf(CHECKIN_STEP_KCAL, room)
+            return shift(step, note.replace("{n}", "${step.roundToInt()}"))
+        }
+
+        fun cut(amount: Int, note: String): CheckInPlan =
+            if (ctx.checkInsSinceCut < CUT_GAP_CHECKINS) {
+                keep("Темп ниже цели, но план недавно уже снижал — жду неделю, пока правка сработает")
+            } else shift(-amount.toDouble(), note)
 
         // Неполный дневник — данных о еде нет, любое решение было бы гаданием.
         if (!diaryOk) {
@@ -330,45 +440,71 @@ object FatBurnPlanner {
             )
         }
         if (ctx.signal == MuscleSignal.RED) {
-            return shift(CHECKIN_STEP_KCAL, "Мышцам не хватает поддержки — добавил ${CHECKIN_STEP_INT} ккал")
+            if (redWeeks >= RED_STOP_WEEKS) {
+                return keep(
+                    "Сигнал мышц красный $redWeeks-ю неделю — прибавки калорий тут не помогут. " +
+                        "Добери белок и силовые; если сейчас не до этого — поставь программу на паузу"
+                )
+            }
+            return boost("Мышцам не хватает поддержки — добавил {n} ккал")
         }
         if (ctx.hungerHighTwice) {
-            return shift(CHECKIN_STEP_KCAL, "Голод на максимуме вторую неделю — добавил ${CHECKIN_STEP_INT} ккал, так легче держаться")
+            return boost("Голод на максимуме вторую неделю — добавил {n} ккал, так легче держаться")
+        }
+        if (early) {
+            return keep("Начало этапа: вес гуляет из-за воды и гликогена — темп оценю с третьей недели, план без изменений")
         }
         if (rate == null) return keep("Пока мало взвешиваний, чтобы увидеть темп, — план без изменений")
         if (rate > 1.0) {
-            return shift(CHECKIN_STEP_KCAL, "Вес уходит быстрее 1% в неделю — добавил ${CHECKIN_STEP_INT} ккал, чтобы сберечь мышцы")
+            return boost("Вес уходит быстрее 1% в неделю — добавил {n} ккал, чтобы сберечь мышцы")
         }
-        if (flatNow && ctx.waterPhase) {
+        if (slowNow && ctx.waterPhase) {
             return keep("Вес выше из-за воды перед циклом или в первые дни — это нормально. Решение по калориям — на следующей неделе")
         }
-        if (flatNow) {
-            return when {
-                flatWeeks >= 3 -> keep(
-                    "Вес стоит $flatWeeks-ю неделю — дальше не урезаю. Попробуй 1–2 недели поесть " +
-                        "на поддержке (≈ ${round10(base.tdee).roundToInt()} ккал), потом продолжим"
-                )
-                flatWeeks == 2 -> {
-                    // Вес совсем не уходит или растёт — шаг побольше, едва уходит — поменьше.
-                    val cut = if (rate <= 0.0) 100 else 50
-                    shift(-cut.toDouble(), "Вес стоит вторую неделю при полном дневнике — снизил на $cut ккал")
-                }
-                else -> keep("Вес пока стоит — подождём неделю: вода может прятать результат")
+        if (flatWeeks >= 3) {
+            return keep(
+                "Вес стоит $flatWeeks-ю неделю — дальше не урезаю. Попробуй 1–2 недели поесть " +
+                    "на поддержке (≈ ${round10(base.tdee).roundToInt()} ккал), потом продолжим"
+            )
+        }
+        if (slowNow && avgRate != null) {
+            val pct = fmtPercent(avgRate)
+            val goal = fmtPercent(target)
+            return if (ctx.previousRatePercent != null) {
+                // Вес совсем не уходит — шаг побольше, уходит медленно — поменьше.
+                val amount = if (avgRate < target * 0.3) 100 else 50
+                cut(amount, "Темп $pct% в неделю за две недели при цели $goal% — снизил на $amount ккал")
+            } else {
+                keep("Темп $pct% в неделю при цели $goal% — если так же через неделю, чуть снижу калории")
             }
         }
-        if (rate < 0.4) return keep("Вес уходит спокойно — план без изменений")
-        return keep("Темп в норме — план без изменений")
+        return keep("Темп ${fmtPercent(rate)}% в неделю при цели ${fmtPercent(target)}% — план без изменений")
     }
+
+    /** Ниже этого темпа (% в неделю) вес «стоит». */
+    const val FLAT_PERCENT = 0.2
+
+    private fun fmtPercent(v: Double): String =
+        String.format(java.util.Locale.ROOT, "%.1f", v).replace('.', ',').replace("-0,0", "0,0")
 
     private const val CHECKIN_STEP_INT = 100
 
     private const val MAX_STEP_INT = 150
 
-    private class Window(val status: DataStatus, val slopeKgPerDay: Double?, val meanKcal: Double?)
+    private class Window(
+        val status: DataStatus,
+        val slopeKgPerDay: Double?,
+        val meanKcal: Double?,
+        /** Наклон только внутри этапа (без первых дней воды); null — данных мало. */
+        val rateSlopeKgPerDay: Double?,
+        /** Окно начинается раньше этапа — «факт» расхода смешивает два режима. */
+        val crossesPhase: Boolean
+    )
 
     /**
      * Данные за последние 21 день. Калории — без сегодняшнего дня (он ещё не закончен),
-     * взвешивания — включая сегодня.
+     * взвешивания — включая сегодня. Темп — отдельно: только взвешивания этапа после
+     * первых [WATER_DAYS] дней, нужно ≥ 4 взвешиваний на ≥ 10 днях.
      */
     private fun window(input: Input): Window {
         val start = input.today.minusDays(WINDOW_DAYS)
@@ -384,7 +520,16 @@ object FatBurnPlanner {
         val status = DataStatus(counted.size, weighIns.size, span, enough)
         val slope = if (weighIns.size >= 2 && span > 0) slope(weighIns) else null
         val mean = if (counted.isNotEmpty()) counted.sumOf { it.value } / counted.size else null
-        return Window(status, slope, mean)
+
+        val phaseStart = input.phaseStart
+        val rateFrom = phaseStart?.plusDays(WATER_DAYS)?.let { maxOf(it, start) } ?: start
+        val ratePoints = weighIns.filter { it.date >= rateFrom }
+        val rateSpan = if (ratePoints.size >= 2) {
+            ChronoUnit.DAYS.between(ratePoints.first().date, ratePoints.last().date).toInt()
+        } else 0
+        val rateSlope = if (ratePoints.size >= MIN_WEIGH_INS && rateSpan >= MIN_SPAN_DAYS) slope(ratePoints) else null
+        val crosses = phaseStart != null && phaseStart.plusDays(WATER_DAYS).isAfter(start)
+        return Window(status, slope, mean, rateSlope, crosses)
     }
 
     /** Наклон МНК: кг в день по взвешиваниям. */

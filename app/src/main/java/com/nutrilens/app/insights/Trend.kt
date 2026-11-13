@@ -55,6 +55,31 @@ object Trend {
         return result
     }
 
+    /** Вес нового замера для редких замеров (лента, весы с % жира): половина — тренд ровнее одного замера. */
+    const val MEASUREMENT_ALPHA = 0.5
+
+    /**
+     * Тренд для редких измерений (3.28): сглаживание по числу замеров, а не по дням. Сглаживание
+     * «по времени» при замерах раз в неделю почти не сглаживает (новый замер весит ~87%),
+     * и одна неточная лента могла закрыть блок. Несколько значений за день — последнее.
+     */
+    fun smoothByCount(points: List<FatBurnPlanner.DayValue>, alpha: Double = MEASUREMENT_ALPHA): List<Point> {
+        val sorted = points.filter { it.value > 0 }.sortedBy { it.date }
+        val daily = ArrayList<FatBurnPlanner.DayValue>(sorted.size)
+        for (p in sorted) {
+            if (daily.isNotEmpty() && daily[daily.lastIndex].date == p.date) daily[daily.lastIndex] = p
+            else daily += p
+        }
+        val result = ArrayList<Point>(daily.size)
+        var prev: Double? = null
+        for (d in daily) {
+            val t = prev?.let { it + alpha * (d.value - it) } ?: d.value
+            result += Point(d.date, d.value, t)
+            prev = t
+        }
+        return result
+    }
+
     /** Значение тренда на дату: последняя точка не позже даты; null — точек до неё нет. */
     fun valueAt(points: List<Point>, date: LocalDate): Double? = points.lastOrNull { it.date <= date }?.trend
 
