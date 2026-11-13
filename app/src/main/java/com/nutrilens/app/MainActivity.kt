@@ -27,6 +27,7 @@ import com.nutrilens.app.ui.OnboardingScreen
 import com.nutrilens.app.ui.theme.NutriLensTheme
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -43,6 +44,8 @@ class MainActivity : ComponentActivity() {
             intent.getStringExtra(android.content.Intent.EXTRA_TEXT)?.let { com.nutrilens.app.ai.RecipeAi.findUrl(it) }
         } else null
         if (shared != null && savedInstanceState == null) com.nutrilens.app.bg.RecipeImporter.fromLink(this, shared)
+        // Файл экспорта тренировок (Hevy → «Поделиться» или «Открыть в») — загружаем в фоне (3.27).
+        if (shared == null && savedInstanceState == null) trainingFile(intent)?.let { importTraining(it) }
         val navigateTo = if (shared != null) "recipes" else intent.getStringExtra("navigate")
         val dateExtra = intent.getStringExtra("date")
 
@@ -80,6 +83,28 @@ class MainActivity : ComponentActivity() {
     // План режима «Сжигание жира» — пересчёт при старте, если подошёл срок.
     com.nutrilens.app.data.FatBurnPlanSync.refreshAsync(this)
 }
+
+    /** Файл из «Поделиться» (EXTRA_STREAM) или «Открыть в» (data); null — это не файл. */
+    private fun trainingFile(intent: android.content.Intent): android.net.Uri? = when (intent.action) {
+        android.content.Intent.ACTION_SEND ->
+            @Suppress("DEPRECATION") intent.getParcelableExtra<android.net.Uri>(android.content.Intent.EXTRA_STREAM)
+        android.content.Intent.ACTION_VIEW -> intent.data
+        else -> null
+    }
+
+    private fun importTraining(uri: android.net.Uri) {
+        val app = applicationContext
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+            val message = try {
+                com.nutrilens.app.data.TrainingStore.describe(com.nutrilens.app.data.TrainingStore.importUri(app, uri))
+            } catch (e: com.nutrilens.app.training.WorkoutCsv.FormatException) {
+                e.message ?: "Это не похоже на экспорт тренировок"
+            } catch (e: Exception) {
+                "Не получилось прочитать файл тренировок"
+            }
+            android.widget.Toast.makeText(app, message, android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
 
     override fun onResume() {
         super.onResume()

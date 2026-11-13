@@ -200,3 +200,63 @@ class StrengthAnalyzerTest {
         assertEquals(5.0, StrengthAnalyzer.weightedMedian(listOf(-20.0 to 1.0, -2.0 to 2.0, 5.0 to 9.0)), 1e-9)
     }
 }
+
+class StrengthCheckTest {
+    private val today = LocalDate.of(2026, 11, 29)
+
+    private fun row(d: LocalDate, ex: String, w: Double, reps: Int) =
+        WorkoutCsv.SetRow(d.atTime(18, 0), "T", ex, 1, WorkoutCsv.SetType.NORMAL, w, reps, null, null, null)
+
+    @Test
+    fun worstSignal() {
+        assertEquals("red", StrengthCheck.worst("green", "red"))
+        assertEquals("yellow", StrengthCheck.worst("yellow", "green"))
+        assertEquals("yellow", StrengthCheck.worst("yellow", null))
+    }
+
+    @Test
+    fun encodeRoundTrip() {
+        val lifts = listOf(
+            StrengthCheck.Lift("Жим лежа (Штанга)", "60 × 5", "62,5 × 5", 4.17),
+            StrengthCheck.Lift("Планка", null, "45 с", null)
+        )
+        val back = StrengthCheck.decode(StrengthCheck.encode(lifts))
+        assertEquals(2, back.size)
+        assertEquals("62,5 × 5", back[0].now)
+        assertEquals(4.17, back[0].changePercent!!, 1e-9)
+        assertNull(back[1].before)
+        assertNull(back[1].changePercent)
+        assertTrue(StrengthCheck.decode(null).isEmpty())
+    }
+
+    @Test
+    fun earlyBreakOnlyOnSecondRed() {
+        val rows = listOf("A", "B", "C").flatMap { ex ->
+            listOf(
+                row(today.minusDays(30), ex, 100.0, 5), row(today.minusDays(23), ex, 100.0, 5),
+                row(today.minusDays(5), ex, 85.0, 5)
+            )
+        }
+        val report = StrengthAnalyzer.analyze(rows, today, null, { 80.0 })
+        assertEquals(StrengthAnalyzer.Signal.RED, report.signal)
+        assertEquals(false, StrengthCheck.outcome(report, previousSignal = "green").earlyBreak)
+        val second = StrengthCheck.outcome(report, previousSignal = "red")
+        assertTrue(second.earlyBreak)
+        assertEquals("red", second.signal)
+        assertEquals(3, second.lifts.size)
+    }
+
+    @Test
+    fun tipPrefersIrregular() {
+        // «A» — с разрывом 3 недели внутри окна, «B» — стоит 4 тренировки.
+        val rows = listOf(
+            row(today.minusDays(40), "A", 50.0, 5), row(today.minusDays(18), "A", 50.0, 5), row(today.minusDays(2), "A", 50.0, 5),
+            row(today.minusDays(14), "B", 70.0, 5), row(today.minusDays(10), "B", 70.0, 5),
+            row(today.minusDays(6), "B", 70.0, 5), row(today.minusDays(2), "B", 70.0, 5)
+        )
+        val report = StrengthAnalyzer.analyze(rows, today, null, { 80.0 })
+        assertTrue(StrengthCheck.tip(report)!!.startsWith("«A»"))
+        val onlyB = StrengthAnalyzer.analyze(rows.filter { it.exercise == "B" }, today, null, { 80.0 })
+        assertTrue(StrengthCheck.tip(onlyB)!!.contains("стоит 3 тренировки"))
+    }
+}

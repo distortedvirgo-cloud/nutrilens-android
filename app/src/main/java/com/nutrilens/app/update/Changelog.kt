@@ -19,6 +19,16 @@ data class ChangelogEntry(
  */
 val CHANGELOG: List<ChangelogEntry> = listOf(
     ChangelogEntry(
+        versionCode = 84,
+        versionName = "3.27",
+        title = "Сила в чек-ине",
+        items = listOf(
+            "Экспорт тренировок из Hevy: «Поделиться» файлом в NutriLens или кнопка в чек-ине — дни тренировок отмечаются сами",
+            "В итогах недели — карточка «Сила»: держится ли сила по всем твоим упражнениям, без настроек",
+            "Сила падает — план добавит калорий, а если вторую неделю подряд — перерыв начнётся раньше, чтобы сберечь мышцы"
+        )
+    ),
+    ChangelogEntry(
         versionCode = 83,
         versionName = "3.26",
         title = "Помощник",

@@ -8,6 +8,8 @@ import com.nutrilens.app.insights.FatBurnProgram
 import com.nutrilens.app.insights.Trend
 import com.nutrilens.app.insights.effectiveDailyGoal
 import com.nutrilens.app.insights.effectiveMacroGoals
+import com.nutrilens.app.training.StrengthAnalyzer
+import com.nutrilens.app.training.StrengthCheck
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -408,7 +410,7 @@ object FatBurnPlanSync {
         val appContext = context.applicationContext
         val result = mutex.withLock {
             withContext(Dispatchers.IO) {
-                runCheckIn(NutriLensDatabase.getInstance(appContext), weightKg, measurement, heightCm, hunger, energy, sleep)
+                runCheckIn(appContext, NutriLensDatabase.getInstance(appContext), weightKg, measurement, heightCm, hunger, energy, sleep)
             }
         }
         DataEvents.notifyChanged()
@@ -418,6 +420,7 @@ object FatBurnPlanSync {
     }
 
     private suspend fun runCheckIn(
+        context: Context,
         db: NutriLensDatabase,
         weightKg: Double,
         measurement: BodyMeasurementEntity?,
@@ -495,8 +498,15 @@ object FatBurnPlanSync {
             stepGoal = com.nutrilens.app.insights.DayScore.clampStepGoal(settings.stepGoal)
         )
 
-        // 6. Решение по плану.
+        // 5б. Сила по экспорту тренировок (3.27): худший из двух сигналов решает за мышцы.
         val previous = db.checkInDao().latest()
+        val programNow = settings.fatBurnProgramState
+        val strength = strengthOutcome(context, db, today, programNow)
+        val muscleSignal = StrengthCheck.worst(review.signal.name.lowercase(), strength?.signal)
+        val strengthWorse = strength?.signal != null && muscleSignal != review.signal.name.lowercase()
+        val signalNote = if (strengthWorse) strength!!.note else review.signalNote
+
+        // 6. Решение по плану.
         val input = buildInput(db, settings, target, today, usePrevious = true) ?: return null
         val decision = FatBurnPlanner.checkIn(
             input,
@@ -508,7 +518,7 @@ object FatBurnPlanSync {
                 diaryDays = review.diaryDays,
                 diaryNeeded = review.diaryNeeded,
                 periodDays = period,
-                signal = review.signal,
+                signal = FatBurnPlanner.MuscleSignal.valueOf(muscleSignal.uppercase()),
                 hungerHighTwice = hunger == 5 && previous?.hunger == 5,
                 previousFlatWeeks = previous?.flatWeeks ?: 0
             )
@@ -526,7 +536,10 @@ object FatBurnPlanSync {
             val male = BodyComposition.isMale(settings)
             // Плато считаем только внутри блока: в перерыве вес и должен стоять.
             if (!programBefore.inActiveBlock) flatWeeks = 0
-            val t = FatBurnProgram.onCheckIn(programBefore, today, fatTrendNow(measurements), flatWeeks, weightKg, male)
+            val t = FatBurnProgram.onCheckIn(
+                programBefore, today, fatTrendNow(measurements), flatWeeks, weightKg, male,
+                strengthDrop = strength?.earlyBreak == true
+            )
             val after = t.program
             programAfter = after
             phaseChange = FatBurnProgram.transitionText(t, programBefore)
@@ -564,8 +577,8 @@ object FatBurnPlanSync {
             trendChangeKg = trendChange,
             weeklyRatePercent = weeklyRate,
             fatChange = fatChange,
-            muscleSignal = review.signal.name.lowercase(),
-            signalNote = review.signalNote,
+            muscleSignal = muscleSignal,
+            signalNote = signalNote,
             flatWeeks = flatWeeks,
             caloriesBefore = settings.planCalories ?: kcalBefore,
             caloriesAfter = plan.calories,
@@ -578,7 +591,12 @@ object FatBurnPlanSync {
             note = plan.note,
             nextAction = nextAction,
             avgScore = review.avgScore,
-            phaseChange = phaseChange
+            phaseChange = phaseChange,
+            strengthIndex = strength?.indexPercent,
+            strengthSignal = strength?.signal,
+            strengthNote = strength?.note,
+            strengthLifts = strength?.lifts?.takeIf { it.isNotEmpty() }?.let(StrengthCheck::encode),
+            strengthTip = strength?.tip
         )
         db.checkInDao().upsert(entity)
         val savedProgram = programAfter
@@ -597,6 +615,40 @@ object FatBurnPlanSync {
             ).let { s0 -> if (savedProgram != null) s0.withProgram(savedProgram) else s0 }
         }
         return entity
+    }
+
+    /**
+     * Сила за период; null — тренировки ещё ни разу не загружали (карточки «Сила» нет).
+     * Сравнение — с начала текущего блока; первая неделя перерыва — разгрузка, не оцениваем.
+     */
+    private suspend fun strengthOutcome(
+        context: Context,
+        db: NutriLensDatabase,
+        today: LocalDate,
+        program: FatBurnProgram.Program?
+    ): StrengthCheck.Outcome? {
+        val rows = TrainingStore.rows(context)
+        if (rows.isEmpty()) return null
+        val weights = db.weightDao().all().mapNotNull { w ->
+            runCatching { LocalDate.parse(w.date) to w.weight }.getOrNull()
+        }.sortedBy { it.first }
+        // Вес на дату: последнее взвешивание не позже неё, иначе самое раннее.
+        val bodyweightAt = { d: LocalDate -> (weights.lastOrNull { !it.first.isAfter(d) } ?: weights.firstOrNull())?.second }
+        val phase = program?.currentPhase
+        val blockStart = phase?.startDate?.takeIf { phase.type == FatBurnProgram.PhaseType.BLOCK }
+        val deload = program != null && phase?.type == FatBurnProgram.PhaseType.BREAK &&
+            FatBurnProgram.daysInPhase(program, today) < 7
+        // Прошлые чек-ины, новые первыми; сегодняшний (если чек-ин переделывают) не в счёт.
+        val history = db.checkInDao().all().filter { it.date < today.toString() }.sortedByDescending { it.date }
+        val report = StrengthAnalyzer.analyze(
+            rows = rows,
+            today = today,
+            blockStart = blockStart,
+            bodyweightAt = bodyweightAt,
+            previousIndices = history.map { it.strengthIndex },
+            deload = deload
+        )
+        return StrengthCheck.outcome(report, history.firstOrNull()?.strengthSignal)
     }
 
     private suspend fun buildInput(

@@ -15,7 +15,8 @@ import java.time.LocalDate
  * Недельный чек-ин режима «Сжигание жира» (одна запись на дату).
  * Хранится всё, что было на экране итогов: так история показывает ровно то,
  * что человек видел, даже если формулы потом поменяются.
- * Схема таблицы обязана совпадать с MIGRATION_10_11 (+ avgScore из MIGRATION_11_12, phaseChange из MIGRATION_12_13) один-в-один.
+ * Схема таблицы обязана совпадать с MIGRATION_10_11 (+ avgScore из MIGRATION_11_12, phaseChange из MIGRATION_12_13,
+ * strength* из MIGRATION_13_14) один-в-один.
  */
 @Serializable
 @Entity(tableName = "check_ins")
@@ -58,7 +59,15 @@ data class CheckInEntity(
     // Средняя оценка дня за период (3.23, 0–100); null — дней с оценкой не было или чек-ин старый.
     val avgScore: Double? = null,
     // Смена этапа программы на этом чек-ине (3.24): «Блок 1 завершён → 2 недели перерыва»; null — этап тот же.
-    val phaseChange: String? = null
+    val phaseChange: String? = null,
+    // Сила по экспорту тренировок (3.27): индекс, % (взвешенная медиана изменений); null — не оценивали.
+    val strengthIndex: Double? = null,
+    // "green" / "yellow" / "red"; null — силу не оценивали (нет файла, мало данных, возвращение, разгрузка).
+    val strengthSignal: String? = null,
+    val strengthNote: String? = null,
+    // До трёх упражнений карточки (StrengthCheck.encode) и одна подсказка на неделю.
+    val strengthLifts: String? = null,
+    val strengthTip: String? = null
 )
 
 @Dao

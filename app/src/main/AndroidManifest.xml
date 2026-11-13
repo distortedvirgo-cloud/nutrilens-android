@@ -47,6 +47,16 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
             </intent-filter>
+            <!-- «Поделиться» экспортом тренировок из Hevy (CSV) → сила в недельном чек-ине (3.27). -->
+            <intent-filter android:label="Тренировки в NutriLens">
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/csv" />
+                <data android:mimeType="text/comma-separated-values" />
+                <data android:mimeType="text/tab-separated-values" />
+                <data android:mimeType="application/csv" />
+            </intent-filter>
         </activity>
 
         <!-- «Зачем приложению шаги» — экран, который Health Connect показывает из окна разрешений. -->

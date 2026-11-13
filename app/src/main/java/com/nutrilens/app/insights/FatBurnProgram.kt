@@ -62,7 +62,7 @@ object FatBurnProgram {
      * Почему этап закончился: TIME — истёк срок, TARGET — промежуточная цель досрочно,
      * PLATEAU — вес стоял 3 недели, FINAL — достигнута итоговая цель, DONE — удержание пройдено.
      */
-    enum class EndReason { TIME, TARGET, PLATEAU, FINAL, DONE }
+    enum class EndReason { TIME, TARGET, PLATEAU, FINAL, DONE, STRENGTH }
 
     data class Phase(
         val type: PhaseType,
@@ -121,7 +121,7 @@ object FatBurnProgram {
     data class Notice(val title: String, val text: String)
 
     /** Что случилось на чек-ине (или при открытии приложения). */
-    enum class Event { BLOCK_TIME, BLOCK_TARGET, PLATEAU, FINAL_TARGET, BREAK_DONE, MAINTENANCE_DONE }
+    enum class Event { BLOCK_TIME, BLOCK_TARGET, PLATEAU, FINAL_TARGET, BREAK_DONE, MAINTENANCE_DONE, STRENGTH }
 
     data class Transition(
         val program: Program,
@@ -268,7 +268,9 @@ object FatBurnProgram {
         trendFat: Double?,
         flatWeeks: Int,
         weightKg: Double,
-        male: Boolean
+        male: Boolean,
+        /** Сила падает (красный сигнал) второй чек-ин подряд — мышцам нужен перерыв раньше (3.27). */
+        strengthDrop: Boolean = false
     ): Transition {
         if (p.paused || p.completed) return Transition(p)
         val phase = p.currentPhase ?: return Transition(p)
@@ -283,6 +285,8 @@ object FatBurnProgram {
                         toBreak(p, today, EndReason.TARGET, Event.BLOCK_TARGET, trendFat, weightKg, male)
                     flatWeeks >= PLATEAU_WEEKS ->
                         toBreak(p, today, EndReason.PLATEAU, Event.PLATEAU, trendFat, weightKg, male)
+                    strengthDrop ->
+                        toBreak(p, today, EndReason.STRENGTH, Event.STRENGTH, trendFat, weightKg, male)
                     days >= phase.plannedWeeks * 7 - END_SLACK_DAYS ->
                         toBreak(p, today, EndReason.TIME, Event.BLOCK_TIME, trendFat, weightKg, male)
                     else -> Transition(p)
@@ -550,6 +554,7 @@ object FatBurnProgram {
                 else "Перерыв окончен → удержание: цель уже достигнута"
             }
             Event.MAINTENANCE_DONE -> "Удержание пройдено — программа завершена"
+            Event.STRENGTH -> "Сила падает вторую неделю → перерыв начинается сейчас: 2 недели на уровне расхода, чтобы сберечь мышцы"
         }
     }
 

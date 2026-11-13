@@ -33,8 +33,8 @@ export const PROGRAM = {
 } as const
 
 export type PhaseType = 'block' | 'break' | 'maintenance'
-/** time — вышло время; target — промежуточная цель раньше срока; plateau — вес стоял 3 недели; final — цель всей программы; done — удержание отработано. */
-export type EndReason = 'time' | 'target' | 'plateau' | 'final' | 'done'
+/** time — вышло время; target — промежуточная цель раньше срока; plateau — вес стоял 3 недели; final — цель всей программы; done — удержание отработано; strength — сила падала два чек-ина подряд (Android 3.27, по экспорту тренировок). */
+export type EndReason = 'time' | 'target' | 'plateau' | 'final' | 'done' | 'strength'
 
 export interface Phase {
   type: PhaseType
@@ -282,6 +282,8 @@ function goToBreak(p: Program, f: CheckinFacts, reason: EndReason): { program: P
     ? `Промежуточная цель ${t}% достигнута раньше срока — блок засчитан.`
     : reason === 'plateau'
       ? `Вес стоял ${PROGRAM.plateauWeeks} недели подряд — перерыв начинается раньше. Две недели на уровне расхода часто сдвигают плато.`
+      : reason === 'strength'
+        ? 'Сила падала две недели подряд — перерыв начинается раньше, чтобы сберечь мышцы.'
       : f.trendFat != null && t != null
         ? `${weeksWord(cur.plannedWeeks)} позади. До промежуточной цели ${t}% пока не дошли (сейчас ${fmtPct(f.trendFat)}) — это нормально, продолжим после перерыва.`
         : `${weeksWord(cur.plannedWeeks)} позади — время отдохнуть.`
@@ -486,7 +488,7 @@ function parsePhase(v: unknown): Phase | null {
   const o = v as Record<string, unknown>
   const type = o.type === 'block' || o.type === 'break' || o.type === 'maintenance' ? o.type : null
   if (!type) return null
-  const reasons: EndReason[] = ['time', 'target', 'plateau', 'final', 'done']
+  const reasons: EndReason[] = ['time', 'target', 'plateau', 'final', 'done', 'strength']
   return {
     type,
     index: Math.max(0, Math.round(optNum(o.index) ?? 1)),

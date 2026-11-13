@@ -1,6 +1,9 @@
 package com.nutrilens.app.ui
 
 import android.app.Application
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.EventAvailable
+import androidx.compose.material.icons.rounded.FitnessCenter
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -33,6 +37,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -45,9 +50,13 @@ import com.nutrilens.app.data.FatBurnPlanSync
 import com.nutrilens.app.data.NutriLensDatabase
 import com.nutrilens.app.data.SettingsEntity
 import com.nutrilens.app.data.SettingsRepository
+import com.nutrilens.app.data.TrainingStore
 import com.nutrilens.app.data.checkInsActive
 import com.nutrilens.app.ui.theme.NutriTheme
 import com.nutrilens.app.ui.theme.macroPalette
+import com.nutrilens.app.training.StrengthAnalyzer
+import com.nutrilens.app.training.StrengthCheck
+import com.nutrilens.app.training.WorkoutCsv
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -96,10 +105,33 @@ class CheckInViewModel(application: Application) : AndroidViewModel(application)
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
+    /** Когда последний раз загружали тренировки (3.27); null — ни разу. */
+    private val _trainingImported = MutableStateFlow<LocalDate?>(null)
+    val trainingImported: StateFlow<LocalDate?> = _trainingImported.asStateFlow()
+
+    /** Итог последней загрузки тренировок — одна строка под кнопкой. */
+    private val _trainingMessage = MutableStateFlow<String?>(null)
+    val trainingMessage: StateFlow<String?> = _trainingMessage.asStateFlow()
+
+    fun importTraining(uri: Uri) {
+        viewModelScope.launch {
+            _trainingMessage.value = try {
+                TrainingStore.describe(TrainingStore.importUri(getApplication(), uri))
+            } catch (e: WorkoutCsv.FormatException) {
+                e.message
+            } catch (e: Exception) {
+                "Не получилось прочитать файл: ${e.message ?: "попробуй ещё раз"}"
+            }
+            _trainingImported.value = TrainingStore.importedAt(getApplication())
+        }
+    }
+
     /** Перед открытием листа: сбросить прошлый итог и подтянуть сегодняшние вес и замер. */
     fun prepare() {
         _result.value = null
         _error.value = null
+        _trainingMessage.value = null
+        _trainingImported.value = TrainingStore.importedAt(getApplication())
         viewModelScope.launch {
             val today = LocalDate.now().toString()
             val latest = db.weightDao().latest()
@@ -207,6 +239,11 @@ fun CheckInSheet(onDismiss: () -> Unit, viewModel: CheckInViewModel = viewModel(
     val saving by viewModel.saving.collectAsStateWithLifecycle()
     val result by viewModel.result.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
+    val trainingImported by viewModel.trainingImported.collectAsStateWithLifecycle()
+    val trainingMessage by viewModel.trainingMessage.collectAsStateWithLifecycle()
+    val trainingPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) viewModel.importTraining(uri)
+    }
 
     var step by remember { mutableStateOf(0) }
     var weightText by remember { mutableStateOf("") }
@@ -261,6 +298,12 @@ fun CheckInSheet(onDismiss: () -> Unit, viewModel: CheckInViewModel = viewModel(
                     else "Лучше утром, после туалета и до еды — так цифры честнее.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(16.dp))
+                TrainingImportRow(
+                    importedAt = trainingImported,
+                    message = trainingMessage,
+                    onPick = { trainingPicker.launch(arrayOf("text/*", "application/csv", "application/octet-stream")) }
                 )
                 Spacer(Modifier.height(20.dp))
                 SheetActions(
@@ -460,6 +503,8 @@ fun CheckInResultContent(c: CheckInEntity) {
             Text(c.signalNote, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
         }
 
+        StrengthSection(c)
+
         // Новый план: было → стало и почему.
         FreshCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(Space.Card), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -524,6 +569,90 @@ fun CheckInResultContent(c: CheckInEntity) {
             )
         }
     }
+}
+
+// ---------- Сила (3.27) ----------
+
+/**
+ * Загрузка тренировок перед чек-ином: экспорт Hevy (Профиль → Настройки → Экспорт данных →
+ * «Экспорт тренировок»). Можно и без кнопки — «Поделиться» файлом прямо в NutriLens.
+ */
+@Composable
+private fun TrainingImportRow(importedAt: LocalDate?, message: String?, onPick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        SoftButton(
+            if (importedAt == null) "Загрузить тренировки из Hevy" else "Обновить тренировки",
+            onClick = onPick,
+            icon = Icons.Rounded.FitnessCenter,
+            height = 44,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Text(
+            message ?: if (importedAt == null) {
+                "Необязательно. Экспорт тренировок из Hevy покажет, держится ли сила, — главный признак, что уходит жир, а не мышцы"
+            } else {
+                "Последняя загрузка — ${importedAt.format(CHECKIN_DATE)}. Перед чек-ином загрузи свежий экспорт"
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = scheme.onSurfaceVariant
+        )
+    }
+}
+
+/** Сила за неделю: сигнал, одна фраза, до трёх упражнений и максимум одна подсказка. */
+@Composable
+private fun StrengthSection(c: CheckInEntity) {
+    val note = c.strengthNote ?: return
+    val scheme = MaterialTheme.colorScheme
+    val signal = c.strengthSignal
+    val lifts = StrengthCheck.decode(c.strengthLifts)
+    TonalSection(color = if (signal != null) signalColor(signal) else scheme.outline) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (signal != null) {
+                SignalDot(signal)
+                Spacer(Modifier.width(8.dp))
+            }
+            Text(
+                "Сила" + (c.strengthIndex?.let { " · ${StrengthAnalyzer.formatPercent(it)}" } ?: ""),
+                style = MaterialTheme.typography.titleSmall,
+                color = scheme.onSurface
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(note, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurface)
+        lifts.forEach { l ->
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    l.name,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = scheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(liftLine(l), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = scheme.onSurface)
+            }
+        }
+        c.strengthTip?.let {
+            Spacer(Modifier.height(8.dp))
+            Text(it, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** «60 × 5 → 62,5 × 5 ↑» — стрелка по изменению: держится в пределах 3% — «=». */
+private fun liftLine(l: StrengthCheck.Lift): String {
+    val sets = listOfNotNull(l.before, l.now).distinct().joinToString(" → ")
+    val arrow = when {
+        l.changePercent == null -> ""
+        l.changePercent > 3 -> " ↑"
+        l.changePercent < -3 -> " ↓"
+        else -> " ="
+    }
+    return sets + arrow
 }
 
 /** «Б 150» или «Б 145 → 150». */

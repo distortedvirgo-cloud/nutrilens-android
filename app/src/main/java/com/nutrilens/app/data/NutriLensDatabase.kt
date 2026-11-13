@@ -167,6 +167,16 @@ val MIGRATION_12_13 = object : Migration(12, 13) {
     }
 }
 
+val MIGRATION_13_14 = object : Migration(13, 14) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE check_ins ADD COLUMN strengthIndex REAL DEFAULT NULL")
+        db.execSQL("ALTER TABLE check_ins ADD COLUMN strengthSignal TEXT DEFAULT NULL")
+        db.execSQL("ALTER TABLE check_ins ADD COLUMN strengthNote TEXT DEFAULT NULL")
+        db.execSQL("ALTER TABLE check_ins ADD COLUMN strengthLifts TEXT DEFAULT NULL")
+        db.execSQL("ALTER TABLE check_ins ADD COLUMN strengthTip TEXT DEFAULT NULL")
+    }
+}
+
 @Database(
     entities = [
         MealEntity::class,
@@ -186,7 +196,7 @@ val MIGRATION_12_13 = object : Migration(12, 13) {
         CheckInEntity::class,
         DayActivityEntity::class
     ],
-    version = 13,
+    version = 14,
     exportSchema = false
 )
 abstract class NutriLensDatabase : RoomDatabase() {
@@ -219,7 +229,7 @@ abstract class NutriLensDatabase : RoomDatabase() {
                     .addMigrations(
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
                         MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
-                        MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13
+                        MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14
                     )
                     .build().also { INSTANCE = it }
             }

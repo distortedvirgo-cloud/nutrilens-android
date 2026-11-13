@@ -62,6 +62,19 @@ class FatBurnProgramTest {
         assertEquals(FatBurnProgram.EndReason.PLATEAU, p.phases[0].endReason)
     }
 
+    @Test fun `сила падает второй чек-ин подряд — перерыв досрочно`() {
+        val p0 = FatBurnProgram.create(start, 25.0, 13.0, 90.0, true)
+        val t = FatBurnProgram.onCheckIn(p0, start.plusWeeks(4), 23.5, 0, 88.0, true, strengthDrop = true)
+        assertEquals(FatBurnProgram.Event.STRENGTH, t.event)
+        assertEquals(FatBurnProgram.PhaseType.BREAK, t.program.currentPhase?.type)
+        assertEquals(FatBurnProgram.EndReason.STRENGTH, t.program.phases[0].endReason)
+        // Причина переживает сохранение.
+        assertEquals(t.program, FatBurnProgramCodec.decode(FatBurnProgramCodec.encode(t.program)))
+        // В перерыве сигнал силы уже ничего не меняет.
+        val inBreak = FatBurnProgram.onCheckIn(t.program, start.plusWeeks(5), 23.4, 0, 88.0, true, strengthDrop = true)
+        assertEquals(null, inBreak.event)
+    }
+
     @Test fun `итоговая цель — удержание — программа завершена`() {
         val (p, events) = run(FatBurnProgram.create(start, 16.0, 13.0, 80.0, true), 16, { w -> (16.0 - 0.4 * w).coerceAtLeast(13.2) })
         assertEquals(FatBurnProgram.Event.FINAL_TARGET, events.first { it.second == FatBurnProgram.Event.FINAL_TARGET }.second)
