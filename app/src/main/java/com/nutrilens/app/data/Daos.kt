@@ -125,6 +125,9 @@ interface WorkoutDao {
     @Query("SELECT * FROM workouts")
     suspend fun all(): List<WorkoutEntity>
 
+    @Query("SELECT * FROM workouts WHERE date BETWEEN :start AND :end")
+    suspend fun between(start: String, end: String): List<WorkoutEntity>
+
     @Query("DELETE FROM workouts")
     suspend fun deleteAll()
 }

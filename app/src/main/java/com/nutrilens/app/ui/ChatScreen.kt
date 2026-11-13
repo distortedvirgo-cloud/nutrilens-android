@@ -145,7 +145,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 val system = GeminiTools.buildChatSystemInstruction(
                     dailyGoal = settings.effectiveDailyGoal,
                     // Цель по жиру — коуч видит текущий процент, цель и сухую массу.
-                    userContext = settings.userContext + BodyComposition.coachContext(settings, weight, fatPercent),
+                    // и итоги последнего недельного чек-ина.
+                    userContext = settings.userContext + BodyComposition.coachContext(
+                        settings, weight, fatPercent, database.checkInDao().latest()
+                    ),
                     todayMeals = mealsToday.map { it.name to it.calories.roundToInt() },
                     todayTotal = mealsToday.sumOf { it.calories }.roundToInt(),
                     todayMacros = Triple(

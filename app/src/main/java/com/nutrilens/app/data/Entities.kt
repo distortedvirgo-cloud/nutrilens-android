@@ -136,7 +136,13 @@ data class SettingsEntity(
     // true — расход посчитан по твоим весу и еде, false — по формуле.
     val planObserved: Boolean = false,
     // Цель %, под которую считался план: сменили цель — пересчитываем сразу.
-    val planTargetFat: Double? = null
+    val planTargetFat: Double? = null,
+    // Недельный чек-ин (3.22): день недели ISO (1 — пн … 7 — вс), цель силовых в неделю,
+    // день включения режима и дата прошлого чек-ина ("YYYY-MM-DD"). План меняется только на чек-ине.
+    val checkInWeekday: Int = 7,
+    val workoutGoal: Int = 3,
+    val fatBurnStartDate: String? = null,
+    val lastCheckInDate: String? = null
 )
 
 @Entity(tableName = "analysis_jobs")

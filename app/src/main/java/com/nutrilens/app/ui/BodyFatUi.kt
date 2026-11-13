@@ -51,7 +51,9 @@ import com.nutrilens.app.data.NutriLensDatabase
 import com.nutrilens.app.data.SettingsEntity
 import com.nutrilens.app.data.SettingsRepository
 import com.nutrilens.app.ui.theme.NutriTheme
+import com.nutrilens.app.insights.CheckInPlanner
 import com.nutrilens.app.insights.FatBurnPlanner
+import com.nutrilens.app.insights.Trend
 import com.nutrilens.app.ui.theme.macroPalette
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -87,6 +89,10 @@ class BodyFatViewModel(application: Application) : AndroidViewModel(application)
     private val _lastWeight = MutableStateFlow<Double?>(null)
     val lastWeight: StateFlow<Double?> = _lastWeight.asStateFlow()
 
+    /** Сглаженный тренд веса за 90 дней — для темпа в карточке плана. */
+    private val _weightTrend = MutableStateFlow<List<Trend.Point>>(emptyList())
+    val weightTrend: StateFlow<List<Trend.Point>> = _weightTrend.asStateFlow()
+
     /**
      * Живой расчёт плана для подробной карточки: темп и чего не хватает для точности.
      * Сами цифры плана берутся из settings — они меняются только при пересчёте.
@@ -95,10 +101,14 @@ class BodyFatViewModel(application: Application) : AndroidViewModel(application)
     val planPreview: StateFlow<FatBurnPlanner.Plan?> = _planPreview.asStateFlow()
 
     init {
-        viewModelScope.launch { _lastWeight.value = db.weightDao().latest()?.weight }
+        viewModelScope.launch {
+            _lastWeight.value = db.weightDao().latest()?.weight
+            reloadTrend()
+        }
         viewModelScope.launch {
             DataEvents.changed.collect {
                 _lastWeight.value = db.weightDao().latest()?.weight
+                reloadTrend()
                 refreshPlan()
             }
         }
@@ -109,6 +119,15 @@ class BodyFatViewModel(application: Application) : AndroidViewModel(application)
                 .distinctUntilChanged()
                 .collect { refreshPlan() }
         }
+    }
+
+    private suspend fun reloadTrend() {
+        val since = LocalDate.now().minusDays(90).toString()
+        _weightTrend.value = Trend.smooth(
+            db.weightDao().since(since).mapNotNull { w ->
+                runCatching { FatBurnPlanner.DayValue(LocalDate.parse(w.date), w.weight) }.getOrNull()
+            }
+        )
     }
 
     private suspend fun refreshPlan() {
@@ -132,7 +151,10 @@ class BodyFatViewModel(application: Application) : AndroidViewModel(application)
             else it.copy(
                 targetFatPercent = if (BodyComposition.isMale(it)) 15.0 else 23.0,
                 planCalories = null,
-                planDate = null
+                planDate = null,
+                // Отсюда считается первый чек-ин: не раньше чем через 5 дней данных.
+                fatBurnStartDate = LocalDate.now().toString(),
+                lastCheckInDate = null
             )
         } else {
             it.copy(targetFatPercent = null)
@@ -142,6 +164,14 @@ class BodyFatViewModel(application: Application) : AndroidViewModel(application)
     fun setSex(value: String) = updateSettings { it.copy(sex = value) }
 
     fun setHeight(value: Double) = updateSettings { it.copy(heightCm = value) }
+
+    /** День недельного чек-ина, ISO: 1 — понедельник … 7 — воскресенье. */
+    fun setCheckInWeekday(value: Int) = updateSettings { it.copy(checkInWeekday = value.coerceIn(1, 7)) }
+
+    /** Цель силовых в неделю (2–5) — для сигнала сохранения мышц на чек-ине. */
+    fun setWorkoutGoal(value: Int) = updateSettings {
+        it.copy(workoutGoal = value.coerceIn(CheckInPlanner.MIN_WORKOUT_GOAL, CheckInPlanner.MAX_WORKOUT_GOAL))
+    }
 
     /** Замер за сегодня; рост из листа (если его не было в профиле) сохраняем заодно. */
     fun save(entity: BodyMeasurementEntity, heightCm: Double?) {
@@ -182,51 +212,78 @@ private fun daysAgoText(date: String): String {
 // ---------- Лист замера ----------
 
 /**
- * Лист замера: талия, шея, бёдра (только женщинам), свой процент. Процент
- * считается вживую. Повторный замер за сегодня перезаписывает прежний.
+ * Состояние формы замера — вынесено из листа, чтобы ту же форму переиспользовал
+ * недельный чек-ин (шаг «Замер лентой»). Процент считается вживую.
  */
-@Composable
-fun BodyMeasurementSheet(
-    settings: SettingsEntity,
-    today: BodyMeasurementEntity?,
-    onDismiss: () -> Unit,
-    onSave: (BodyMeasurementEntity, Double?) -> Unit
-) {
-    val male = BodyComposition.isMale(settings)
-    val knownHeight = BodyComposition.heightCm(settings)
-    fun fmt(v: Double?) = v?.let { BodyComposition.fmt1(it) }.orEmpty()
-    var waist by remember { mutableStateOf(fmt(today?.waistCm)) }
-    var neck by remember { mutableStateOf(fmt(today?.neckCm)) }
-    var hips by remember { mutableStateOf(fmt(today?.hipsCm)) }
-    var manual by remember { mutableStateOf(fmt(today?.manualFatPercent)) }
-    var height by remember { mutableStateOf("") }
+class MeasurementFormState(settings: SettingsEntity, today: BodyMeasurementEntity?) {
+    /** Обновляется при каждой композиции: пол и рост могли поменяться в профиле. */
+    var settings by mutableStateOf(settings)
+    var waist by mutableStateOf(fmtCm(today?.waistCm))
+    var neck by mutableStateOf(fmtCm(today?.neckCm))
+    var hips by mutableStateOf(fmtCm(today?.hipsCm))
+    var manual by mutableStateOf(fmtCm(today?.manualFatPercent))
+    var height by mutableStateOf("")
 
-    val heightCm = knownHeight ?: parseNum(height)?.takeIf { it in 100.0..250.0 }
-    val waistN = parseNum(waist)
-    val neckN = parseNum(neck)
-    val hipsN = if (male) null else parseNum(hips)
-    val manualN = parseNum(manual)?.takeIf { it in 3.0..60.0 }
-    val formula = BodyComposition.navyFatPercent(male, heightCm, waistN, neckN, hipsN)
-    val result = manualN ?: formula
+    val male: Boolean get() = BodyComposition.isMale(settings)
+    val knownHeight: Double? get() = BodyComposition.heightCm(settings)
+    val heightCm: Double? get() = knownHeight ?: parseNum(height)?.takeIf { it in 100.0..250.0 }
+    val waistN: Double? get() = parseNum(waist)
+    val neckN: Double? get() = parseNum(neck)
+    val hipsN: Double? get() = if (male) null else parseNum(hips)
+    val manualN: Double? get() = parseNum(manual)?.takeIf { it in 3.0..60.0 }
+    val formula: Double? get() = BodyComposition.navyFatPercent(male, heightCm, waistN, neckN, hipsN)
+    val result: Double? get() = manualN ?: formula
+
+    /** Замер за сегодня; null — процент ещё не посчитать. */
+    fun entity(): BodyMeasurementEntity? {
+        val fat = result ?: return null
+        return BodyMeasurementEntity(
+            date = LocalDate.now().toString(),
+            waistCm = waistN,
+            neckCm = neckN,
+            hipsCm = hipsN,
+            manualFatPercent = manualN,
+            fatPercent = (fat * 10).roundToInt() / 10.0
+        )
+    }
+
+    /** Рост из формы — только если в профиле его не было (тогда сохраним заодно). */
+    fun newHeight(): Double? = if (knownHeight == null) heightCm else null
+}
+
+private fun fmtCm(v: Double?): String = v?.let { BodyComposition.fmt1(it) }.orEmpty()
+
+@Composable
+fun rememberMeasurementFormState(settings: SettingsEntity, today: BodyMeasurementEntity?): MeasurementFormState {
+    val state = remember { MeasurementFormState(settings, today) }
+    state.settings = settings
+    return state
+}
+
+/** Поля замера и живой результат — общие для листа замера и чек-ина. */
+@Composable
+fun BodyMeasurementForm(state: MeasurementFormState) {
+    val male = state.male
+    val heightCm = state.heightCm
+    val waistN = state.waistN
+    val neckN = state.neckN
+    val manualN = state.manualN
+    val formula = state.formula
+    val result = state.result
     val palette = macroPalette()
 
-    NutriSheet(
-        onDismiss = onDismiss,
-        title = "Замер тела",
-        subtitle = if (today != null) "Сегодняшний замер уже есть — сохранишь, и он обновится"
-        else "Пара обхватов — и посчитаем процент жира"
-    ) {
-        if (knownHeight == null) {
-            MeasureField(height, { height = numFilter(it) }, "Рост", "см")
+    Column {
+        if (state.knownHeight == null) {
+            MeasureField(state.height, { state.height = numFilter(it) }, "Рост", "см")
             Spacer(Modifier.height(10.dp))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            MeasureField(waist, { waist = numFilter(it) }, "Талия", "см", Modifier.weight(1f))
-            MeasureField(neck, { neck = numFilter(it) }, "Шея", "см", Modifier.weight(1f))
+            MeasureField(state.waist, { state.waist = numFilter(it) }, "Талия", "см", Modifier.weight(1f))
+            MeasureField(state.neck, { state.neck = numFilter(it) }, "Шея", "см", Modifier.weight(1f))
         }
         if (!male) {
             Spacer(Modifier.height(10.dp))
-            MeasureField(hips, { hips = numFilter(it) }, "Бёдра", "см")
+            MeasureField(state.hips, { state.hips = numFilter(it) }, "Бёдра", "см")
         }
         Spacer(Modifier.height(8.dp))
         Text(
@@ -236,7 +293,7 @@ fun BodyMeasurementSheet(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(Modifier.height(14.dp))
-        MeasureField(manual, { manual = numFilter(it) }, "Свой процент (весы, калипер, DEXA)", "%")
+        MeasureField(state.manual, { state.manual = numFilter(it) }, "Свой процент (весы, калипер, DEXA)", "%")
         Spacer(Modifier.height(4.dp))
         Text(
             "Необязательно. Если указан — используем его вместо формулы.",
@@ -275,28 +332,39 @@ fun BodyMeasurementSheet(
                 )
             }
         }
+    }
+}
+
+/**
+ * Лист замера: талия, шея, бёдра (только женщинам), свой процент. Процент
+ * считается вживую. Повторный замер за сегодня перезаписывает прежний.
+ */
+@Composable
+fun BodyMeasurementSheet(
+    settings: SettingsEntity,
+    today: BodyMeasurementEntity?,
+    onDismiss: () -> Unit,
+    onSave: (BodyMeasurementEntity, Double?) -> Unit
+) {
+    val form = rememberMeasurementFormState(settings, today)
+
+    NutriSheet(
+        onDismiss = onDismiss,
+        title = "Замер тела",
+        subtitle = if (today != null) "Сегодняшний замер уже есть — сохранишь, и он обновится"
+        else "Пара обхватов — и посчитаем процент жира"
+    ) {
+        BodyMeasurementForm(form)
         Spacer(Modifier.height(20.dp))
         SheetActions(
             secondaryText = "Отмена",
             onSecondary = onDismiss,
             primaryText = "Сохранить",
             onPrimary = {
-                result?.let { fat ->
-                    onSave(
-                        BodyMeasurementEntity(
-                            date = LocalDate.now().toString(),
-                            waistCm = waistN,
-                            neckCm = neckN,
-                            hipsCm = hipsN,
-                            manualFatPercent = manualN,
-                            fatPercent = (fat * 10).roundToInt() / 10.0
-                        ),
-                        if (knownHeight == null) heightCm else null
-                    )
-                }
+                form.entity()?.let { onSave(it, form.newHeight()) }
                 onDismiss()
             },
-            primaryEnabled = result != null
+            primaryEnabled = form.result != null
         )
     }
 }
@@ -382,6 +450,12 @@ fun BodyFatGoalSection(modifier: Modifier = Modifier, viewModel: BodyFatViewMode
                     modifier = Modifier.fillMaxWidth()
                 )
                 HeightField(settings, onValid = viewModel::setHeight)
+                CheckInSettingsBlock(
+                    weekday = settings.checkInWeekday,
+                    workoutGoal = settings.workoutGoal,
+                    onWeekday = viewModel::setCheckInWeekday,
+                    onWorkoutGoal = viewModel::setWorkoutGoal
+                )
                 BodyComposition.proteinTarget(lastWeight, latest?.fatPercent)?.let { protein ->
                     Text(
                         "Белок: ${protein.roundToInt()} г в день" +
@@ -424,6 +498,46 @@ fun BodyFatGoalSection(modifier: Modifier = Modifier, viewModel: BodyFatViewMode
             today = measurements.lastOrNull { it.date == LocalDate.now().toString() },
             onDismiss = { showSheet = false },
             onSave = viewModel::save
+        )
+    }
+}
+
+/**
+ * Настройки недельного чек-ина в секции режима: день недели (по умолчанию воскресенье)
+ * и цель силовых в неделю (2–5). Выбираются сразу при включении режима, менять можно когда угодно.
+ */
+@Composable
+private fun CheckInSettingsBlock(
+    weekday: Int,
+    workoutGoal: Int,
+    onWeekday: (Int) -> Unit,
+    onWorkoutGoal: (Int) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("День чек-ина", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+        Text(
+            "Раз в неделю подводим итоги за 2 минуты — только тогда план и меняется.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        SegmentedSwitcher(
+            options = listOf(1 to "Пн", 2 to "Вт", 3 to "Ср", 4 to "Чт", 5 to "Пт", 6 to "Сб", 7 to "Вс"),
+            selected = weekday.coerceIn(1, 7),
+            onSelect = onWeekday,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(Modifier.height(2.dp))
+        Text("Силовых в неделю", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+        Text(
+            "Силовые — главный сигнал телу сохранить мышцы в дефиците.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        SegmentedSwitcher(
+            options = (CheckInPlanner.MIN_WORKOUT_GOAL..CheckInPlanner.MAX_WORKOUT_GOAL).map { it to "$it" },
+            selected = workoutGoal.coerceIn(CheckInPlanner.MIN_WORKOUT_GOAL, CheckInPlanner.MAX_WORKOUT_GOAL),
+            onSelect = onWorkoutGoal,
+            modifier = Modifier.fillMaxWidth()
         )
     }
 }
@@ -559,17 +673,32 @@ private fun BodyCompositionDetails(
     val palette = macroPalette()
     val c = NutriTheme.colors
     val target = settings.targetFatPercent
+    // Главное число — сглаженный тренд: один замер лентой гуляет на ±1%, тренд — нет.
+    val fatTrend = remember(measurements) {
+        Trend.smooth(
+            measurements.mapNotNull { m ->
+                runCatching { FatBurnPlanner.DayValue(LocalDate.parse(m.date), m.fatPercent) }.getOrNull()
+            }
+        )
+    }
     Column {
-        val fat = latest.fatPercent
+        val fat = fatTrend.lastOrNull()?.trend ?: latest.fatPercent
         Spacer(Modifier.height(14.dp))
         Row(verticalAlignment = Alignment.Bottom) {
             DisplayNumber("${BodyComposition.fmt1(fat)}%", size = 36, color = palette.protein)
             Spacer(Modifier.width(8.dp))
             Text(
-                "жира" + (target?.let { " · цель ${BodyComposition.fmt1(it)}%" } ?: ""),
+                "жира, тренд" + (target?.let { " · цель ${BodyComposition.fmt1(it)}%" } ?: ""),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 4.dp)
+            )
+        }
+        if (measurements.size >= 2) {
+            Text(
+                "Последний замер ${BodyComposition.fmt1(latest.fatPercent)}%",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         if (weight != null) {
@@ -659,7 +788,8 @@ private fun BodyCompositionDetails(
             Spacer(Modifier.height(16.dp))
             Text("Тренд процента жира", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
             Spacer(Modifier.height(8.dp))
-            TrendLineChart(measurements.takeLast(30).map { it.fatPercent }, palette.protein, unit = "%")
+            val shown = fatTrend.takeLast(30)
+            TrendLineChart(shown.map { it.trend }, palette.protein, unit = "%", raw = shown.map { it.raw })
         }
 
         val daysSince = runCatching { ChronoUnit.DAYS.between(LocalDate.parse(latest.date), LocalDate.now()) }.getOrDefault(0L)

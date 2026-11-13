@@ -22,6 +22,8 @@ import java.io.File
  * settings сериализуется целиком (encodeDefaults), поэтому план режима «Сжигание жира»
  * (planCalories…planTargetFat) попадает в копию сам; в копиях до 3.21 этих полей нет —
  * берутся значения по умолчанию (плана нет), и он пересчитается при следующем запуске.
+ * С 3.22 — check_ins (недельные чек-ины) и настройки чек-ина в settings; в старых копиях
+ * их нет — чек-инов нет, день чек-ина воскресенье, цель силовых 3.
  */
 object Backup {
     private const val ERROR_MESSAGE = "Неверный формат файла резервной копии"
@@ -45,6 +47,7 @@ object Backup {
         val workouts = db.workoutDao().all()
         val habits = db.habitLogDao().all()
         val measurements = db.bodyMeasurementDao().all()
+        val checkIns = db.checkInDao().all()
 
         val chatRaw = readRaw(context, ChatStore.FILE_NAME)
         val groceryRaw = readRaw(context, GroceryStore.FILE_NAME)
@@ -58,6 +61,7 @@ object Backup {
             put("workouts", json.encodeToJsonElement(workouts))
             put("habits", json.encodeToJsonElement(habits))
             put("body_measurements", json.encodeToJsonElement(measurements))
+            put("check_ins", json.encodeToJsonElement(checkIns))
             put(
                 "chat_history",
                 chatRaw?.let { raw -> runCatching { json.parseToJsonElement(raw) }.getOrNull() }
@@ -114,6 +118,7 @@ object Backup {
             db.workoutDao().deleteAll()
             db.habitLogDao().deleteAll()
             db.bodyMeasurementDao().deleteAll()
+            db.checkInDao().deleteAll()
 
             val settings = try {
                 root["settings"]?.let { json.decodeFromJsonElement<SettingsEntity?>(it) }
@@ -171,6 +176,14 @@ object Backup {
                 throw RuntimeException(ERROR_MESSAGE)
             }
             measurements.forEach { db.bodyMeasurementDao().upsert(it) }
+
+            // Чек-ины появились в 3.22: в старых копиях поля нет — просто пусто.
+            val checkIns = try {
+                json.decodeFromJsonElement<List<CheckInEntity>>(root["check_ins"] ?: JsonArray(emptyList()))
+            } catch (e: Exception) {
+                throw RuntimeException(ERROR_MESSAGE)
+            }
+            checkIns.forEach { db.checkInDao().upsert(it) }
         }
 
         root["chat_history"]?.let { element ->

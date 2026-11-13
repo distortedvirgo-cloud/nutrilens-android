@@ -22,16 +22,23 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nutrilens.app.data.BodyComposition
 import com.nutrilens.app.data.SettingsEntity
+import com.nutrilens.app.data.nextCheckInDate
 import com.nutrilens.app.insights.FatBurnPlanner
+import com.nutrilens.app.insights.Trend
 import com.nutrilens.app.insights.hasFatBurnPlan
 import com.nutrilens.app.ui.theme.macroPalette
+import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
+import java.util.Locale
 import kotlin.math.roundToInt
 
 /*
  * Режим «Сжигание жира»: бейдж в шапке «Сегодня», компактная карточка плана на
  * «Сегодня» и подробная — в Профиле. Цифры плана — из settings (меняются только
- * при пересчёте раз в неделю), темп и «чего не хватает» — из живого превью.
+ * на недельном чек-ине), темп — по сглаженному тренду веса, «чего не хватает» —
+ * из живого превью.
  */
 
 /** Бейдж шапки: «🔥 Сжигание жира · 24% → 13%»; null — режим выключен. */
@@ -42,11 +49,28 @@ fun fatBurnBadgeText(settings: SettingsEntity, fatPercent: Double?): String? {
     else "🔥 Сжигание жира · сделай первый замер"
 }
 
-/** «через 3 дн.» / «сегодня»; null — плана ещё нет. */
-private fun nextRecalcText(settings: SettingsEntity): String? {
-    val date = settings.planDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: return null
-    val days = FatBurnPlanner.daysUntilNext(date, LocalDate.now())
-    return if (days <= 0) "сегодня" else "через $days ${plural(days, "день", "дня", "дней")}"
+/** «сегодня» / «в воскресенье» / «22 ноября»; null — режим выключен. */
+fun nextCheckInText(settings: SettingsEntity): String? {
+    val today = LocalDate.now()
+    val date = settings.nextCheckInDate(today) ?: return null
+    val days = ChronoUnit.DAYS.between(today, date)
+    return when {
+        days <= 0 -> "сегодня"
+        days == 1L -> "завтра"
+        days < 7 -> weekdayAccusative(date.dayOfWeek)
+        else -> date.format(DateTimeFormatter.ofPattern("d MMMM", Locale("ru", "RU")))
+    }
+}
+
+/** «в понедельник», «во вторник», «в среду»… */
+fun weekdayAccusative(day: DayOfWeek): String = when (day) {
+    DayOfWeek.MONDAY -> "в понедельник"
+    DayOfWeek.TUESDAY -> "во вторник"
+    DayOfWeek.WEDNESDAY -> "в среду"
+    DayOfWeek.THURSDAY -> "в четверг"
+    DayOfWeek.FRIDAY -> "в пятницу"
+    DayOfWeek.SATURDAY -> "в субботу"
+    DayOfWeek.SUNDAY -> "в воскресенье"
 }
 
 /** «0,6» — доли процента с запятой. */
@@ -63,7 +87,7 @@ fun FatBurnPlanCompactCard(settings: SettingsEntity, onClick: () -> Unit, modifi
                 title = "План на неделю",
                 icon = Icons.Rounded.LocalFireDepartment,
                 tint = MaterialTheme.colorScheme.primary,
-                subtitle = nextRecalcText(settings)?.let { "Считается сам · пересчёт $it" } ?: "Считается сам"
+                subtitle = nextCheckInText(settings)?.let { "Меняется на чек-ине · следующий $it" } ?: "Меняется на чек-ине"
             )
             if (settings.hasFatBurnPlan) {
                 Row(verticalAlignment = Alignment.Bottom) {
@@ -118,6 +142,7 @@ private fun MacroInline(label: String, grams: Double?, color: androidx.compose.u
 fun FatBurnPlanSection(modifier: Modifier = Modifier, viewModel: BodyFatViewModel = viewModel()) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val preview by viewModel.planPreview.collectAsStateWithLifecycle()
+    val weightTrend by viewModel.weightTrend.collectAsStateWithLifecycle()
     if (settings.targetFatPercent == null) return
     val primary = MaterialTheme.colorScheme.primary
 
@@ -136,14 +161,14 @@ fun FatBurnPlanSection(modifier: Modifier = Modifier, viewModel: BodyFatViewMode
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
-                FatBurnPlanDetails(settings, preview)
+                FatBurnPlanDetails(settings, preview, Trend.weeklyLossPercent(weightTrend))
             }
         }
     }
 }
 
 @Composable
-private fun FatBurnPlanDetails(settings: SettingsEntity, preview: FatBurnPlanner.Plan?) {
+private fun FatBurnPlanDetails(settings: SettingsEntity, preview: FatBurnPlanner.Plan?, trendWeekly: Double?) {
     val palette = macroPalette()
     val primary = MaterialTheme.colorScheme.primary
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -172,11 +197,12 @@ private fun FatBurnPlanDetails(settings: SettingsEntity, preview: FatBurnPlanner
             )
         }
         preview?.let { p ->
+            // Фактический темп — по сглаженному тренду, как везде в приложении.
             Text(
                 "Темп: цель −${pct(p.targetWeeklyPercent)}% веса в неделю · " +
-                    (p.actualWeeklyPercent?.let { a ->
-                        if (a >= 0) "сейчас −${pct(a)}%" else "сейчас +${pct(-a)}%"
-                    } ?: "факт появится, когда накопятся данные"),
+                    (trendWeekly?.let { a ->
+                        if (a >= 0) "по тренду −${pct(a)}%" else "по тренду +${pct(-a)}%"
+                    } ?: "факт появится, когда накопятся взвешивания"),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -191,9 +217,9 @@ private fun FatBurnPlanDetails(settings: SettingsEntity, preview: FatBurnPlanner
                 )
             }
         }
-        nextRecalcText(settings)?.let {
+        nextCheckInText(settings)?.let {
             Text(
-                "Следующий пересчёт — $it",
+                "Следующий чек-ин — $it. План меняется только там, чтобы ты видел почему",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -214,7 +240,7 @@ private fun FatBurnPlanDetails(settings: SettingsEntity, preview: FatBurnPlanner
         }
         Spacer(Modifier.height(2.dp))
         Text(
-            "План сам подстраивается по весу и записям еды. Точнее всего — после ~2 недель записей и 4+ взвешиваний.",
+            "Раз в неделю на чек-ине план подстраивается по тренду веса и записям еды. Точнее всего — после ~2 недель записей и 4+ взвешиваний.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.outline
         )

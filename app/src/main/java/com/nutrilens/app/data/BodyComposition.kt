@@ -108,8 +108,16 @@ object BodyComposition {
             ?: Regex("рост\\D{0,3}(\\d{3})", RegexOption.IGNORE_CASE).find(settings.userContext)
                 ?.groupValues?.get(1)?.toDoubleOrNull()?.takeIf { it in 100.0..250.0 }
 
-    /** Строка для контекста ИИ-коуча; пусто, если цель по жиру выключена. */
-    fun coachContext(settings: SettingsEntity, weightKg: Double?, fatPercent: Double?): String {
+    /**
+     * Строка для контекста ИИ-коуча; пусто, если цель по жиру выключена.
+     * [lastCheckIn] — последний недельный чек-ин: коуч видит итоги недели и не спорит с планом.
+     */
+    fun coachContext(
+        settings: SettingsEntity,
+        weightKg: Double?,
+        fatPercent: Double?,
+        lastCheckIn: CheckInEntity? = null
+    ): String {
         val target = settings.targetFatPercent ?: return ""
         return buildString {
             append(" Цель — процент жира ${fmt1(target)}% с сохранением мышц.")
@@ -125,11 +133,34 @@ object BodyComposition {
                 append(" Режим сжигания жира: план ${planKcal.roundToInt()} ккал, белок ${planProtein.roundToInt()} г")
                 settings.planFat?.let { append(", жиры ${it.roundToInt()} г") }
                 settings.planCarbs?.let { append(", углеводы ${it.roundToInt()} г") }
-                append(" — считается автоматически по весу и еде, раз в неделю.")
+                append(" — считается автоматически по весу и еде и меняется только на недельном чек-ине.")
             } else {
                 proteinTarget(weightKg, fatPercent)?.let { append(" Цель по белку ${it.roundToInt()} г в день.") }
             }
+            if (lastCheckIn != null) append(" " + checkInSummary(lastCheckIn))
         }
+    }
+
+    /** Краткие итоги чек-ина одной строкой — для коуча. */
+    fun checkInSummary(c: CheckInEntity): String = buildString {
+        append("Последний недельный чек-ин ${c.date}: ")
+        val trend = c.trendWeight
+        append(if (trend != null) "тренд веса ${fmt1(trend)} кг" else "вес ${fmt1(c.weight)} кг")
+        c.trendChangeKg?.let { append(" (${if (it > 0) "+" else ""}${fmt1(it)} кг за ${c.periodDays} дн.)") }
+        c.fatPercent?.let { append(", жир ${fmt1(it)}%") }
+        append(", еда записана ${c.diaryDays} из ${c.periodDays} дней, хороших дней ${c.goodDays}")
+        append(", силовых ${c.workouts} из ${c.workoutGoal}")
+        val signal = when (c.muscleSignal) {
+            "red" -> "красный"
+            "yellow" -> "жёлтый"
+            else -> "зелёный"
+        }
+        append(", сигнал сохранения мышц $signal")
+        c.hunger?.let { append(", голод $it/5") }
+        c.energy?.let { append(", энергия $it/5") }
+        c.sleep?.let { append(", сон $it/5") }
+        append(". Решение по плану: ${c.note.ifBlank { "без изменений" }}.")
+        if (c.nextAction.isNotBlank()) append(" Действие на неделю: ${c.nextAction}.")
     }
 
     fun fmt1(v: Double): String {

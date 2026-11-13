@@ -26,6 +26,7 @@ internal const val REQUEST_DINNER = 103
 
 private const val UNIQUE_WATER = "water_reminder"
 private const val UNIQUE_WEIGH_IN = "weighin_check"
+private const val UNIQUE_CHECK_IN = "checkin_reminder"
 
 /**
  * Перепланирование всех напоминаний из настроек: будильники еды (AlarmManager),
@@ -58,6 +59,15 @@ object ReminderSync {
             workManager.enqueueUniquePeriodicWork(UNIQUE_WEIGH_IN, ExistingPeriodicWorkPolicy.UPDATE, weighInRequest)
         } else {
             workManager.cancelUniqueWork(UNIQUE_WEIGH_IN)
+        }
+
+        // Недельный чек-ин режима «Сжигание жира»: воркер раз в 3 часа сам проверяет,
+        // включён ли режим и подошёл ли день, — так не нужно перепланировать при смене режима.
+        if (settings.weighInReminderEnabled) {
+            val checkInRequest = PeriodicWorkRequestBuilder<CheckInWorker>(3, TimeUnit.HOURS).build()
+            workManager.enqueueUniquePeriodicWork(UNIQUE_CHECK_IN, ExistingPeriodicWorkPolicy.KEEP, checkInRequest)
+        } else {
+            workManager.cancelUniqueWork(UNIQUE_CHECK_IN)
         }
     }
 

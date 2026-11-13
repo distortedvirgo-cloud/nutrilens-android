@@ -159,6 +159,7 @@ import com.nutrilens.app.insights.effectiveMacroGoals
 import com.nutrilens.app.insights.fatGoalProtein
 import com.nutrilens.app.data.latestFatPercent
 import com.nutrilens.app.data.FatBurnPlanSync
+import com.nutrilens.app.data.isCheckInDue
 import com.nutrilens.app.insights.getDayTotals
 import com.nutrilens.app.insights.greeting
 import com.nutrilens.app.insights.nextMealFocus
@@ -312,8 +313,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             _selectedDate.collectLatest { date -> reloadSnapshot(date) }
         }
-        // Режим «Сжигание жира»: план пересчитывается при открытии «Сегодня» (если подошёл
-        // срок) и сразу при включении режима или смене цели — первое значение потока и есть старт.
+        // Режим «Сжигание жира»: план считается при открытии «Сегодня», если его ещё нет,
+        // и сразу при включении режима или смене цели — первое значение потока и есть старт.
+        // Недельная правка — только на чек-ине.
         viewModelScope.launch {
             settingsRepository.observe()
                 .map { it.targetFatPercent }
@@ -362,7 +364,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             weightRepository.addWeight(LocalDate.now().toString(), weight)
             refreshWeightState()
-            // Первый вес в режиме — план можно посчитать (дальше — по недельному графику).
+            // Первый вес в режиме — план можно посчитать (дальше он меняется только на чек-ине).
             FatBurnPlanSync.ensureFresh(getApplication())
         }
     }
@@ -440,6 +442,10 @@ fun DashboardScreen(
     val streak by viewModel.streak.collectAsStateWithLifecycle()
     val weekKcal by viewModel.weekKcal.collectAsStateWithLifecycle()
     val view = LocalView.current
+    // Недельный чек-ин: своя модель, лист живёт на уровне экрана (не внутри LazyColumn),
+    // чтобы не закрываться при прокрутке.
+    val checkInViewModel: CheckInViewModel = viewModel()
+    var showCheckIn by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         val date = initialDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
@@ -511,6 +517,17 @@ fun DashboardScreen(
                     fatPercent = fatPercent,
                     onLeaderboard = onOpenLeaderboard
                 )
+            }
+        }
+        // Режим «Сжигание жира»: пришёл день чек-ина — заметная карточка над планом.
+        if (settings.targetFatPercent != null && selectedDate == LocalDate.now() && settings.isCheckInDue()) {
+            item(key = "checkin-due") {
+                Box(Modifier.introIn(2, introDone)) {
+                    CheckInDueCard(onClick = {
+                        checkInViewModel.prepare()
+                        showCheckIn = true
+                    })
+                }
             }
         }
         // Режим «Сжигание жира»: компактный план на неделю, тап — подробности в Профиле.
@@ -720,6 +737,10 @@ fun DashboardScreen(
             onConfirm = { weight -> viewModel.updateWeight(weight) },
             onDismiss = { showWeightDialog = false }
         )
+    }
+
+    if (showCheckIn) {
+        CheckInSheet(onDismiss = { showCheckIn = false }, viewModel = checkInViewModel)
     }
 }
 

@@ -111,6 +111,33 @@ val MIGRATION_9_10 = object : Migration(9, 10) {
     }
 }
 
+/**
+ * v11: недельный чек-ин — таблица check_ins (схема один-в-один с CheckInEntity:
+ * Double → REAL NOT NULL, Double?/Int? → REAL/INTEGER без NOT NULL, Int → INTEGER NOT NULL,
+ * String → TEXT NOT NULL) и в settings день чек-ина, цель силовых, дата включения режима
+ * и дата прошлого чек-ина.
+ */
+val MIGRATION_10_11 = object : Migration(10, 11) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `check_ins` (" +
+                "`date` TEXT NOT NULL, `weight` REAL NOT NULL, `trendWeight` REAL, `fatPercent` REAL, " +
+                "`hunger` INTEGER, `energy` INTEGER, `sleep` INTEGER, " +
+                "`periodDays` INTEGER NOT NULL, `diaryDays` INTEGER NOT NULL, `goodDays` INTEGER NOT NULL, " +
+                "`proteinDays` INTEGER NOT NULL, `workouts` INTEGER NOT NULL, `workoutGoal` INTEGER NOT NULL, " +
+                "`trendChangeKg` REAL, `weeklyRatePercent` REAL, `fatChange` REAL, " +
+                "`muscleSignal` TEXT NOT NULL, `signalNote` TEXT NOT NULL, `flatWeeks` INTEGER NOT NULL, " +
+                "`caloriesBefore` REAL, `caloriesAfter` REAL, `proteinBefore` REAL, `proteinAfter` REAL, " +
+                "`fatBefore` REAL, `fatAfter` REAL, `carbsBefore` REAL, `carbsAfter` REAL, " +
+                "`note` TEXT NOT NULL, `nextAction` TEXT NOT NULL, PRIMARY KEY(`date`))"
+        )
+        db.execSQL("ALTER TABLE settings ADD COLUMN checkInWeekday INTEGER NOT NULL DEFAULT 7")
+        db.execSQL("ALTER TABLE settings ADD COLUMN workoutGoal INTEGER NOT NULL DEFAULT 3")
+        db.execSQL("ALTER TABLE settings ADD COLUMN fatBurnStartDate TEXT DEFAULT NULL")
+        db.execSQL("ALTER TABLE settings ADD COLUMN lastCheckInDate TEXT DEFAULT NULL")
+    }
+}
+
 @Database(
     entities = [
         MealEntity::class,
@@ -126,9 +153,10 @@ val MIGRATION_9_10 = object : Migration(9, 10) {
         RefinementJobEntity::class,
         ToolJobEntity::class,
         RecipeEntity::class,
-        BodyMeasurementEntity::class
+        BodyMeasurementEntity::class,
+        CheckInEntity::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = false
 )
 abstract class NutriLensDatabase : RoomDatabase() {
@@ -144,6 +172,7 @@ abstract class NutriLensDatabase : RoomDatabase() {
     abstract fun toolJobDao(): ToolJobDao
     abstract fun recipeDao(): RecipeDao
     abstract fun bodyMeasurementDao(): BodyMeasurementDao
+    abstract fun checkInDao(): CheckInDao
 
     companion object {
         @Volatile
@@ -159,7 +188,7 @@ abstract class NutriLensDatabase : RoomDatabase() {
                     .addMigrations(
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
                         MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
-                        MIGRATION_9_10
+                        MIGRATION_9_10, MIGRATION_10_11
                     )
                     .build().also { INSTANCE = it }
             }

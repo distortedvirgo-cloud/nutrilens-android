@@ -16,7 +16,11 @@ import kotlin.math.roundToInt
  * а не среднего человека.
  */
 object FatBurnPlanner {
-    /** Пересчёт не чаще раза в неделю: вес скачет от воды, дневные решения — шум. */
+    /**
+     * Неделя между пересчётами: вес скачет от воды, дневные решения — шум.
+     * С 3.22 план сам по таймеру не пересчитывается — только на недельном чек-ине
+     * (см. [checkIn]), при включении режима и смене цели.
+     */
     const val RECALC_DAYS = 7L
 
     /** Окно данных для фактического расхода. */
@@ -100,7 +104,9 @@ object FatBurnPlanner {
         val nextDate: LocalDate,
         val data: DataStatus,
         /** Процента жира ещё нет — взяли типичный (25% мужчинам, 32% женщинам). */
-        val assumedFat: Boolean
+        val assumedFat: Boolean,
+        /** Безопасный минимум калорий (обмен в покое, не ниже 1500/1200) — ниже план не опускается. */
+        val floor: Double = 0.0
     )
 
     /** Пора ли пересчитать: плана нет, прошла неделя или дата из будущего (сменили часы). */
@@ -218,9 +224,124 @@ object FatBurnPlanner {
             date = input.today,
             nextDate = input.today.plusDays(RECALC_DAYS),
             data = win.status,
-            assumedFat = assumedFat
+            assumedFat = assumedFat,
+            floor = floor
         )
     }
+
+    // ---------- Недельный чек-ин: единственное место, где план меняется ----------
+
+    /** Шаг правки калорий на чек-ине: маленький, чтобы не качать вес водой. */
+    const val CHECKIN_STEP_KCAL = 100.0
+
+    /** Сигнал «мышцы под защитой»: силовые, белок и спокойный темп. */
+    enum class MuscleSignal { GREEN, YELLOW, RED }
+
+    data class CheckInContext(
+        val previousProtein: Double?,
+        val previousFat: Double?,
+        val previousCarbs: Double?,
+        /** Темп по сглаженному тренду, % веса в неделю (плюс — худеешь); запасной, если МНК не готов. */
+        val trendWeeklyPercent: Double?,
+        val diaryDays: Int,
+        val diaryNeeded: Int,
+        val periodDays: Int,
+        val signal: MuscleSignal,
+        /** Голод на 5 из 5 два чек-ина подряд. */
+        val hungerHighTwice: Boolean,
+        /** Сколько прошлых чек-инов подряд вес стоял при полном дневнике. */
+        val previousFlatWeeks: Int
+    )
+
+    data class CheckInPlan(
+        val plan: Plan,
+        val changed: Boolean,
+        /** Темп, по которому принималось решение (МНК, иначе тренд); null — данных мало. */
+        val ratePercent: Double?,
+        /** Недель подряд «вес стоит» с учётом этой. */
+        val flatWeeks: Int
+    )
+
+    /**
+     * Решение чек-ина. Темп считается тем же МНК, что и раньше (математику не трогаем),
+     * а правила — по таблице: в норме — без изменений, быстро — +100, стоит две недели
+     * при полном дневнике — −50…100, три недели — не режем дальше и советуем поддержку,
+     * красный сигнал мышц или голод 5 дважды — +100, неполный дневник — без изменений.
+     * Шаг ±150 и безопасный минимум сохраняются.
+     */
+    fun checkIn(input: Input, ctx: CheckInContext): CheckInPlan {
+        val base = compute(input)
+        val rate = base.actualWeeklyPercent ?: ctx.trendWeeklyPercent
+        val prev = input.previousCalories?.takeIf { it > 0 }
+            ?: return CheckInPlan(base, true, rate, 0) // плана ещё не было — первый план как обычно
+
+        val diaryOk = ctx.diaryDays >= ctx.diaryNeeded
+        val flatNow = rate != null && rate < 0.2
+        val flatWeeks = if (diaryOk && flatNow) ctx.previousFlatWeeks + 1 else 0
+
+        fun keep(note: String): CheckInPlan = CheckInPlan(
+            base.copy(
+                calories = prev,
+                protein = ctx.previousProtein ?: base.protein,
+                fat = ctx.previousFat ?: base.fat,
+                carbs = ctx.previousCarbs ?: base.carbs,
+                note = note
+            ),
+            changed = false,
+            ratePercent = rate,
+            flatWeeks = flatWeeks
+        )
+
+        fun shift(delta: Double, note: String): CheckInPlan {
+            val bounded = (prev + delta).coerceIn(prev - MAX_STEP_KCAL, prev + MAX_STEP_KCAL)
+            val calories = round10(bounded.coerceAtLeast(base.floor))
+            val carbs = round5((calories - base.protein * 4 - base.fat * 9) / 4).coerceAtLeast(50.0)
+            // Минимум важнее правила: если упёрлись в него — честно говорим.
+            val floorNote = if (delta < 0 && calories > bounded + 1) ". Ниже не опускаю — это безопасный минимум" else ""
+            return CheckInPlan(
+                base.copy(calories = calories, carbs = carbs, note = note + floorNote),
+                changed = abs(calories - prev) >= 10,
+                ratePercent = rate,
+                flatWeeks = flatWeeks
+            )
+        }
+
+        // Неполный дневник — данных о еде нет, любое решение было бы гаданием.
+        if (!diaryOk) {
+            return keep(
+                "Еда записана ${ctx.diaryDays} из ${ctx.periodDays} дней — план оставил прежним: " +
+                    "по неполному дневнику не видно, как он работает"
+            )
+        }
+        if (ctx.signal == MuscleSignal.RED) {
+            return shift(CHECKIN_STEP_KCAL, "Мышцам не хватает поддержки — добавил ${CHECKIN_STEP_INT} ккал")
+        }
+        if (ctx.hungerHighTwice) {
+            return shift(CHECKIN_STEP_KCAL, "Голод на максимуме вторую неделю — добавил ${CHECKIN_STEP_INT} ккал, так легче держаться")
+        }
+        if (rate == null) return keep("Пока мало взвешиваний, чтобы увидеть темп, — план без изменений")
+        if (rate > 1.0) {
+            return shift(CHECKIN_STEP_KCAL, "Вес уходит быстрее 1% в неделю — добавил ${CHECKIN_STEP_INT} ккал, чтобы сберечь мышцы")
+        }
+        if (flatNow) {
+            return when {
+                flatWeeks >= 3 -> keep(
+                    "Вес стоит $flatWeeks-ю неделю — дальше не урезаю. Попробуй 1–2 недели поесть " +
+                        "на поддержке (≈ ${round10(base.tdee).roundToInt()} ккал), потом продолжим"
+                )
+                flatWeeks == 2 -> {
+                    // Вес совсем не уходит или растёт — шаг побольше, едва уходит — поменьше.
+                    val cut = if (rate <= 0.0) 100 else 50
+                    shift(-cut.toDouble(), "Вес стоит вторую неделю при полном дневнике — снизил на $cut ккал")
+                }
+                else -> keep("Вес пока стоит — подождём неделю: вода может прятать результат")
+            }
+        }
+        if (rate < 0.4) return keep("Вес уходит спокойно — план без изменений")
+        return keep("Темп в норме — план без изменений")
+    }
+
+    private const val CHECKIN_STEP_INT = 100
 
     private const val MAX_STEP_INT = 150
 

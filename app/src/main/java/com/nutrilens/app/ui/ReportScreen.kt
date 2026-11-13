@@ -52,6 +52,8 @@ import com.nutrilens.app.data.NutriLensDatabase
 import com.nutrilens.app.data.SettingsRepository
 import com.nutrilens.app.data.WeightEntity
 import com.nutrilens.app.data.latestFatPercent
+import com.nutrilens.app.insights.FatBurnPlanner
+import com.nutrilens.app.insights.Trend
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.EmojiEvents
@@ -115,6 +117,10 @@ data class ReportState(
     val days: List<DayStat> = emptyList(),
     val monthly: List<DayStat> = emptyList(),
     val weights: List<WeightEntity> = emptyList(),
+    /** Сглаженный тренд веса за период (посчитан по истории подлиннее, чтобы «разогреться»). */
+    val weightTrend: List<Trend.Point> = emptyList(),
+    /** Темп по тренду, % веса в неделю (плюс — худеешь); null — мало взвешиваний. */
+    val weeklyLossPercent: Double? = null,
     val waterAvgMl: Int = 0,
     val waterNormMl: Int = 0,
     val goal: Double = 2000.0,
@@ -255,6 +261,12 @@ class ReportViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         val weights = db.weightDao().since(start.format(fmt))
+        val trendAll = Trend.smooth(
+            db.weightDao().since(start.minusDays(60).format(fmt)).mapNotNull { w ->
+                runCatching { FatBurnPlanner.DayValue(LocalDate.parse(w.date), w.weight) }.getOrNull()
+            }
+        )
+        val weightTrend = trendAll.filter { it.date >= start }
         val water = db.waterDao().between(start.format(fmt), today.format(fmt))
         val waterAvg = if (water.isEmpty()) 0 else water.sumOf { it.ml } / water.size
         val lastWeight = db.weightDao().latest()?.weight
@@ -265,6 +277,8 @@ class ReportViewModel(application: Application) : AndroidViewModel(application) 
             days = days,
             monthly = monthly,
             weights = weights,
+            weightTrend = weightTrend,
+            weeklyLossPercent = Trend.weeklyLossPercent(trendAll),
             waterAvgMl = waterAvg,
             waterNormMl = waterNorm,
             goal = goal,
@@ -306,6 +320,8 @@ fun ReportScreen(
 
         // Состав тела не зависит от периода и от наличия еды — поэтому над переключателем.
         BodyCompositionSection(modifier = Modifier.staggeredIn(1), viewModel = bodyFatViewModel)
+        // Режим «Сжигание жира»: история недельных чек-инов — тоже вне периода.
+        CheckInHistorySection(modifier = Modifier.staggeredIn(1))
 
         // Выбранный период живёт во ViewModel — переключатель не сбрасывается
         // при возврате на вкладку.
@@ -360,7 +376,7 @@ fun ReportScreen(
                     Spacer(Modifier.height(16.dp))
                     NarrativeCard(state)
                     Spacer(Modifier.height(16.dp))
-                    WeightCard(state.weights)
+                    WeightCard(state.weightTrend, state.weeklyLossPercent)
                     Spacer(Modifier.height(16.dp))
                     WaterCard(state.waterAvgMl, state.waterNormMl)
                     Spacer(Modifier.height(16.dp))
@@ -675,8 +691,13 @@ private fun LegendDot(color: Color, label: String) {
     }
 }
 
+/**
+ * Вес: главная цифра — сглаженный тренд («тренд 81,4 кг»), последнее взвешивание —
+ * вторым планом; линия — тренд, бледные точки — реальные взвешивания.
+ * Так скачки воды не пугают, а темп в неделю считается по тренду.
+ */
 @Composable
-private fun WeightCard(weights: List<WeightEntity>) {
+private fun WeightCard(trend: List<Trend.Point>, weeklyLossPercent: Double?) {
     FreshCard(Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(18.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -686,8 +707,8 @@ private fun WeightCard(weights: List<WeightEntity>) {
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f)
                 )
-                if (weights.size >= 2) {
-                    val delta = weights.last().weight - weights.first().weight
+                if (trend.size >= 2) {
+                    val delta = trend.last().trend - trend.first().trend
                     val sign = if (delta > 0) "+" else ""
                     val deltaColor = if (delta > 0) MaterialTheme.colorScheme.tertiary
                     else MaterialTheme.colorScheme.primary
@@ -704,7 +725,29 @@ private fun WeightCard(weights: List<WeightEntity>) {
                     }
                 }
             }
-            if (weights.size < 2) {
+            val last = trend.lastOrNull()
+            if (last != null) {
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.Bottom) {
+                    DisplayNumber("%.1f".format(last.trend), size = 30, color = MaterialTheme.colorScheme.onSurface)
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "кг · тренд",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 3.dp)
+                    )
+                }
+                Text(
+                    "Последнее взвешивание ${"%.1f".format(last.raw)} кг" +
+                        (weeklyLossPercent?.let { r ->
+                            " · " + if (r >= 0) "−${"%.1f".format(r)}% в неделю" else "+${"%.1f".format(-r)}% в неделю"
+                        } ?: ""),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (trend.size < 2) {
                 Spacer(Modifier.height(10.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconBadge(Icons.Rounded.MonitorWeight, MaterialTheme.colorScheme.secondary, size = 36)
@@ -717,24 +760,20 @@ private fun WeightCard(weights: List<WeightEntity>) {
                 }
             } else {
                 Spacer(Modifier.height(14.dp))
-                WeightChart(weights)
+                TrendLineChart(trend.map { it.trend }, MaterialTheme.colorScheme.secondary, raw = trend.map { it.raw })
             }
         }
     }
 }
 
-/** Линия веса «прорисовывается» слева направо, под ней — мягкая градиентная заливка. */
-@Composable
-private fun WeightChart(weights: List<WeightEntity>) {
-    TrendLineChart(weights.map { it.weight }, MaterialTheme.colorScheme.secondary)
-}
-
 /**
  * Линия тренда (вес, процент жира): прорисовывается слева направо, под ней —
  * мягкая заливка, снизу мин/макс. Общая для «Веса» и «Состава тела».
+ * [raw] — сырые измерения той же длины, что [values]: тогда линия — сглаженный
+ * тренд, а реальные числа — бледные точки (видно шум, но смотришь на тренд).
  */
 @Composable
-internal fun TrendLineChart(values: List<Double>, line: Color, unit: String = "") {
+internal fun TrendLineChart(values: List<Double>, line: Color, unit: String = "", raw: List<Double>? = null) {
     val surface = MaterialTheme.colorScheme.surface
     val draw = remember { Animatable(0f) }
     LaunchedEffect(values) {
@@ -742,10 +781,12 @@ internal fun TrendLineChart(values: List<Double>, line: Color, unit: String = ""
         draw.animateTo(1f, tween(Motion.ExtraLong + 300, easing = Motion.Emphasized))
     }
     if (values.isEmpty()) return
+    val dots = raw?.takeIf { it.size == values.size }
+    val all = if (dots != null) values + dots else values
     Column {
         Canvas(modifier = Modifier.fillMaxWidth().height(130.dp)) {
-            val minW = values.min()
-            val maxW = values.max()
+            val minW = all.min()
+            val maxW = all.max()
             val span = (maxW - minW).coerceAtLeast(1.0)
             val pad = 10.dp.toPx()
             val xFor = { i: Int ->
@@ -776,10 +817,20 @@ internal fun TrendLineChart(values: List<Double>, line: Color, unit: String = ""
                     path, line,
                     style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
                 )
-                values.forEachIndexed { i, v ->
-                    val center = Offset(xFor(i), yFor(v))
-                    drawCircle(line, radius = 5.dp.toPx(), center = center)
-                    drawCircle(surface, radius = 2.5.dp.toPx(), center = center)
+                if (dots != null) {
+                    dots.forEachIndexed { i, v ->
+                        drawCircle(line.copy(alpha = 0.35f), radius = 3.5.dp.toPx(), center = Offset(xFor(i), yFor(v)))
+                    }
+                    val last = values.size - 1
+                    val end = Offset(xFor(last), yFor(values[last]))
+                    drawCircle(line, radius = 5.dp.toPx(), center = end)
+                    drawCircle(surface, radius = 2.5.dp.toPx(), center = end)
+                } else {
+                    values.forEachIndexed { i, v ->
+                        val center = Offset(xFor(i), yFor(v))
+                        drawCircle(line, radius = 5.dp.toPx(), center = center)
+                        drawCircle(surface, radius = 2.5.dp.toPx(), center = center)
+                    }
                 }
             }
         }
