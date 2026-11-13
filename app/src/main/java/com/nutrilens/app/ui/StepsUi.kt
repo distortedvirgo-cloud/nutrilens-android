@@ -150,7 +150,7 @@ class StepsViewModel(application: Application) : AndroidViewModel(application) {
 }
 
 /** Пустой контракт на случай, если библиотека Health Connect не отдала свой: кнопку тогда не показываем. */
-private class NoOpPermissionContract : ActivityResultContract<Set<String>, Set<String>>() {
+internal class NoOpPermissionContract : ActivityResultContract<Set<String>, Set<String>>() {
     override fun createIntent(context: Context, input: Set<String>): Intent = Intent()
     override fun parseResult(resultCode: Int, intent: Intent?): Set<String> = emptySet()
 }

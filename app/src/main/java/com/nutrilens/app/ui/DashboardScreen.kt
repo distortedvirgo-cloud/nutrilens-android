@@ -532,6 +532,13 @@ fun DashboardScreen(
         else runCatching { com.nutrilens.app.data.CoachNudges.load(appContext) }.getOrNull()
     }
 
+    // Цикл (3.27): «Начались?» в ожидаемый день — только на сегодня и если учёт включён.
+    var cycleAnswered by remember { mutableStateOf(false) }
+    val cycleAsk by produceState(false, settings, selectedDate, cycleAnswered) {
+        value = selectedDate == LocalDate.now() && !cycleAnswered &&
+            runCatching { com.nutrilens.app.data.CycleStore.shouldAsk(appContext, settings) }.getOrDefault(false)
+    }
+
     LaunchedEffect(Unit) {
         val date = initialDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
             ?: LocalDate.now()
@@ -667,6 +674,22 @@ fun DashboardScreen(
                         com.nutrilens.app.data.CoachNudges.dismiss(appContext, nudge.key)
                         hiddenNudge = nudge.key
                     })
+                }
+            }
+        }
+        if (cycleAsk) {
+            item(key = "cycle-ask") {
+                Box(Modifier.introIn(2, introDone)) {
+                    CycleAskCard(
+                        onYes = {
+                            com.nutrilens.app.data.CycleStore.addStart(appContext)
+                            cycleAnswered = true
+                        },
+                        onNotYet = {
+                            com.nutrilens.app.data.CycleStore.notYet(appContext)
+                            cycleAnswered = true
+                        }
+                    )
                 }
             }
         }

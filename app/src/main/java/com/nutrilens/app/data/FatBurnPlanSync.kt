@@ -3,6 +3,7 @@ package com.nutrilens.app.data
 import android.content.Context
 import android.util.Log
 import com.nutrilens.app.insights.CheckInPlanner
+import com.nutrilens.app.insights.Cycle
 import com.nutrilens.app.insights.FatBurnPlanner
 import com.nutrilens.app.insights.FatBurnProgram
 import com.nutrilens.app.insights.Trend
@@ -506,6 +507,12 @@ object FatBurnPlanSync {
         val strengthWorse = strength?.signal != null && muscleSignal != review.signal.name.lowercase()
         val signalNote = if (strengthWorse) strength!!.note else review.signalNote
 
+        // 5в. Цикл (3.27): в «водной фазе» неделя «вес стоит» не засчитывается.
+        val waterPhase = CycleStore.active(context, settings).let { on ->
+            if (on) CycleStore.syncFromHealthConnect(context)
+            on && Cycle.checkInInWaterPhase(today, CycleStore.starts(context))
+        }
+
         // 6. Решение по плану.
         val input = buildInput(db, settings, target, today, usePrevious = true) ?: return null
         val decision = FatBurnPlanner.checkIn(
@@ -520,7 +527,8 @@ object FatBurnPlanSync {
                 periodDays = period,
                 signal = FatBurnPlanner.MuscleSignal.valueOf(muscleSignal.uppercase()),
                 hungerHighTwice = hunger == 5 && previous?.hunger == 5,
-                previousFlatWeeks = previous?.flatWeeks ?: 0
+                previousFlatWeeks = previous?.flatWeeks ?: 0,
+                waterPhase = waterPhase
             )
         )
 

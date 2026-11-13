@@ -259,7 +259,9 @@ object FatBurnPlanner {
         /** Голод на 5 из 5 два чек-ина подряд. */
         val hungerHighTwice: Boolean,
         /** Сколько прошлых чек-инов подряд вес стоял при полном дневнике. */
-        val previousFlatWeeks: Int
+        val previousFlatWeeks: Int,
+        /** Чек-ин в «водной фазе» цикла (3.27): «вес стоит» не считается, решение — через неделю. */
+        val waterPhase: Boolean = false
     )
 
     data class CheckInPlan(
@@ -286,7 +288,12 @@ object FatBurnPlanner {
 
         val diaryOk = ctx.diaryDays >= ctx.diaryNeeded
         val flatNow = rate != null && rate < 0.2
-        val flatWeeks = if (diaryOk && flatNow) ctx.previousFlatWeeks + 1 else 0
+        // Водная фаза цикла: неделя «вес стоит» не засчитывается, но и счётчик не сбрасываем.
+        val flatWeeks = when {
+            diaryOk && flatNow && ctx.waterPhase -> ctx.previousFlatWeeks
+            diaryOk && flatNow -> ctx.previousFlatWeeks + 1
+            else -> 0
+        }
 
         fun keep(note: String): CheckInPlan = CheckInPlan(
             base.copy(
@@ -331,6 +338,9 @@ object FatBurnPlanner {
         if (rate == null) return keep("Пока мало взвешиваний, чтобы увидеть темп, — план без изменений")
         if (rate > 1.0) {
             return shift(CHECKIN_STEP_KCAL, "Вес уходит быстрее 1% в неделю — добавил ${CHECKIN_STEP_INT} ккал, чтобы сберечь мышцы")
+        }
+        if (flatNow && ctx.waterPhase) {
+            return keep("Вес выше из-за воды перед циклом или в первые дни — это нормально. Решение по калориям — на следующей неделе")
         }
         if (flatNow) {
             return when {

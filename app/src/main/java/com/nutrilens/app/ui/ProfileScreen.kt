@@ -208,6 +208,11 @@ fun ProfileScreen(
         // Шаги (3.23): включение, источник, Health Connect и цель — рядом с режимом и целью.
         Spacer(Modifier.height(12.dp))
         StepsSettingsSection(modifier = Modifier.staggeredIn(2))
+        // Цикл (3.27): только в женском профиле, по умолчанию выключен.
+        if (!com.nutrilens.app.data.BodyComposition.isMale(settings)) {
+            Spacer(Modifier.height(12.dp))
+            CycleSettingsSection(settings = settings, modifier = Modifier.staggeredIn(2))
+        }
 
         groups.forEachIndexed { gi, (title, rows) ->
             Spacer(Modifier.height(Space.Section))

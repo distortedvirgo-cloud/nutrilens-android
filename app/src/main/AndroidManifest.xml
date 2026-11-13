@@ -13,6 +13,8 @@
          чтение шагов из Health Connect. Спрашиваются только когда человек включает шаги. -->
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
     <uses-permission android:name="android.permission.health.READ_STEPS" />
+    <!-- Учёт цикла (3.27): только даты месячных, только по включённому переключателю. -->
+    <uses-permission android:name="android.permission.health.READ_MENSTRUATION" />
     <uses-feature android:name="android.hardware.sensor.stepcounter" android:required="false" />
     <!-- На случай, если библиотека Health Connect требует minSdk выше нашего: весь код HC
          проверяет доступность (getSdkStatus) и обёрнут в try/catch, так что на старых

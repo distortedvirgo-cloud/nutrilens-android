@@ -27,6 +27,7 @@ class CheckInWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         if (!settings.weighInReminderEnabled || settings.targetFatPercent == null) return Result.success()
         val today = LocalDate.now()
         notifyNudge(today)
+        notifyCycle(today, settings)
         if (today.dayOfWeek != CheckInPlanner.dayOfWeek(settings.checkInWeekday)) return Result.success()
         if (!settings.isCheckInDue(today)) return Result.success()
         val hour = LocalTime.now().hour
@@ -67,7 +68,29 @@ class CheckInWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         )
     }
 
+    /**
+     * Цикл (3.27): в ожидаемый день — одно уведомление «Начались?» днём, по дню не больше
+     * одного. Ответить можно карточкой на «Сегодня».
+     */
+    private fun notifyCycle(today: LocalDate, settings: com.nutrilens.app.data.SettingsEntity) {
+        val hour = LocalTime.now().hour
+        if (hour < 10 || hour >= 20) return
+        if (!com.nutrilens.app.data.CycleStore.shouldAsk(applicationContext, settings, today)) return
+        val prefs = applicationContext.getSharedPreferences("checkin", Context.MODE_PRIVATE)
+        if (prefs.getLong("cycle_notified", 0L) == today.toEpochDay()) return
+        prefs.edit().putLong("cycle_notified", today.toEpochDay()).apply()
+        NotificationHelper.post(
+            applicationContext,
+            NotificationHelper.CHANNEL_REMINDERS,
+            CYCLE_NOTIFICATION_ID,
+            "Месячные начались?",
+            "Отметь на «Сегодня» — тогда чек-ин не примет воду за «вес стоит»",
+            NotificationHelper.mainActivityPendingIntent(applicationContext, CYCLE_NOTIFICATION_ID)
+        )
+    }
+
     companion object {
+        const val CYCLE_NOTIFICATION_ID = 1005
         const val NOTIFICATION_ID = 1003
         const val NUDGE_NOTIFICATION_ID = 1004
     }
