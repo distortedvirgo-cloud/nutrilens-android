@@ -200,6 +200,13 @@ function cleanDays(days) {
     if (!Number.isFinite(calories) || calories < 0 || calories > 20000) return null
     if (!Number.isFinite(goal) || goal < 0 || goal > 10000) return null
     out[k] = { calories: Math.round(calories * 10) / 10, goal: Math.round(goal) }
+    // ps — оценка дня программы «Сжигание жира» (0–100). Есть только у участников
+    // программы; старые клиенты её не шлют и не читают.
+    if (d.ps != null) {
+      const ps = Number(d.ps)
+      if (!Number.isFinite(ps) || ps < 0 || ps > 100) return null
+      out[k].ps = Math.round(ps)
+    }
   }
   return out
 }

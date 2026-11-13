@@ -7,17 +7,21 @@
 // просто поле внутри. Поэтому смена ника не создаёт второго участника.
 import { getSettings, mealsBetween, saveSettings, type Settings } from './db'
 import { addDays, iso, mondayOf } from './insights'
-import { effectiveCalories } from './body'
+import { effectiveCalories, fatGoalOn } from './body'
+import { dayGrades } from './plan'
 
 export const LEADERBOARD_API = (import.meta.env.VITE_LEADERBOARD_API as string | undefined)?.replace(/\/+$/, '') || ''
 export const leaderboardConfigured = () => !!LEADERBOARD_API
 
-export interface LbDay { calories: number; goal: number }
+/** ps — оценка дня программы «Сжигание жира» (0–100), только у её участников. */
+export interface LbDay { calories: number; goal: number; ps?: number }
 export interface LbEntry { id: string; nickname: string; days: Record<string, LbDay>; updatedAt: number; avatar?: string }
 export type LbPeriod = 'day' | 'week' | 'month'
 export interface LbRow {
   id: string; nickname: string; score: number; percent: number
   calories: number; goal: number; daysCounted: number; isOver: boolean; isSelf: boolean; avatar: string
+  /** В периоде есть дни программы: очки этих дней — оценка дня, а не попадание в калории. */
+  program: boolean
 }
 
 /** Старые файлы без id (Android до 3.0), не обновлявшиеся столько дней, скрываются. */
@@ -70,6 +74,14 @@ export async function pushOwn(): Promise<boolean> {
   // Сегодня — всегда, даже без еды, с текущей целью (как в Android).
   days[iso(today)] = { calories: days[iso(today)]?.calories ?? 0, goal }
   for (const d of Object.values(days)) d.calories = Math.round(d.calories * 10) / 10
+  // Участник программы соревнуется оценкой дня (калории, белок, движение, сон), а не только
+  // калориями. Пауза — обычные очки. Дни без записи активности (до 3.23) — тоже обычные.
+  if (fatGoalOn(s) && s.program && !s.program.pausedSince) {
+    const grades = await dayGrades(start, iso(today), s).catch(() => null)
+    for (const [date, g] of grades ?? []) {
+      if (g.score && !g.legacy && days[date]) days[date].ps = g.score.total
+    }
+  }
 
   const payload = JSON.stringify({ secret: s.playerSecret, nickname, days, avatar: s.avatar || '' })
   if (payload === lastPushed) return true
@@ -115,12 +127,14 @@ export function rows(entries: LbEntry[], period: LbPeriod, selfId: string): LbRo
     const counted = recs.filter((r) => r.goal > 0)
     const calories = counted.reduce((a, r) => a + r.calories, 0)
     const goal = counted.reduce((a, r) => a + r.goal, 0)
-    const scores = counted.map((r) => dayScore(r.calories, r.goal)!).filter((x) => x != null)
+    // День программы — её оценка дня; остальные — попадание в калории (обе шкалы 0–100).
+    const scores = counted.map((r) => (r.ps != null ? r.ps : dayScore(r.calories, r.goal))).filter((x): x is number => x != null)
     return {
       id: e.id, nickname: e.nickname,
       score: scores.length ? Math.floor(scores.reduce((a, b) => a + b, 0) / scores.length) : 0,
       percent: percentOf(calories, goal), calories, goal,
-      daysCounted: counted.length, isOver: calories > goal, isSelf: !!selfId && e.id === selfId, avatar: e.avatar ?? ''
+      daysCounted: counted.length, isOver: calories > goal, isSelf: !!selfId && e.id === selfId, avatar: e.avatar ?? '',
+      program: counted.some((r) => r.ps != null)
     }
   }).sort((a, b) => b.score - a.score || b.daysCounted - a.daysCounted || a.nickname.localeCompare(b.nickname))
 }

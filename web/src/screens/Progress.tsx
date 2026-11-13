@@ -13,6 +13,7 @@ import { CheckinHistory, CheckinResultSheet, LEVEL_COLOR } from './Checkin'
 import { Badge, Bar, Segmented, useData } from '../ui/kit'
 import { IcAlert, IcChart, IcDrop, IcFire, IcFood, IcInfo, IcPlus, IcRuler, IcScale, IcSpark, IcTarget } from '../ui/icons'
 import { MeasureSheet } from './Body'
+import { BodyPhotosCard } from './BodyPhotos'
 import { PhaseList, ProgramTimeline, phaseTitle } from './Program'
 import { type Program, PROGRAM, forecast, inDeficit } from '../data/program'
 
@@ -82,6 +83,7 @@ export function ProgressScreen() {
         {data && (data.targetFat != null || data.body.length > 0) && (
           <BodyCard list={data.body} weight={data.weight} target={data.targetFat} onMeasure={() => setMeasuring(true)} />
         )}
+        {data?.fatMode && <BodyPhotosCard />}
         {data && data.activeCount === 0 && (
           <div className="card col" style={{ alignItems: 'center', padding: '36px 24px', textAlign: 'center', gap: 8 }}>
             <Badge tint="var(--primary)" size={60}><IcChart size={30} /></Badge>

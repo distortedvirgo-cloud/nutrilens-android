@@ -20,7 +20,8 @@ import { type DayGrade, type DayScore, SCORE, fmtInt, gradeDay, scoreDay } from 
 import { plural } from '../data/body'
 import { MeasureSheet } from './Body'
 import { CheckinCard, CheckinSheet, LEVEL_COLOR } from './Checkin'
-import { CompletedCard, CompletedSheet, NoticeCard, phaseTitle } from './Program'
+import { CompletedCard, CompletedSheet, NoticeCard, NudgeCard, phaseTitle } from './Program'
+import { dismissNudge, loadNudge } from '../data/coachNudge'
 import { type Program, currentPhase, inDeficit, phaseBadge, phaseLine } from '../data/program'
 import { Bar, Badge, Photo, Ring, Sheet, useCountUp, useData, useSheetClose, useToast } from '../ui/kit'
 import {
@@ -51,6 +52,8 @@ export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOp
   const today = iso(new Date())
   const isToday = date === today
 
+  // Прочитанная подсказка коуча прячется сразу, не дожидаясь перезагрузки данных.
+  const [hiddenNudge, setHiddenNudge] = useState<string | null>(null)
   const data = useData(async () => {
     const monday = mondayOf(d)
     const week = await mealsBetween(iso(monday), iso(addDays(monday, 6)))
@@ -74,7 +77,8 @@ export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOp
       streak: calcStreak(await allMealDates(), new Date()),
       body: (await latestMeasurement()) ?? null,
       jobs: await jobs(),
-      favNames: new Set((await favorites()).map((f) => f.name))
+      favNames: new Set((await favorites()).map((f) => f.name)),
+      nudge: date === today ? await loadNudge(settings).catch(() => null) : null
     }
   }, [date], null)
 
@@ -124,6 +128,9 @@ export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOp
         )}
         {program?.notice && isToday && <NoticeCard title={program.notice.title} text={program.notice.text} />}
         {program?.completedDate && !program.stayMaintenance && isToday && <CompletedCard onOpen={() => setSummary(true)} />}
+        {data.nudge && data.nudge.key !== hiddenNudge && !program?.notice && (
+          <NudgeCard title={data.nudge.title} text={data.nudge.text} onDismiss={() => { dismissNudge(data.nudge!.key); setHiddenNudge(data.nudge!.key) }} />
+        )}
         {needsKey && (
           <button className="card pad-16 pressable row gap-14" onClick={onSetupAi}
             style={{ textAlign: 'left', border: '1.5px solid color-mix(in srgb, var(--primary) 50%, transparent)', background: 'color-mix(in srgb, var(--primary) 12%, var(--surface))' }}>

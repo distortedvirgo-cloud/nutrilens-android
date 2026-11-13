@@ -106,7 +106,7 @@ export function LeaderboardScreen({ onBack }: { onBack: () => void }) {
                   style={{ padding: '12px 14px', borderTop: i ? '1px solid var(--hairline)' : 'none', background: r.isSelf ? 'color-mix(in srgb, var(--primary) 10%, transparent)' : undefined }}>
                   <PlacedAvatar place={i} src={r.avatar} nickname={r.nickname} />
                   <div className="grow" style={{ minWidth: 0 }}>
-                    <div className="title ellipsis">{r.nickname || 'Без ника'}{r.isSelf ? ' · ты' : ''}</div>
+                    <div className="title ellipsis">{r.program ? '🔥 ' : ''}{r.nickname || 'Без ника'}{r.isSelf ? ' · ты' : ''}</div>
                     <div className="small num">
                       {Math.round(r.calories)} / {Math.round(r.goal)} ккал
                       {period === 'week' ? ` · ${r.daysCounted}/7 дн.` : period === 'month' ? ` · ${r.daysCounted}/${daysInMonth} дн.` : ''}
@@ -121,6 +121,9 @@ export function LeaderboardScreen({ onBack }: { onBack: () => void }) {
             </div>
           )}
           <div className="small" style={{ textAlign: 'center' }}>Очки: 100 — ровно в цель, меньше — дальше от неё в любую сторону</div>
+          {list.some((r) => r.program) && (
+            <div className="small" style={{ textAlign: 'center' }}>🔥 — участник программы «Сжигание жира»: его очки — оценка дня (калории, белок, движение, сон)</div>
+          )}
         </div>
       )}
     </div>

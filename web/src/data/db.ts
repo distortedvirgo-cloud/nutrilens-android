@@ -96,6 +96,18 @@ export interface BodyMeasurement {
   fatPercent: number
 }
 
+/**
+ * Фото прогресса (3.25, по желанию). Хранятся только на этом устройстве: в резервную
+ * копию и лидерборд не попадают. estimate — грубая оценка ИИ, в план не идёт.
+ */
+export interface BodyPhoto {
+  id: string
+  date: string
+  full: Blob
+  thumb: Blob
+  estimate?: { low: number; high: number; comment: string; at: number }
+}
+
 export interface Favorite {
   id: string
   name: string
@@ -209,14 +221,17 @@ interface NutriSchema extends DBSchema {
   measurements: { key: string; value: BodyMeasurement }
   checkins: { key: string; value: CheckIn }
   activity: { key: string; value: DayActivity }
+  bodyPhotos: { key: string; value: BodyPhoto }
 }
 
 let dbPromise: Promise<IDBPDatabase<NutriSchema>> | null = null
 
 export function db(): Promise<IDBPDatabase<NutriSchema>> {
   if (!dbPromise) {
-    dbPromise = openDB<NutriSchema>('nutrilens', 5, {
+    dbPromise = openDB<NutriSchema>('nutrilens', 6, {
       upgrade(d, oldVersion) {
+        // v6: фото прогресса тела (по желанию). Только новое хранилище.
+        if (oldVersion < 6) d.createObjectStore('bodyPhotos', { keyPath: 'id' })
         // v5: активность по дням — шаги и «поспал 8 часов». Только новое хранилище.
         if (oldVersion < 5) d.createObjectStore('activity', { keyPath: 'date' })
         // v4: недельные чек-ины режима «Сжигание жира». Только новое хранилище.
@@ -325,6 +340,20 @@ export async function putPhoto(id: string, full: Blob, thumb: Blob): Promise<voi
 
 export async function getPhoto(id: string): Promise<{ full: Blob; thumb: Blob } | undefined> {
   return (await db()).get('photos', id)
+}
+
+export async function bodyPhotos(): Promise<BodyPhoto[]> {
+  return (await (await db()).getAll('bodyPhotos')).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))
+}
+
+export async function putBodyPhoto(p: BodyPhoto): Promise<void> {
+  await (await db()).put('bodyPhotos', p)
+  notifyChanged()
+}
+
+export async function deleteBodyPhoto(id: string): Promise<void> {
+  await (await db()).delete('bodyPhotos', id)
+  notifyChanged()
 }
 
 // ---------- Вода, вес, тренировка, привычки ----------

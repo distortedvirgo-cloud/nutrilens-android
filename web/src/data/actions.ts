@@ -1,7 +1,7 @@
 // Действия приложения: фото, очередь ИИ-анализа, чат, бэкапы.
 import {
   type Job, type Meal, addChat, chatHistory, db, deleteJob, getMeal, getPhoto, getSettings,
-  activityOn, jobs, lastCheckin, workoutOn, latestMeasurement, latestWeight, mealsBetween, mealsOn, notifyChanged, putJob, putMeal, putPhoto, recentMeals, uid,
+  activityOn, jobs, lastCheckin, workoutOn, latestMeasurement, latestWeight, mealsBetween, mealsOn, notifyChanged, putBodyPhoto, putJob, putMeal, putPhoto, recentMeals, uid,
   type BodyMeasurement, type Recipe } from './db'
 import { analyzeMeal, chat } from '../ai'
 import { addDays, dayTotals, iso, nowTime } from './insights'
@@ -49,6 +49,12 @@ export async function storePhoto(file: Blob): Promise<string> {
   const id = uid()
   await putPhoto(id, full, thumb)
   return id
+}
+
+/** Фото прогресса тела: 1280 px для ИИ и сравнения, 360 px — миниатюра. Только на устройстве. */
+export async function storeBodyPhoto(file: Blob, date: string): Promise<void> {
+  const img = await decode(file)
+  await putBodyPhoto({ id: uid(), date, full: await toJpeg(img, 1280, 0.85), thumb: await toJpeg(img, 360, 0.8) })
 }
 
 export async function blobToBase64(b: Blob): Promise<string> {
