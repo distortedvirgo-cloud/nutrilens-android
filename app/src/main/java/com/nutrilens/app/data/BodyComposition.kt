@@ -1,5 +1,6 @@
 package com.nutrilens.app.data
 
+import com.nutrilens.app.insights.FatBurnProgram
 import kotlin.math.ceil
 import kotlin.math.log10
 import kotlin.math.roundToInt
@@ -137,6 +138,8 @@ object BodyComposition {
             } else {
                 proteinTarget(weightKg, fatPercent)?.let { append(" Цель по белку ${it.roundToInt()} г в день.") }
             }
+            // Программа с этапами (3.24): коуч знает этап и не зовёт «сорвавшимся» того, кто ест в перерыве.
+            settings.fatBurnProgramState?.let { append(" " + FatBurnProgram.coachLine(it, java.time.LocalDate.now())) }
             if (lastCheckIn != null) append(" " + checkInSummary(lastCheckIn))
         }
     }

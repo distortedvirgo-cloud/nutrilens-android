@@ -45,6 +45,7 @@ import com.nutrilens.app.data.FatBurnPlanSync
 import com.nutrilens.app.data.NutriLensDatabase
 import com.nutrilens.app.data.SettingsEntity
 import com.nutrilens.app.data.SettingsRepository
+import com.nutrilens.app.data.checkInsActive
 import com.nutrilens.app.ui.theme.NutriTheme
 import com.nutrilens.app.ui.theme.macroPalette
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -380,6 +381,8 @@ fun CheckInResultContent(c: CheckInEntity) {
     val primary = MaterialTheme.colorScheme.primary
     val periodText = if (c.periodDays == 7) "за неделю" else "за ${c.periodDays} ${plural(c.periodDays, "день", "дня", "дней")}"
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // Смена этапа программы (3.24) — первым и заметно: это главное, что поменялось.
+        c.phaseChange?.let { PhaseChangeBlock(it) }
         // Вес — по тренду: скачки воды не должны решать, удалась ли неделя.
         TonalSection(color = MaterialTheme.colorScheme.secondary) {
             TinyLabel("Вес по тренду", color = MaterialTheme.colorScheme.secondary)
@@ -460,7 +463,7 @@ fun CheckInResultContent(c: CheckInEntity) {
         // Новый план: было → стало и почему.
         FreshCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(Space.Card), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                TinyLabel("План на неделю", color = primary)
+                TinyLabel(if (c.phaseChange != null) "План на новый этап" else "План на неделю", color = primary)
                 val after = c.caloriesAfter
                 val before = c.caloriesBefore
                 Row(verticalAlignment = Alignment.Bottom) {
@@ -547,7 +550,7 @@ fun CheckInHistorySection(modifier: Modifier = Modifier, viewModel: CheckInViewM
                     title = "Чек-ины",
                     icon = Icons.Rounded.EventAvailable,
                     tint = MaterialTheme.colorScheme.primary,
-                    subtitle = nextCheckInText(settings)?.let { "Следующий — $it" } ?: "Итоги каждой недели"
+                    subtitle = nextCheckInText(settings)?.takeIf { settings.checkInsActive }?.let { "Следующий — $it" } ?: "Итоги каждой недели"
                 )
                 if (history.isEmpty()) {
                     Spacer(Modifier.height(10.dp))

@@ -146,7 +146,10 @@ data class SettingsEntity(
     // Шаги (3.23): включены ли (разрешение спрашивается только при включении) и цель на день.
     // Шаги — цель поведения, калорий к бюджету они не прибавляют.
     val stepsEnabled: Boolean = false,
-    val stepGoal: Int = 8000
+    val stepGoal: Int = 8000,
+    // Программа с этапами (3.24): блоки, перерывы, удержание и пауза — JSON-строкой
+    // (см. FatBurnProgramCodec), чтобы не заводить таблицу ради одного объекта. null — программы нет.
+    val fatBurnProgram: String? = null
 )
 
 @Entity(tableName = "analysis_jobs")

@@ -15,7 +15,7 @@ import java.time.LocalDate
  * Недельный чек-ин режима «Сжигание жира» (одна запись на дату).
  * Хранится всё, что было на экране итогов: так история показывает ровно то,
  * что человек видел, даже если формулы потом поменяются.
- * Схема таблицы обязана совпадать с MIGRATION_10_11 (+ avgScore из MIGRATION_11_12) один-в-один.
+ * Схема таблицы обязана совпадать с MIGRATION_10_11 (+ avgScore из MIGRATION_11_12, phaseChange из MIGRATION_12_13) один-в-один.
  */
 @Serializable
 @Entity(tableName = "check_ins")
@@ -56,7 +56,9 @@ data class CheckInEntity(
     val note: String = "",
     val nextAction: String = "",
     // Средняя оценка дня за период (3.23, 0–100); null — дней с оценкой не было или чек-ин старый.
-    val avgScore: Double? = null
+    val avgScore: Double? = null,
+    // Смена этапа программы на этом чек-ине (3.24): «Блок 1 завершён → 2 недели перерыва»; null — этап тот же.
+    val phaseChange: String? = null
 )
 
 @Dao
@@ -86,9 +88,20 @@ private fun parseDate(s: String?): LocalDate? = s?.let { runCatching { LocalDate
 val SettingsEntity.checkInReference: LocalDate?
     get() = parseDate(lastCheckInDate) ?: parseDate(fatBurnStartDate) ?: parseDate(planDate)
 
-/** Пора ли подвести неделю: режим включён и подошёл (или прошёл) день чек-ина. */
+/**
+ * Чек-ины идут, пока программа не на паузе и не ждёт выбора после итога:
+ * на паузе чек-инов и напоминаний нет — человек сам решил отдохнуть.
+ */
+val SettingsEntity.checkInsActive: Boolean
+    get() {
+        if (targetFatPercent == null) return false
+        val program = fatBurnProgramState ?: return true
+        return !program.paused && !program.awaitingChoice
+    }
+
+/** Пора ли подвести неделю: режим включён, программа идёт и подошёл (или прошёл) день чек-ина. */
 fun SettingsEntity.isCheckInDue(today: LocalDate = LocalDate.now()): Boolean =
-    targetFatPercent != null && CheckInPlanner.isDue(today, checkInWeekday, checkInReference)
+    checkInsActive && CheckInPlanner.isDue(today, checkInWeekday, checkInReference)
 
 /** Ближайший чек-ин; null — режим выключен. */
 fun SettingsEntity.nextCheckInDate(today: LocalDate = LocalDate.now()): LocalDate? =

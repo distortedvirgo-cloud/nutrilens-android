@@ -50,6 +50,8 @@ import com.nutrilens.app.data.FatBurnPlanSync
 import com.nutrilens.app.data.NutriLensDatabase
 import com.nutrilens.app.data.SettingsEntity
 import com.nutrilens.app.data.SettingsRepository
+import com.nutrilens.app.data.programMinTarget
+import com.nutrilens.app.data.programWarnTarget
 import com.nutrilens.app.ui.theme.NutriTheme
 import com.nutrilens.app.insights.CheckInPlanner
 import com.nutrilens.app.insights.FatBurnPlanner
@@ -139,27 +141,9 @@ class BodyFatViewModel(application: Application) : AndroidViewModel(application)
         it.copy(targetFatPercent = value?.coerceIn(BodyComposition.MIN_TARGET.toDouble(), BodyComposition.MAX_TARGET.toDouble()))
     }
 
-    /**
-     * Переключатель «Похудение / Сжигание жира». Включение ставит цель по умолчанию
-     * (15% мужчинам, 23% женщинам) и сбрасывает старый план — первый план считается
-     * с чистого листа, без ограничения ±150 ккал. Выключение план не стирает, но он
-     * больше не действует: снова работают ручные цели, которые никто не трогал.
-     */
-    fun setFatBurnMode(on: Boolean) = updateSettings {
-        if (on) {
-            if (it.targetFatPercent != null) it
-            else it.copy(
-                targetFatPercent = if (BodyComposition.isMale(it)) 15.0 else 23.0,
-                planCalories = null,
-                planDate = null,
-                // Отсюда считается первый чек-ин: не раньше чем через 5 дней данных.
-                fatBurnStartDate = LocalDate.now().toString(),
-                lastCheckInDate = null
-            )
-        } else {
-            it.copy(targetFatPercent = null)
-        }
-    }
+    // Включение режима с 3.24 — только через предупреждение и мастер запуска
+    // (FatBurnProgramViewModel.start), выключение — через подтверждение (stop):
+    // так у программы всегда есть старт, этапы и первый план.
 
     fun setSex(value: String) = updateSettings { it.copy(sex = value) }
 
@@ -392,11 +376,19 @@ private fun MeasureField(
 
 /** Секция Профиля: включить цель, выбрать процент, пол и рост для формулы, первый замер. */
 @Composable
-fun BodyFatGoalSection(modifier: Modifier = Modifier, viewModel: BodyFatViewModel = viewModel()) {
+fun BodyFatGoalSection(
+    modifier: Modifier = Modifier,
+    viewModel: BodyFatViewModel = viewModel(),
+    programViewModel: FatBurnProgramViewModel = viewModel()
+) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val measurements by viewModel.measurements.collectAsStateWithLifecycle()
     val lastWeight by viewModel.lastWeight.collectAsStateWithLifecycle()
     var showSheet by remember { mutableStateOf(false) }
+    // 3.24: включение — предупреждение → мастер запуска; выключение — подтверждение.
+    var showWarning by remember { mutableStateOf(false) }
+    var showLaunch by remember { mutableStateOf(false) }
+    var showStopConfirm by remember { mutableStateOf(false) }
     val palette = macroPalette()
     val target = settings.targetFatPercent
     val latest = measurements.lastOrNull()
@@ -415,7 +407,10 @@ fun BodyFatGoalSection(modifier: Modifier = Modifier, viewModel: BodyFatViewMode
             SegmentedSwitcher(
                 options = listOf(false to "Похудение", true to "🔥 Сжигание жира"),
                 selected = target != null,
-                onSelect = { viewModel.setFatBurnMode(it) },
+                onSelect = { on ->
+                    if (on && target == null) showWarning = true
+                    else if (!on && target != null) showStopConfirm = true
+                },
                 modifier = Modifier.fillMaxWidth()
             )
             Text(
@@ -439,9 +434,18 @@ fun BodyFatGoalSection(modifier: Modifier = Modifier, viewModel: BodyFatViewMode
                     }
                     PercentStepper(
                         value = target.roundToInt(),
-                        onChange = { viewModel.setTarget(it.toDouble()) }
+                        onChange = { viewModel.setTarget(it.toDouble()) },
+                        min = programMinTarget(BodyComposition.isMale(settings))
                     )
                 }
+                if (target.roundToInt() < programWarnTarget(BodyComposition.isMale(settings))) {
+                    Text(
+                        "Очень сухая цель: держать её трудно, и не всем она полезна.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                ProgramPauseBlock(settings, onPause = programViewModel::pause, onResume = programViewModel::resume)
                 val male = BodyComposition.isMale(settings)
                 SegmentedSwitcher(
                     options = listOf(true to "Мужчина", false to "Женщина"),
@@ -500,6 +504,33 @@ fun BodyFatGoalSection(modifier: Modifier = Modifier, viewModel: BodyFatViewMode
             onSave = viewModel::save
         )
     }
+    if (showWarning) {
+        ProgramWarningSheet(
+            onDismiss = { showWarning = false },
+            onContinue = {
+                showWarning = false
+                showLaunch = true
+            },
+            viewModel = programViewModel
+        )
+    }
+    if (showLaunch) {
+        ProgramLaunchSheet(onDismiss = { showLaunch = false }, viewModel = programViewModel)
+    }
+    if (showStopConfirm) {
+        NutriDialog(
+            onDismiss = { showStopConfirm = false },
+            title = "Выключить режим?",
+            subtitle = "Программа закончится: этапы и перерывы сбросятся, снова заработают твои калории и БЖУ. " +
+                "Замеры, чек-ины и дневник останутся.",
+            confirmText = "Выключить",
+            destructive = true,
+            onConfirm = {
+                showStopConfirm = false
+                programViewModel.stop()
+            }
+        )
+    }
 }
 
 /**
@@ -507,7 +538,7 @@ fun BodyFatGoalSection(modifier: Modifier = Modifier, viewModel: BodyFatViewMode
  * и цель силовых в неделю (2–5). Выбираются сразу при включении режима, менять можно когда угодно.
  */
 @Composable
-private fun CheckInSettingsBlock(
+fun CheckInSettingsBlock(
     weekday: Int,
     workoutGoal: Int,
     onWeekday: (Int) -> Unit,
@@ -561,9 +592,14 @@ private fun HeightField(settings: SettingsEntity, onValid: (Double) -> Unit) {
     )
 }
 
-/** Степпер «− 15% +» в диапазоне цели. */
+/** Степпер «− 15% +» в диапазоне цели; [min] — нижняя граница (3.24: 10% мужчинам, 18% женщинам). */
 @Composable
-private fun PercentStepper(value: Int, onChange: (Int) -> Unit) {
+fun PercentStepper(
+    value: Int,
+    onChange: (Int) -> Unit,
+    min: Int = BodyComposition.MIN_TARGET,
+    max: Int = BodyComposition.MAX_TARGET
+) {
     Row(
         Modifier
             .clip(RoundedCornerShape(Radius.Pill))
@@ -572,8 +608,8 @@ private fun PercentStepper(value: Int, onChange: (Int) -> Unit) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Surface(
-            onClick = { onChange(value - 1) },
-            enabled = value > BodyComposition.MIN_TARGET,
+            onClick = { onChange((value - 1).coerceAtLeast(min)) },
+            enabled = value > min,
             shape = CircleShape,
             color = Color.Transparent,
             modifier = Modifier.size(40.dp)
@@ -588,8 +624,8 @@ private fun PercentStepper(value: Int, onChange: (Int) -> Unit) {
             modifier = Modifier.padding(horizontal = 6.dp)
         )
         Surface(
-            onClick = { onChange(value + 1) },
-            enabled = value < BodyComposition.MAX_TARGET,
+            onClick = { onChange((value + 1).coerceAtMost(max)) },
+            enabled = value < max,
             shape = CircleShape,
             color = Color.Transparent,
             modifier = Modifier.size(40.dp)

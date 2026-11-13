@@ -156,6 +156,17 @@ val MIGRATION_11_12 = object : Migration(11, 12) {
     }
 }
 
+/**
+ * v13 (3.24): программа с этапами — JSON-строка в settings (String? → TEXT без NOT NULL)
+ * и смена этапа на чек-ине в check_ins (String? → TEXT без NOT NULL).
+ */
+val MIGRATION_12_13 = object : Migration(12, 13) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE settings ADD COLUMN fatBurnProgram TEXT DEFAULT NULL")
+        db.execSQL("ALTER TABLE check_ins ADD COLUMN phaseChange TEXT DEFAULT NULL")
+    }
+}
+
 @Database(
     entities = [
         MealEntity::class,
@@ -175,7 +186,7 @@ val MIGRATION_11_12 = object : Migration(11, 12) {
         CheckInEntity::class,
         DayActivityEntity::class
     ],
-    version = 12,
+    version = 13,
     exportSchema = false
 )
 abstract class NutriLensDatabase : RoomDatabase() {
@@ -208,7 +219,7 @@ abstract class NutriLensDatabase : RoomDatabase() {
                     .addMigrations(
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
                         MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
-                        MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12
+                        MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13
                     )
                     .build().also { INSTANCE = it }
             }

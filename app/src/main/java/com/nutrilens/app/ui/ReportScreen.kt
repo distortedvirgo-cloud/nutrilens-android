@@ -322,6 +322,8 @@ fun ReportScreen(
         BodyCompositionSection(modifier = Modifier.staggeredIn(1), viewModel = bodyFatViewModel)
         // Режим «Сжигание жира»: история недельных чек-инов — тоже вне периода.
         // Режим «Сжигание жира»: дни цветом по оценке и засчитанные недели программы.
+        // Программа (3.24): путь этапов — блоки, перерывы, удержание и прогноз вилкой.
+        ProgramTimelineSection(modifier = Modifier.staggeredIn(1))
         ProgramWeeksSection(modifier = Modifier.staggeredIn(1))
         CheckInHistorySection(modifier = Modifier.staggeredIn(1))
 

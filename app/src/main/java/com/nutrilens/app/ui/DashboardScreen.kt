@@ -160,6 +160,7 @@ import com.nutrilens.app.insights.fatGoalProtein
 import com.nutrilens.app.data.latestFatPercent
 import com.nutrilens.app.data.FatBurnPlanSync
 import com.nutrilens.app.data.isCheckInDue
+import com.nutrilens.app.data.fatBurnProgramState
 import com.nutrilens.app.data.DayActivityEntity
 import com.nutrilens.app.data.DayActivityRepository
 import com.nutrilens.app.data.StepsSource
@@ -518,6 +519,8 @@ fun DashboardScreen(
     // чтобы не закрываться при прокрутке.
     val checkInViewModel: CheckInViewModel = viewModel()
     var showCheckIn by remember { mutableStateOf(false) }
+    // Программа с этапами (3.24): карточка этапа, разовые карточки и итог.
+    val programViewModel: FatBurnProgramViewModel = viewModel()
 
     LaunchedEffect(Unit) {
         val date = initialDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
@@ -620,6 +623,28 @@ fun DashboardScreen(
                             onToggleWorkout = viewModel::toggleWorkout
                         )
                     }
+                }
+            }
+        }
+        // Программа (3.24): разовая карточка (переход со старой версии, новый этап),
+        // итог завершённой программы или карточка текущего этапа — только на сегодня.
+        if (settings.targetFatPercent != null && selectedDate == LocalDate.now()) {
+            val program = settings.fatBurnProgramState
+            val notice = program?.notice
+            if (notice != null) {
+                item(key = "program-notice") {
+                    Box(Modifier.introIn(2, introDone)) {
+                        ProgramNoticeCard(notice = notice, onDismiss = programViewModel::dismissNotice)
+                    }
+                }
+            }
+            if (program != null && program.awaitingChoice) {
+                item(key = "program-done") {
+                    Box(Modifier.introIn(2, introDone)) { ProgramCompletedCard(viewModel = programViewModel) }
+                }
+            } else if (program != null) {
+                item(key = "program-phase") {
+                    Box(Modifier.introIn(2, introDone)) { ProgramPhaseCard(settings = settings) }
                 }
             }
         }

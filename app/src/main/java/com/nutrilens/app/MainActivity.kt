@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import com.nutrilens.app.data.NutriLensDatabase
 import com.nutrilens.app.data.SettingsRepository
+import com.nutrilens.app.data.fatBurnOrange
 import com.nutrilens.app.ui.NutriLensAppRoot
 import com.nutrilens.app.ui.Onboarding
 import com.nutrilens.app.ui.OnboardingScreen
@@ -46,10 +47,11 @@ class MainActivity : ComponentActivity() {
         val dateExtra = intent.getStringExtra("date")
 
         // Тема следит за режимом «Сжигание жира» потоком настроек: включил в профиле —
-        // приложение сразу стало оранжевым, без перезапуска.
+        // приложение сразу стало оранжевым, без перезапуска. С 3.24 оранжевый — только
+        // в активном блоке дефицита; перерыв, удержание и пауза — спокойный зелёный.
         val fatBurnFlow = SettingsRepository(NutriLensDatabase.getInstance(applicationContext).settingsDao())
             .observe()
-            .map { it.targetFatPercent != null }
+            .map { it.fatBurnOrange }
             .distinctUntilChanged()
 
         setContent {

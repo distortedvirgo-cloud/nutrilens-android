@@ -22,8 +22,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nutrilens.app.data.BodyComposition
 import com.nutrilens.app.data.SettingsEntity
+import com.nutrilens.app.data.checkInsActive
+import com.nutrilens.app.data.fatBurnProgramState
 import com.nutrilens.app.data.nextCheckInDate
 import com.nutrilens.app.insights.FatBurnPlanner
+import com.nutrilens.app.insights.FatBurnProgram
 import com.nutrilens.app.insights.Trend
 import com.nutrilens.app.insights.hasFatBurnPlan
 import com.nutrilens.app.ui.theme.macroPalette
@@ -41,10 +44,16 @@ import kotlin.math.roundToInt
  * из живого превью.
  */
 
-/** Бейдж шапки: «🔥 Сжигание жира · 24% → 13%»; null — режим выключен. */
+/**
+ * Бейдж шапки: с 3.24 — этап программы («🔥 Блок 2 из 3 · неделя 5 · 21% → 17%»,
+ * «Перерыв · ещё 9 дней», «Удержание · неделя 2», «Пауза»); программы ещё нет —
+ * «🔥 Сжигание жира · 24% → 13%». null — режим выключен.
+ */
 fun fatBurnBadgeText(settings: SettingsEntity, fatPercent: Double?): String? {
     val target = settings.targetFatPercent ?: return null
     val current = fatPercent?.takeIf { it > 0 }
+    val program = settings.fatBurnProgramState
+    if (program != null) return FatBurnProgram.badgeText(program, LocalDate.now(), current)
     return if (current != null) "🔥 Сжигание жира · ${current.roundToInt()}% → ${target.roundToInt()}%"
     else "🔥 Сжигание жира · сделай первый замер"
 }
@@ -73,6 +82,18 @@ fun weekdayAccusative(day: DayOfWeek): String = when (day) {
     DayOfWeek.SUNDAY -> "в воскресенье"
 }
 
+/** Заголовок плана по этапу: в перерыве и удержании это не «дефицит на неделю». */
+private fun planTitle(settings: SettingsEntity): String {
+    val program = settings.fatBurnProgramState ?: return "План на неделю"
+    return when {
+        program.paused -> "План на паузе"
+        program.completed -> "План удержания"
+        program.currentPhase?.type == FatBurnProgram.PhaseType.BREAK -> "План перерыва"
+        program.currentPhase?.type == FatBurnProgram.PhaseType.MAINTENANCE -> "План удержания"
+        else -> "План на неделю"
+    }
+}
+
 /** «0,6» — доли процента с запятой. */
 private fun pct(v: Double): String = BodyComposition.fmt1(v)
 
@@ -84,10 +105,12 @@ fun FatBurnPlanCompactCard(settings: SettingsEntity, onClick: () -> Unit, modifi
     FreshCard(modifier.fillMaxWidth(), onClick = onClick) {
         Column(Modifier.padding(Space.Card), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             CardHeader(
-                title = "План на неделю",
+                title = planTitle(settings),
                 icon = Icons.Rounded.LocalFireDepartment,
                 tint = MaterialTheme.colorScheme.primary,
-                subtitle = nextCheckInText(settings)?.let { "Меняется на чек-ине · следующий $it" } ?: "Меняется на чек-ине"
+                subtitle = if (settings.checkInsActive) {
+                    nextCheckInText(settings)?.let { "Меняется на чек-ине · следующий $it" } ?: "Меняется на чек-ине"
+                } else "Чек-ины сейчас не идут"
             )
             if (settings.hasFatBurnPlan) {
                 Row(verticalAlignment = Alignment.Bottom) {
@@ -149,7 +172,7 @@ fun FatBurnPlanSection(modifier: Modifier = Modifier, viewModel: BodyFatViewMode
     FreshCard(modifier.fillMaxWidth()) {
         Column(Modifier.padding(Space.Card), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             CardHeader(
-                title = "План на неделю",
+                title = planTitle(settings),
                 icon = Icons.Rounded.LocalFireDepartment,
                 tint = primary,
                 subtitle = "Подстраивается под твой вес и еду"
@@ -217,7 +240,7 @@ private fun FatBurnPlanDetails(settings: SettingsEntity, preview: FatBurnPlanner
                 )
             }
         }
-        nextCheckInText(settings)?.let {
+        nextCheckInText(settings)?.takeIf { settings.checkInsActive }?.let {
             Text(
                 "Следующий чек-ин — $it. План меняется только там, чтобы ты видел почему",
                 style = MaterialTheme.typography.bodyMedium,

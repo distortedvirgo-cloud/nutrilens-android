@@ -109,6 +109,16 @@ object FatBurnPlanner {
         val floor: Double = 0.0
     )
 
+    /**
+     * Целевой темп, доля веса в неделю: 0,6%, а ближе к цели (3 п.п. и меньше) или уже
+     * сухо (меньше 15% мужчинам / 23% женщинам) — бережнее, 0,4%. Тот же темп берёт
+     * программа с этапами (FatBurnProgram), когда оценивает длину блоков.
+     */
+    fun weeklyRate(fatPercent: Double, targetFatPercent: Double, male: Boolean): Double {
+        val nearTarget = fatPercent - targetFatPercent <= 3.0 || fatPercent < (if (male) 15.0 else 23.0)
+        return if (nearTarget) RATE_GENTLE else RATE_NORMAL
+    }
+
     /** Пора ли пересчитать: плана нет, прошла неделя или дата из будущего (сменили часы). */
     fun isDue(planDate: LocalDate?, today: LocalDate): Boolean {
         if (planDate == null) return true
@@ -159,8 +169,7 @@ object FatBurnPlanner {
         } else baseTdee
 
         // 4. Целевой темп и дефицит.
-        val nearTarget = fatPct - input.targetFatPercent <= 3.0 || fatPct < (if (input.male) 15.0 else 23.0)
-        val rate = if (nearTarget) RATE_GENTLE else RATE_NORMAL
+        val rate = weeklyRate(fatPct, input.targetFatPercent, input.male)
         val deficit = (w * rate * KCAL_PER_KG / 7).coerceIn(tdee * 0.15, tdee * 0.25)
 
         // 5. Калории не ниже обмена в покое и бытового минимума.
