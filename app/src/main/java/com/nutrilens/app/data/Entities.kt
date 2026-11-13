@@ -142,7 +142,11 @@ data class SettingsEntity(
     val checkInWeekday: Int = 7,
     val workoutGoal: Int = 3,
     val fatBurnStartDate: String? = null,
-    val lastCheckInDate: String? = null
+    val lastCheckInDate: String? = null,
+    // Шаги (3.23): включены ли (разрешение спрашивается только при включении) и цель на день.
+    // Шаги — цель поведения, калорий к бюджету они не прибавляют.
+    val stepsEnabled: Boolean = false,
+    val stepGoal: Int = 8000
 )
 
 @Entity(tableName = "analysis_jobs")

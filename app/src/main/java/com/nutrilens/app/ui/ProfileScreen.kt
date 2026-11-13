@@ -205,6 +205,9 @@ fun ProfileScreen(
             Spacer(Modifier.height(12.dp))
             FatBurnPlanSection(modifier = Modifier.staggeredIn(2), viewModel = bodyFatViewModel)
         }
+        // Шаги (3.23): включение, источник, Health Connect и цель — рядом с режимом и целью.
+        Spacer(Modifier.height(12.dp))
+        StepsSettingsSection(modifier = Modifier.staggeredIn(2))
 
         groups.forEachIndexed { gi, (title, rows) ->
             Spacer(Modifier.height(Space.Section))

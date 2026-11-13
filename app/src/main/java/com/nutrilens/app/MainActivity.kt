@@ -79,6 +79,12 @@ class MainActivity : ComponentActivity() {
     com.nutrilens.app.data.FatBurnPlanSync.refreshAsync(this)
 }
 
+    override fun onResume() {
+        super.onResume()
+        // Шаги (3.23): приложение на переднем плане — свежие шаги за сегодня (если шаги включены).
+        com.nutrilens.app.steps.StepsSync.refreshAsync(this)
+    }
+
 /** Маршруты, на которые разрешено вести по уведомлениям (dashboard=settings/add + инструменты «Ещё» + лидерборд). */
 private val DEEP_LINK_ROUTES = setOf(
     "settings", "settings/updates", "dashboard", "add",

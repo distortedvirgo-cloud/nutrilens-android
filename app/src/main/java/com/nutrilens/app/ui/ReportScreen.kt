@@ -321,6 +321,8 @@ fun ReportScreen(
         // Состав тела не зависит от периода и от наличия еды — поэтому над переключателем.
         BodyCompositionSection(modifier = Modifier.staggeredIn(1), viewModel = bodyFatViewModel)
         // Режим «Сжигание жира»: история недельных чек-инов — тоже вне периода.
+        // Режим «Сжигание жира»: дни цветом по оценке и засчитанные недели программы.
+        ProgramWeeksSection(modifier = Modifier.staggeredIn(1))
         CheckInHistorySection(modifier = Modifier.staggeredIn(1))
 
         // Выбранный период живёт во ViewModel — переключатель не сбрасывается

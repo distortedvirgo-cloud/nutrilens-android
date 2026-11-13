@@ -175,15 +175,21 @@ object FatBurnPlanSync {
             .filter { it.done }
             .map { it.date }
             .toSet()
+        // Активность дня (3.23): шаги и сон для оценки; дней без записи — правило 3.22.
+        val activity = db.dayActivityDao().between(start.toString(), end.toString()).associateBy { it.date }
         val days = (0 until period).map { i ->
             val date = start.plusDays(i.toLong())
             val key = date.toString()
             val list = meals[key].orEmpty()
+            val act = activity[key]
             CheckInPlanner.Day(
                 date = date,
                 kcal = list.sumOf { it.calories },
                 protein = list.sumOf { it.protein },
-                workout = key in workoutDates
+                workout = key in workoutDates,
+                hasActivity = act != null,
+                steps = act?.steps,
+                sleptWell = act?.sleptWell
             )
         }
 
@@ -198,7 +204,8 @@ object FatBurnPlanSync {
             planCalories = kcalBefore,
             planProtein = goalsBefore.protein,
             workoutGoalPerWeek = settings.workoutGoal.coerceIn(CheckInPlanner.MIN_WORKOUT_GOAL, CheckInPlanner.MAX_WORKOUT_GOAL),
-            weeklyLossPercent = weeklyRate
+            weeklyLossPercent = weeklyRate,
+            stepGoal = com.nutrilens.app.insights.DayScore.clampStepGoal(settings.stepGoal)
         )
 
         // 6. Решение по плану.
@@ -254,7 +261,8 @@ object FatBurnPlanSync {
             carbsBefore = settings.planCarbs ?: goalsBefore.carbs,
             carbsAfter = plan.carbs,
             note = plan.note,
-            nextAction = review.action
+            nextAction = review.action,
+            avgScore = review.avgScore
         )
         db.checkInDao().upsert(entity)
         repo.update {

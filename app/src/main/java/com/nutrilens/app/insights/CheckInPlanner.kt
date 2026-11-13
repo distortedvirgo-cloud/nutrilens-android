@@ -59,15 +59,28 @@ object CheckInPlanner {
     /** «5 из 7» в масштабе периода: 14 дней → 10. */
     fun scaled(perWeek: Int, periodDays: Int): Int = ceil(perWeek * periodDays / 7.0).toInt()
 
-    /** День дневника для итогов: калории, белок и отметка силовой. */
-    data class Day(val date: LocalDate, val kcal: Double, val protein: Double, val workout: Boolean)
+    /**
+     * День дневника для итогов: калории, белок, отметка силовой и (с 3.23) активность —
+     * есть ли запись дня, шаги и «поспал 8 часов». Без записи день считается по правилу 3.22.
+     */
+    data class Day(
+        val date: LocalDate,
+        val kcal: Double,
+        val protein: Double,
+        val workout: Boolean,
+        val hasActivity: Boolean = false,
+        val steps: Int? = null,
+        val sleptWell: Boolean? = null
+    ) {
+        fun toScoreDay(): DayScore.Day = DayScore.Day(date, kcal, protein, workout, hasActivity, steps, sleptWell)
+    }
 
     data class Review(
         val periodDays: Int,
         /** Дней с записями ≥ 800 ккал. */
         val diaryDays: Int,
         val diaryNeeded: Int,
-        /** Калории в −10%…+5% от плана и белок ≥ 90%. */
+        /** Оценка дня ≥ 70 (дни до 3.23 — калории в −10%…+5% и белок ≥ 90%). */
         val goodDays: Int,
         /** Дней с белком ≥ 90% нормы. */
         val proteinDays: Int,
@@ -76,7 +89,9 @@ object CheckInPlanner {
         val workoutGoal: Int,
         val signal: FatBurnPlanner.MuscleSignal,
         val signalNote: String,
-        val action: String
+        val action: String,
+        /** Средняя оценка дня за период по дням с едой и записью активности; null — таких нет. */
+        val avgScore: Double? = null
     ) {
         val diaryComplete: Boolean get() = diaryDays >= diaryNeeded
     }
@@ -91,13 +106,16 @@ object CheckInPlanner {
         planCalories: Double,
         planProtein: Double,
         workoutGoalPerWeek: Int,
-        weeklyLossPercent: Double?
+        weeklyLossPercent: Double?,
+        stepGoal: Int = DayScore.DEFAULT_STEP_GOAL
     ): Review {
         val logged = days.filter { it.kcal >= FatBurnPlanner.MIN_DAY_KCAL }
         val proteinOk = { d: Day -> planProtein > 0 && d.protein >= planProtein * 0.9 }
-        val good = logged.count { d ->
-            planCalories > 0 && d.kcal >= planCalories * 0.9 && d.kcal <= planCalories * 1.05 && proteinOk(d)
-        }
+        // Хороший день — по оценке дня; дни без записи активности (до 3.23) — по старому правилу.
+        val good = logged.count { d -> DayScore.isGood(d.toScoreDay(), planCalories, planProtein, stepGoal) }
+        val scored = logged.filter { it.hasActivity }
+            .map { DayScore.compute(it.toScoreDay(), planCalories, planProtein, stepGoal).total }
+        val avgScore = if (scored.isEmpty()) null else scored.average()
         val proteinDays = logged.count(proteinOk)
         val workouts = days.count { it.workout }
         val workoutGoal = scaled(workoutGoalPerWeek, periodDays)
@@ -139,7 +157,8 @@ object CheckInPlanner {
             workoutGoal = workoutGoal,
             signal = signal,
             signalNote = signalNote,
-            action = action
+            action = action,
+            avgScore = avgScore
         )
     }
 

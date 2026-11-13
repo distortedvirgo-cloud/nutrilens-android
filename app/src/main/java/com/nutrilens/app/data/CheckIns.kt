@@ -15,7 +15,7 @@ import java.time.LocalDate
  * Недельный чек-ин режима «Сжигание жира» (одна запись на дату).
  * Хранится всё, что было на экране итогов: так история показывает ровно то,
  * что человек видел, даже если формулы потом поменяются.
- * Схема таблицы обязана совпадать с MIGRATION_10_11 один-в-один.
+ * Схема таблицы обязана совпадать с MIGRATION_10_11 (+ avgScore из MIGRATION_11_12) один-в-один.
  */
 @Serializable
 @Entity(tableName = "check_ins")
@@ -54,7 +54,9 @@ data class CheckInEntity(
     val carbsAfter: Double? = null,
     // Почему план такой (или почему не менялся) и одно действие на неделю.
     val note: String = "",
-    val nextAction: String = ""
+    val nextAction: String = "",
+    // Средняя оценка дня за период (3.23, 0–100); null — дней с оценкой не было или чек-ин старый.
+    val avgScore: Double? = null
 )
 
 @Dao

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -8,6 +9,20 @@
     <!-- Фоновый анализ еды: без освобождения от оптимизации батареи часть
          телефонов (Xiaomi и др.) режет DNS/сеть фоновому процессу. -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- Шаги (3.23): встроенный шагомер (разрешение нужно с Android 10) и, по желанию,
+         чтение шагов из Health Connect. Спрашиваются только когда человек включает шаги. -->
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+    <uses-permission android:name="android.permission.health.READ_STEPS" />
+    <uses-feature android:name="android.hardware.sensor.stepcounter" android:required="false" />
+    <!-- На случай, если библиотека Health Connect требует minSdk выше нашего: весь код HC
+         проверяет доступность (getSdkStatus) и обёрнут в try/catch, так что на старых
+         телефонах он просто не включится. -->
+    <uses-sdk tools:overrideLibrary="androidx.health.connect.client" />
+
+    <!-- Health Connect до Android 14 — отдельное приложение: без queries его не видно. -->
+    <queries>
+        <package android:name="com.google.android.apps.healthdata" />
+    </queries>
 
     <application
         android:extractNativeLibs="true"
@@ -33,6 +48,27 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
+
+        <!-- «Зачем приложению шаги» — экран, который Health Connect показывает из окна разрешений. -->
+        <activity
+            android:name=".steps.StepsRationaleActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+            </intent-filter>
+        </activity>
+
+        <!-- Android 14+: тот же экран через системный VIEW_PERMISSION_USAGE для Health Connect. -->
+        <activity-alias
+            android:name=".ViewPermissionUsageActivity"
+            android:exported="true"
+            android:targetActivity=".steps.StepsRationaleActivity"
+            android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+            </intent-filter>
+        </activity-alias>
 
         <provider
             android:name="androidx.core.content.FileProvider"

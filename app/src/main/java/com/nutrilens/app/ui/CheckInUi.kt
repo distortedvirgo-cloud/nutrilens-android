@@ -422,8 +422,21 @@ fun CheckInResultContent(c: CheckInEntity) {
             TonalTile("${c.goodDays}", "хороших дней", palette.protein, Modifier.weight(1f))
             TonalTile("${c.workouts} из ${c.workoutGoal}", "силовых", palette.fat, Modifier.weight(1f))
         }
+        val avg = c.avgScore
+        if (avg != null) {
+            Text(
+                "Средняя оценка дня — ${avg.roundToInt()} из 100",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
         Text(
-            "Хороший день — калории от −10% до +5% плана и белок от 90% нормы.",
+            if (avg != null) {
+                "Хороший день — оценка от 70: калории, белок, движение и сон. Дни до версии 3.23 — по калориям и белку."
+            } else {
+                "Хороший день — калории от −10% до +5% плана и белок от 90% нормы."
+            },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

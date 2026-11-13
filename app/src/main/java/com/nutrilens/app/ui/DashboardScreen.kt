@@ -160,6 +160,13 @@ import com.nutrilens.app.insights.fatGoalProtein
 import com.nutrilens.app.data.latestFatPercent
 import com.nutrilens.app.data.FatBurnPlanSync
 import com.nutrilens.app.data.isCheckInDue
+import com.nutrilens.app.data.DayActivityEntity
+import com.nutrilens.app.data.DayActivityRepository
+import com.nutrilens.app.data.StepsSource
+import com.nutrilens.app.data.scoreDays
+import com.nutrilens.app.data.scorePlan
+import com.nutrilens.app.insights.DayScore
+import com.nutrilens.app.steps.StepsSync
 import com.nutrilens.app.insights.getDayTotals
 import com.nutrilens.app.insights.greeting
 import com.nutrilens.app.insights.nextMealFocus
@@ -197,6 +204,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private val favoriteRepository = FavoriteRepository(database.favoriteDao())
     private val analysisJobRepository = AnalysisJobRepository(database.analysisJobDao())
     private val refinementJobRepository = RefinementJobRepository(database.refinementJobDao())
+    private val dayActivityRepository = DayActivityRepository(database.dayActivityDao())
 
     init {
         // Виджет в лаунчере обновляется только по явному запросу — освежаем при открытии.
@@ -284,6 +292,16 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private val _hasAnyMeals = MutableStateFlow(false)
     val hasAnyMeals: StateFlow<Boolean> = _hasAnyMeals.asStateFlow()
 
+    /** Шаги и «поспал 8 часов» выбранного дня — живой поток из БД (шаги пишет StepsSync). */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val dayActivity: StateFlow<DayActivityEntity?> = _selectedDate
+        .flatMapLatest { date -> dayActivityRepository.observe(date.toString()) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** Режим «Сжигание жира»: оценка каждого дня недели выбранной даты — цвет полосы недели. */
+    private val _weekScores = MutableStateFlow<Map<LocalDate, WeekDayScore>>(emptyMap())
+    val weekScores: StateFlow<Map<LocalDate, WeekDayScore>> = _weekScores.asStateFlow()
+
     /** Калории по дням недели выбранной даты (Пн–Вс) — для полосы недели. */
     private val _weekKcal = MutableStateFlow<Map<LocalDate, Double>>(emptyMap())
     val weekKcal: StateFlow<Map<LocalDate, Double>> = _weekKcal.asStateFlow()
@@ -307,11 +325,36 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         val meals = database.mealDao().mealsBetween(monday.toString(), sunday.toString())
         _weekKcal.value = meals.groupBy { LocalDate.parse(it.date) }
             .mapValues { (_, list) -> list.sumOf { it.calories } }
+        reloadWeekScores(monday, sunday)
+    }
+
+    /** Оценки дней недели — только в режиме «Сжигание жира». Сбой — просто без цвета. */
+    private suspend fun reloadWeekScores(monday: LocalDate, sunday: LocalDate) {
+        val settings = settingsRepository.get()
+        if (settings.targetFatPercent == null) {
+            _weekScores.value = emptyMap()
+            return
+        }
+        _weekScores.value = try {
+            val plan = database.scorePlan(settings)
+            database.scoreDays(monday, sunday).associate { d ->
+                d.date to WeekDayScore(
+                    DayScore.compute(d, plan.calories, plan.protein, plan.stepGoal).total,
+                    DayScore.dayLevel(d, plan.calories, plan.protein, plan.stepGoal)
+                )
+            }
+        } catch (e: Exception) {
+            emptyMap()
+        }
     }
 
     init {
         viewModelScope.launch {
-            _selectedDate.collectLatest { date -> reloadSnapshot(date) }
+            _selectedDate.collectLatest { date ->
+                // Открыли «Сегодня» — свежие шаги с датчика / Health Connect (если шаги включены).
+                if (date == LocalDate.now()) StepsSync.refreshAsync(getApplication())
+                reloadSnapshot(date)
+            }
         }
         // Режим «Сжигание жира»: план считается при открытии «Сегодня», если его ещё нет,
         // и сразу при включении режима или смене цели — первое значение потока и есть старт.
@@ -320,7 +363,18 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             settingsRepository.observe()
                 .map { it.targetFatPercent }
                 .distinctUntilChanged()
-                .collect { target -> if (target != null) FatBurnPlanSync.ensureFresh(getApplication()) }
+                .collect { target ->
+                    if (target != null) {
+                        FatBurnPlanSync.ensureFresh(getApplication())
+                        // Запись активности на сегодня: день «из 3.23», он считается по оценке дня.
+                        runCatching { dayActivityRepository.ensureDay(LocalDate.now().toString()) }
+                    }
+                    reloadWeek(_selectedDate.value)
+                }
+        }
+        // Шаги/сон дня поменялись — перекрасить полосу недели.
+        viewModelScope.launch {
+            dayActivity.collect { reloadWeek(_selectedDate.value) }
         }
         // Вода/вес/тренировка из панели «+» или виджета — перечитываем снимок.
         viewModelScope.launch {
@@ -338,6 +392,21 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             val next = !_workoutDone.value
             mealRepository.setWorkoutDone(today, next)
             _workoutDone.value = next
+            reloadWeek(_selectedDate.value)
+        }
+    }
+
+    /** «Поспал 8 часов?» про прошлую ночь — на сегодняшнюю дату; null — снять ответ. */
+    fun setSleptWell(value: Boolean?) {
+        viewModelScope.launch { dayActivityRepository.setSleptWell(LocalDate.now().toString(), value) }
+    }
+
+    /** Ручные шаги за выбранный день; null — вернуться к автоматическому счёту. */
+    fun setManualSteps(steps: Int?) {
+        viewModelScope.launch {
+            val date = _selectedDate.value
+            dayActivityRepository.setManualSteps(date.toString(), steps)
+            if (steps == null && date == LocalDate.now()) StepsSync.refresh(getApplication())
         }
     }
 
@@ -441,6 +510,9 @@ fun DashboardScreen(
     val workoutDone by viewModel.workoutDone.collectAsStateWithLifecycle()
     val streak by viewModel.streak.collectAsStateWithLifecycle()
     val weekKcal by viewModel.weekKcal.collectAsStateWithLifecycle()
+    val weekScores by viewModel.weekScores.collectAsStateWithLifecycle()
+    val dayActivity by viewModel.dayActivity.collectAsStateWithLifecycle()
+    var showStepsEntry by remember { mutableStateOf(false) }
     val view = LocalView.current
     // Недельный чек-ин: своя модель, лист живёт на уровне экрана (не внутри LazyColumn),
     // чтобы не закрываться при прокрутке.
@@ -504,7 +576,8 @@ fun DashboardScreen(
                     selected = selectedDate,
                     weekKcal = weekKcal,
                     goal = settings.effectiveDailyGoal,
-                    onSelect = viewModel::selectDay
+                    onSelect = viewModel::selectDay,
+                    scores = if (settings.targetFatPercent != null) weekScores else emptyMap()
                 )
             }
         }
@@ -515,8 +588,39 @@ fun DashboardScreen(
                     settings = settings,
                     lastWeight = lastWeight,
                     fatPercent = fatPercent,
-                    onLeaderboard = onOpenLeaderboard
+                    onLeaderboard = onOpenLeaderboard,
+                    // В режиме белок с остатком показывает «Оценка дня» — здесь просто полоса.
+                    compactProtein = settings.targetFatPercent != null
                 )
+            }
+        }
+        // Режим «Сжигание жира»: оценка дня (калории, белок, движение, сон).
+        if (settings.targetFatPercent != null) {
+            val scoreDay = DayScore.Day(
+                date = selectedDate,
+                kcal = meals.sumOf { it.meal.calories },
+                protein = meals.sumOf { it.meal.protein },
+                workout = workoutDone,
+                hasRecord = dayActivity != null,
+                steps = dayActivity?.steps,
+                sleptWell = dayActivity?.sleptWell
+            )
+            val scoreIsToday = selectedDate == LocalDate.now()
+            if (scoreIsToday || DayScore.hasData(scoreDay)) {
+                item(key = "day-score") {
+                    Box(Modifier.introIn(2, introDone)) {
+                        DayScoreCard(
+                            day = scoreDay,
+                            planCalories = settings.effectiveDailyGoal,
+                            planProtein = effectiveMacroGoals(settings, lastWeight, fatPercent).protein,
+                            stepGoal = DayScore.clampStepGoal(settings.stepGoal),
+                            stepsEnabled = settings.stepsEnabled,
+                            isToday = scoreIsToday,
+                            onSleep = viewModel::setSleptWell,
+                            onToggleWorkout = viewModel::toggleWorkout
+                        )
+                    }
+                }
             }
         }
         // Режим «Сжигание жира»: пришёл день чек-ина — заметная карточка над планом.
@@ -593,6 +697,19 @@ fun DashboardScreen(
                     },
                     onWeigh = { showWeightDialog = true }
                 )
+            }
+        }
+        // Шаги — для всех, кто их включил (в обоих режимах). Калорий к бюджету не прибавляют.
+        if (settings.stepsEnabled) {
+            item(key = "steps") {
+                Box(Modifier.introIn(4, introDone)) {
+                    StepsCard(
+                        steps = dayActivity?.steps,
+                        source = dayActivity?.stepsSource,
+                        goal = DayScore.clampStepGoal(settings.stepGoal),
+                        onClick = { showStepsEntry = true }
+                    )
+                }
             }
         }
 
@@ -741,6 +858,22 @@ fun DashboardScreen(
 
     if (showCheckIn) {
         CheckInSheet(onDismiss = { showCheckIn = false }, viewModel = checkInViewModel)
+    }
+
+    if (showStepsEntry) {
+        StepsEntryDialog(
+            current = dayActivity?.steps,
+            canReset = dayActivity?.stepsSource == StepsSource.MANUAL,
+            onSave = { steps ->
+                viewModel.setManualSteps(steps)
+                showStepsEntry = false
+            },
+            onReset = {
+                viewModel.setManualSteps(null)
+                showStepsEntry = false
+            },
+            onDismiss = { showStepsEntry = false }
+        )
     }
 }
 
@@ -1804,7 +1937,9 @@ private fun WeekStrip(
     selected: LocalDate,
     weekKcal: Map<LocalDate, Double>,
     goal: Double,
-    onSelect: (LocalDate) -> Unit
+    onSelect: (LocalDate) -> Unit,
+    /** Режим «Сжигание жира»: оценки дней — кольцо по оценке и цвет по уровню. Пусто — кольцо калорий. */
+    scores: Map<LocalDate, WeekDayScore> = emptyMap()
 ) {
     val monday = selected.with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY))
     val today = LocalDate.now()
@@ -1832,8 +1967,15 @@ private fun WeekStrip(
             val isSel = date == selected
             val future = date > today
             val kcal = weekKcal[date] ?: 0.0
+            val dayScore = scores[date]
+            val scored = scores.isNotEmpty()
             val fraction by animateFloatAsState(
-                if (goal > 0) (kcal / goal).toFloat().coerceIn(0f, 1f) else 0f,
+                when {
+                    scored && (dayScore == null || dayScore.level == DayScore.Level.NONE) -> 0f
+                    scored && dayScore != null -> (dayScore.score / 100f).coerceIn(0.04f, 1f)
+                    goal > 0 -> (kcal / goal).toFloat().coerceIn(0f, 1f)
+                    else -> 0f
+                },
                 tween(Motion.ExtraLong, easing = Motion.Emphasized),
                 label = "dayRing"
             )
@@ -1844,7 +1986,11 @@ private fun WeekStrip(
                 label = "dayBg"
             )
             val track = MaterialTheme.colorScheme.surfaceContainerHigh
-            val ring = if (over) c.warnTo else c.brandFrom
+            val ring = when {
+                scored -> scoreLevelColor(dayScore?.level ?: DayScore.Level.NONE, unfinished = date == today)
+                over -> c.warnTo
+                else -> c.brandFrom
+            }
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
@@ -1859,7 +2005,8 @@ private fun WeekStrip(
                     )
                     .padding(vertical = 8.dp)
                     .semantics(mergeDescendants = true) {
-                        contentDescription = "${WEEK_LABELS[i]} ${date.dayOfMonth}: ${kcal.roundToInt()} ккал"
+                        contentDescription = "${WEEK_LABELS[i]} ${date.dayOfMonth}: ${kcal.roundToInt()} ккал" +
+                            (dayScore?.takeIf { it.level != DayScore.Level.NONE }?.let { ", оценка ${it.score}" } ?: "")
                     }
             ) {
                 Text(
@@ -1908,7 +2055,8 @@ private fun HeroSummary(
     settings: SettingsEntity,
     lastWeight: Double?,
     fatPercent: Double?,
-    onLeaderboard: () -> Unit
+    onLeaderboard: () -> Unit,
+    compactProtein: Boolean = false
 ) {
     val eaten = meals.sumOf { it.meal.calories }
     val goal = settings.effectiveDailyGoal
@@ -1917,7 +2065,8 @@ private fun HeroSummary(
     val palette = macroPalette()
     val goals = effectiveMacroGoals(settings, lastWeight, fatPercent)
     // Цель по жиру: белок выносим крупной строкой под кольцо — вторая главная цифра дня.
-    val proteinFocus = fatGoalProtein(settings, lastWeight, fatPercent) != null
+    // В режиме «Сжигание жира» остаток белка показывает «Оценка дня» ([compactProtein]).
+    val proteinFocus = !compactProtein && fatGoalProtein(settings, lastWeight, fatPercent) != null
     val fraction by animateFloatAsState(
         if (goal > 0) (eaten / goal).toFloat().coerceIn(0f, 1f) else 0f,
         tween(Motion.ExtraLong + 300, easing = Motion.Emphasized),

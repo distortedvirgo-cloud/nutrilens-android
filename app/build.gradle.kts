@@ -56,8 +56,8 @@ android {
         applicationId = "com.nutrilens.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 79
-        versionName = "3.22"
+        versionCode = 80
+        versionName = "3.23"
         // Лидерборд — через прокси (Cloudflare Worker): токена GitHub в APK больше нет.
         buildConfigField("String", "LEADERBOARD_API", "\"https://nutrilens-leaderboard.distortedvirgo.workers.dev\"")
     }
@@ -126,6 +126,8 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.coil.compose)
     implementation(libs.androidx.exifinterface)
+    // Шаги из Health Connect (часы, браслет) — необязательно: нет доступа — работает датчик телефона.
+    implementation(libs.androidx.health.connect.client)
 
     testImplementation(libs.junit)
 }

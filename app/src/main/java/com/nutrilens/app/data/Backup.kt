@@ -24,6 +24,8 @@ import java.io.File
  * берутся значения по умолчанию (плана нет), и он пересчитается при следующем запуске.
  * С 3.22 — check_ins (недельные чек-ины) и настройки чек-ина в settings; в старых копиях
  * их нет — чек-инов нет, день чек-ина воскресенье, цель силовых 3.
+ * С 3.23 — day_activity (шаги и «поспал 8 часов» по дням) и настройки шагов в settings;
+ * в старых копиях их нет — активности нет, шаги выключены, цель 8000.
  */
 object Backup {
     private const val ERROR_MESSAGE = "Неверный формат файла резервной копии"
@@ -48,6 +50,7 @@ object Backup {
         val habits = db.habitLogDao().all()
         val measurements = db.bodyMeasurementDao().all()
         val checkIns = db.checkInDao().all()
+        val activity = db.dayActivityDao().all()
 
         val chatRaw = readRaw(context, ChatStore.FILE_NAME)
         val groceryRaw = readRaw(context, GroceryStore.FILE_NAME)
@@ -62,6 +65,7 @@ object Backup {
             put("habits", json.encodeToJsonElement(habits))
             put("body_measurements", json.encodeToJsonElement(measurements))
             put("check_ins", json.encodeToJsonElement(checkIns))
+            put("day_activity", json.encodeToJsonElement(activity))
             put(
                 "chat_history",
                 chatRaw?.let { raw -> runCatching { json.parseToJsonElement(raw) }.getOrNull() }
@@ -119,6 +123,7 @@ object Backup {
             db.habitLogDao().deleteAll()
             db.bodyMeasurementDao().deleteAll()
             db.checkInDao().deleteAll()
+            db.dayActivityDao().deleteAll()
 
             val settings = try {
                 root["settings"]?.let { json.decodeFromJsonElement<SettingsEntity?>(it) }
@@ -184,6 +189,14 @@ object Backup {
                 throw RuntimeException(ERROR_MESSAGE)
             }
             checkIns.forEach { db.checkInDao().upsert(it) }
+
+            // Активность дня появилась в 3.23: в старых копиях поля нет — просто пусто.
+            val activity = try {
+                json.decodeFromJsonElement<List<DayActivityEntity>>(root["day_activity"] ?: JsonArray(emptyList()))
+            } catch (e: Exception) {
+                throw RuntimeException(ERROR_MESSAGE)
+            }
+            activity.forEach { db.dayActivityDao().upsert(it) }
         }
 
         root["chat_history"]?.let { element ->

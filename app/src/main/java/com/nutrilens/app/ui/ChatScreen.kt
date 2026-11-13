@@ -4,6 +4,7 @@ import com.nutrilens.app.insights.effectiveDailyGoal
 import com.nutrilens.app.insights.effectiveMacroGoals
 import com.nutrilens.app.data.BodyComposition
 import com.nutrilens.app.data.latestFatPercent
+import com.nutrilens.app.data.dayScoreCoachContext
 import android.app.Application
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -148,7 +149,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     // и итоги последнего недельного чек-ина.
                     userContext = settings.userContext + BodyComposition.coachContext(
                         settings, weight, fatPercent, database.checkInDao().latest()
-                    ),
+                    ) + database.dayScoreCoachContext(settings),
                     todayMeals = mealsToday.map { it.name to it.calories.roundToInt() },
                     todayTotal = mealsToday.sumOf { it.calories }.roundToInt(),
                     todayMacros = Triple(

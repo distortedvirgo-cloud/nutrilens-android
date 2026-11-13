@@ -69,6 +69,9 @@ object ReminderSync {
         } else {
             workManager.cancelUniqueWork(UNIQUE_CHECK_IN)
         }
+
+        // Шаги (3.23): почасовое короткое чтение датчика / Health Connect, пока шаги включены.
+        com.nutrilens.app.steps.StepsSync.schedule(context, settings.stepsEnabled)
     }
 
     /**
