@@ -18,6 +18,12 @@ export const PLAN = {
   /** Темп, % веса в неделю: обычный и бережный (близко к цели или уже сухо). */
   rate: 0.6,
   slowRate: 0.4,
+  /** Темп на выбор (3.28): бережный / обычный / быстрый; у цели — на треть медленнее, не ниже 0,3. */
+  paces: { gentle: 0.4, normal: 0.6, fast: 0.8 },
+  nearTargetMinRate: 0.3,
+  /** Первые дни этапа — вода и гликоген, в темп не идут; темп этапа — с 15-го дня. */
+  waterDays: 5,
+  earlyPhaseDays: 15,
   deficitMin: 0.15,
   deficitMax: 0.25,
   /** Наблюдаемый расход не уходит дальше этих долей от формулы — защита от кривых данных. */
@@ -60,6 +66,29 @@ export interface FatPlan {
   weight: number
 }
 
+/** Темп программы (3.28); null — по умолчанию: мужчинам обычный, женщинам бережный. */
+export type Pace = 'gentle' | 'normal' | 'fast'
+export const PACES: { key: Pace; title: string }[] = [
+  { key: 'gentle', title: 'Бережный' }, { key: 'normal', title: 'Обычный' }, { key: 'fast', title: 'Быстрый' }
+]
+export const parsePace = (v: unknown): Pace | null => (v === 'gentle' || v === 'normal' || v === 'fast' ? v : null)
+export const paceOrDefault = (pace: Pace | null | undefined, female: boolean): Pace => pace ?? (female ? 'gentle' : 'normal')
+
+/** Целевой темп, % веса в неделю: по выбранному темпу; у цели (≤ 3 п.п. или уже сухо) — на треть медленнее. */
+export function targetRateFor(fatPercent: number | null, targetFat: number, female: boolean, pace?: Pace | null): number {
+  const base = PLAN.paces[paceOrDefault(pace, female)]
+  const near = fatPercent != null && (fatPercent - targetFat <= 3 || fatPercent < (female ? 23 : 15))
+  return near ? Math.max(PLAN.nearTargetMinRate, Math.round(base * 2 / 3 * 100) / 100) : base
+}
+
+/** Множитель активности по средним шагам за 2 недели (≥ 7 дней с шагами); null — данных мало. */
+export function activityFromSteps(steps: number[]): number | null {
+  const days = steps.filter((s) => s > 0)
+  if (days.length < 7) return null
+  const avg = days.reduce((a, b) => a + b, 0) / days.length
+  return avg < 5000 ? 1.35 : avg < 7500 ? 1.45 : avg < 10000 ? 1.55 : avg < 12500 ? 1.65 : 1.75
+}
+
 export interface PlanInput {
   female: boolean
   /** Последний вес, кг. */
@@ -76,6 +105,29 @@ export interface PlanInput {
   prev: FatPlan | null
   /** Сегодня, YYYY-MM-DD. */
   today: string
+  /** Темп (3.28); null — по умолчанию для пола. */
+  pace?: Pace | null
+  /** Начало текущего этапа программы: темп считается только внутри этапа. */
+  phaseStart?: string | null
+  /** Расход прошлого плана — пока окно захватывает прошлый этап, он надёжнее «факта». */
+  tdeeHint?: number | null
+}
+
+/**
+ * Темп внутри этапа (3.28): только взвешивания после первых дней этапа (вода и гликоген),
+ * ≥ 4 взвешиваний на ≥ 10 днях. % веса в неделю, плюс — вес уходит; null — данных мало.
+ */
+export function phaseRate(input: Pick<PlanInput, 'weights' | 'today' | 'phaseStart' | 'weight'>): number | null {
+  const t = dayNum(input.today)
+  const from = Math.max(t - PLAN.windowDays + 1, input.phaseStart ? dayNum(input.phaseStart) + PLAN.waterDays : -Infinity)
+  const ws = input.weights
+    .filter((w) => { const n = dayNum(w.date); return n >= from && n <= t && w.weight > 0 })
+    .sort((a, b) => a.date.localeCompare(b.date))
+  if (ws.length < PLAN.minWeighIns) return null
+  const span = daysBetween(ws[0].date, ws.at(-1)!.date)
+  if (span < PLAN.minSpanDays) return null
+  const s = slope(ws.map((w) => ({ x: daysBetween(ws[0].date, w.date), y: w.weight })))
+  return s == null ? null : (-s * 7 / input.weight) * 100
 }
 
 export interface DataStatus {
@@ -203,14 +255,21 @@ export function computePlan(input: PlanInput): FatPlan {
   const st = assessData(input)
   let tdee = baseTdee
   let observed = false
-  if (st.enough && st.meanKcal != null && st.slopeKgPerDay != null) {
+  // Окно захватывает начало этапа (перерыв ↔ блок): вода и гликоген исказят «факт» —
+  // держим расход прошлого плана, пока окно не окажется целиком внутри этапа.
+  const crossesPhase = !!input.phaseStart && dayNum(input.phaseStart) + PLAN.waterDays > dayNum(today) - PLAN.windowDays
+  const hint = crossesPhase && input.tdeeHint && input.tdeeHint > 0 ? input.tdeeHint : null
+  if (hint != null) {
+    tdee = clamp(hint, baseTdee * PLAN.tdeeLo, baseTdee * PLAN.tdeeHi)
+    observed = true
+  } else if (st.enough && st.meanKcal != null && st.slopeKgPerDay != null) {
     tdee = clamp(st.meanKcal - st.slopeKgPerDay * PLAN.kcalPerKg, baseTdee * PLAN.tdeeLo, baseTdee * PLAN.tdeeHi)
     observed = true
   }
 
-  // 4. Темп: ближе к цели (или уже сухо) — медленнее, иначе уходят мышцы.
-  const slow = input.fatPercent != null && (input.fatPercent - targetFat <= 3 || input.fatPercent < (female ? 23 : 15))
-  const targetRate = slow ? PLAN.slowRate : PLAN.rate
+  // 4. Темп: выбранный (3.28); ближе к цели (или уже сухо) — медленнее, иначе уходят мышцы.
+  const targetRate = targetRateFor(input.fatPercent, targetFat, female, input.pace)
+  const slow = targetRate < PLAN.paces[paceOrDefault(input.pace, female)]
   const deficit = clamp((weight * (targetRate / 100) * PLAN.kcalPerKg) / 7, tdee * PLAN.deficitMin, tdee * PLAN.deficitMax)
 
   // 5. Не ниже основного обмена и бытового минимума.
@@ -218,7 +277,7 @@ export function computePlan(input: PlanInput): FatPlan {
   let calories = Math.max(tdee - deficit, floor)
 
   // 6. Страховка по фактическому темпу (только когда данных хватает).
-  const actualRate = observed ? (-st.slopeKgPerDay! * 7 / weight) * 100 : null
+  const actualRate = phaseRate(input)
   let note = ''
   if (actualRate != null && actualRate > PLAN.fastLoss) {
     calories += PLAN.guardKcal
@@ -243,7 +302,7 @@ export function computePlan(input: PlanInput): FatPlan {
     const delta = prev ? calories - prev.calories : 0
     if (!prev) note = observed ? 'Расход посчитал по твоим весам и дневнику' : 'Первый план — расход по формуле. Уточню, когда накопятся взвешивания и дневник'
     else if (prev.target !== targetFat) note = `Новая цель ${targetFat}% — пересчитал план`
-    else if (slow && prev.targetRate !== targetRate) note = 'До цели близко — темп снизил до 0,4% в неделю, чтобы сберечь мышцы'
+    else if (slow && prev.targetRate !== targetRate) note = `До цели близко — темп снизил до ${String(targetRate).replace('.', ',')}% в неделю, чтобы сберечь мышцы`
     else if (prev.fatPercent == null && input.fatPercent != null) note = 'Учёл первый замер — белок теперь от твоей сухой массы'
     else if (delta !== 0) note = `${delta > 0 ? '+' : '−'}${Math.abs(delta)} ккал: ${observed ? 'уточнил расход по твоим весам и дневнику' : 'обновил по весу'}`
     else note = 'План без изменений — всё идёт по курсу'

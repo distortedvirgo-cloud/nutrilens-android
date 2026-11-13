@@ -6,8 +6,8 @@ import {
   weightsBetween, workoutsBetween, type Settings
 } from './db'
 import { activityFactor, bodyProfile, fatGoalOn, livePlan } from './body'
-import { type DataStatus, type FatPlan, type PlanInput, PLAN, addIsoDays, assessData, computePlan, planDue } from './fatplan'
-import { type CheckIn, type Ratings, CHECKIN, buildCheckin, checkinDue, checkinPeriod, nextCheckinDate, trendSeries } from './checkin'
+import { type DataStatus, type FatPlan, type PlanInput, PLAN, activityFromSteps, addIsoDays, assessData, computePlan, parsePace, planDue } from './fatplan'
+import { type CheckIn, type Ratings, CHECKIN, buildCheckin, checkinDue, checkinPeriod, fatConfirm, nextCheckinDate, trendByCount, trendSeries } from './checkin'
 import { iso } from './insights'
 import { type DayGrade, SCORE, gradeDay } from './dayscore'
 import {
@@ -31,16 +31,26 @@ export async function loadPlanInput(s?: Settings, target?: number): Promise<Plan
   const meals = await mealsBetween(addIsoDays(today, -PLAN.windowDays), addIsoDays(today, -1))
   const byDay = new Map<string, number>()
   meals.forEach((m) => byDay.set(m.date, (byDay.get(m.date) ?? 0) + m.calories))
+  // Вес и процент жира — по трендам (3.28): одно взвешивание или одна лента не двигают сухую массу.
+  const recent = await weightsBetween(addIsoDays(today, -90), today)
+  const weightTrend = trendSeries(recent.map((x) => ({ date: x.date, value: x.weight }))).at(-1)?.value ?? w.weight
+  const steps = s.stepsEnabled
+    ? (await activityBetween(addIsoDays(today, -14), addIsoDays(today, -1))).map((a) => a.steps ?? 0)
+    : []
+  const phase = s.program?.phases[s.program.currentPhase]
   return {
     female: bodyProfile(s).female ?? false,
-    weight: w.weight,
+    weight: Math.round(weightTrend * 10) / 10,
     weights: await weightsBetween(addIsoDays(today, -(PLAN.windowDays - 1)), today),
     days: [...byDay].map(([date, kcal]) => ({ date, kcal })),
-    fatPercent: (await latestMeasurement())?.fatPercent ?? null,
+    fatPercent: (await trendFatNow()) ?? null,
     targetFat: target ?? s.targetFatPercent!,
-    activity: activityFactor(s),
+    activity: activityFromSteps(steps) ?? activityFactor(s),
     prev: target != null ? null : s.fatPlan,
-    today
+    today,
+    pace: parsePace(s.fatBurnPace),
+    phaseStart: target != null ? null : phase?.startDate ?? null,
+    tdeeHint: target != null ? null : s.fatPlan?.tdee ?? null
   }
 }
 
@@ -52,7 +62,7 @@ export async function planDataStatus(): Promise<DataStatus | null> {
 
 /** Тренд процента жира по замерам — по нему, а не по одному замеру, решаются переходы этапов. */
 export async function trendFatNow(): Promise<number | null> {
-  const t = trendSeries((await measurements()).map((m) => ({ date: m.date, value: m.fatPercent })))
+  const t = trendByCount((await measurements()).map((m) => ({ date: m.date, value: m.fatPercent })))
   return t.at(-1)?.value ?? null
 }
 
@@ -208,7 +218,9 @@ export function completeCheckin(ratings: Ratings, prevPlan: FatPlan): Promise<Ch
       measurements: allMs.map((m) => ({ date: m.date, fatPercent: m.fatPercent })),
       workoutGoal: s.workoutGoal || CHECKIN.workoutGoalDefault,
       prev,
-      ratings
+      ratings,
+      phaseStart: s.program?.phases[s.program.currentPhase]?.startDate ?? null,
+      inBlock: !!s.program && s.program.phases[s.program.currentPhase]?.type === 'block' && !s.program.pausedSince && !s.program.completedDate
     })
     const nextDate = nextCheckinDate(today, s.checkinWeekday)
     const before = s.program
@@ -220,10 +232,12 @@ export function completeCheckin(ratings: Ratings, prevPlan: FatPlan): Promise<Ch
     }
 
     // Этап программы: переходы — только здесь (и конец перерыва при открытии).
-    const fatTrend = trendSeries(allMs.map((m) => ({ date: m.date, value: m.fatPercent }))).at(-1)?.value ?? null
+    const fatPoints = allMs.map((m) => ({ date: m.date, value: m.fatPercent }))
+    const fatTrend = trendByCount(fatPoints).at(-1)?.value ?? null
     const { program, change } = checkinProgram(before, {
       today,
       trendFat: fatTrend,
+      confirmFat: fatConfirm(fatPoints),
       flat: checkin.ratePerWeek != null && checkin.ratePerWeek < CHECKIN.flat,
       diaryComplete: checkin.diaryDays >= Math.ceil(CHECKIN.diaryDays * checkin.periodDays / 7),
       weight: input.weight
@@ -296,7 +310,7 @@ export async function previewProgram(target: number): Promise<{ program: Program
   const m = await latestMeasurement()
   if (!input || !m) return null
   const plan = computePlan(input)
-  return { program: createProgram({ today: input.today, fat: m.fatPercent, weight: input.weight, female: input.female, target }), plan }
+  return { program: createProgram({ today: input.today, fat: m.fatPercent, weight: input.weight, female: input.female, target, pace: input.pace }), plan }
 }
 
 /** «Начать программу»: включает режим, план и программу одним сохранением. */
@@ -311,6 +325,23 @@ export function startProgram(target: number): Promise<boolean> {
       program: pv.program
     })
     return true
+  })
+}
+
+/**
+ * Сменить темп (3.28): в блоке — сразу свежий план под новый темп, в перерыве и
+ * удержании — только запоминаем (понадобится в следующем блоке).
+ */
+export function setPace(key: string): Promise<void> {
+  return serial(async () => {
+    const pace = parsePace(key)
+    if (!pace) return
+    let s = await saveSettings({ fatBurnPace: pace })
+    if (!fatGoalOn(s) || (s.program && !inDeficit(s.program))) return
+    const input = await loadPlanInput(s)
+    if (!input) return
+    const fresh = computePlan({ ...input, prev: null })
+    s = await saveSettings({ fatPlan: { ...fresh, note: `Новый темп — план пересчитан: ${fresh.note.charAt(0).toLowerCase()}${fresh.note.slice(1)}`, nextDate: s.fatPlan?.nextDate ?? fresh.nextDate } })
   })
 }
 

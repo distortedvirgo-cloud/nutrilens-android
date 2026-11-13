@@ -6,7 +6,7 @@ import {
 import { analyzeMeal, chat } from '../ai'
 import { addDays, dayTotals, iso, nowTime } from './insights'
 import { bodyContext, effectiveCalories, effectiveGoals, FAT_TARGET_MAX, FAT_TARGET_MIN } from './body'
-import { fatPlanFromFlat, fatPlanToFlat, parseFatPlan } from './fatplan'
+import { fatPlanFromFlat, fatPlanToFlat, parseFatPlan, parsePace } from './fatplan'
 import { CHECKIN, type CheckIn, checkinContext, parseCheckin } from './checkin'
 import { type DayActivity, SCORE, averageScore, clampStepGoal, parseActivity, scoreContext, scoreDay } from './dayscore'
 import { dayGrades } from './plan'
@@ -222,6 +222,8 @@ export async function exportBackup(): Promise<Blob> {
       // День чек-ина — ISO 1..7 (1 — понедельник, 7 — воскресенье), как java.time.DayOfWeek.
       checkinWeekday: s.checkinWeekday,
       workoutGoal: s.workoutGoal,
+      // Темп программы (3.28) — то же поле, что у Android.
+      fatBurnPace: s.fatBurnPace ?? null,
       // Шаги (3.23): цель и включена ли плитка.
       stepGoal: s.stepGoal,
       stepsEnabled: s.stepsEnabled,
@@ -358,6 +360,7 @@ export async function importBackup(file: Blob): Promise<number> {
       workoutGoal: intIn(s.workoutGoal, CHECKIN.workoutGoalMin, CHECKIN.workoutGoalMax) ?? current?.workoutGoal ?? CHECKIN.workoutGoalDefault,
       stepGoal: s.stepGoal != null && Number.isFinite(Number(s.stepGoal)) ? clampStepGoal(Number(s.stepGoal)) : (current?.stepGoal ?? SCORE.stepGoalDefault),
       stepsEnabled: typeof s.stepsEnabled === 'boolean' ? s.stepsEnabled : (current?.stepsEnabled ?? false),
+      fatBurnPace: parsePace(s.fatBurnPace) ?? current?.fatBurnPace ?? null,
       // Программы нет в файле (бэкап до 3.24) — null: при запуске она создастся
       // из импортированных замеров и чек-инов, как у тех, кто обновился.
       program: parseProgram(s.program),

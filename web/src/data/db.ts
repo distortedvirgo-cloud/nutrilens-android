@@ -73,8 +73,10 @@ export interface Settings {
   fatPlan: FatPlan | null
   /** День недельного чек-ина по ISO: 1 — понедельник … 7 — воскресенье (по умолчанию). */
   checkinWeekday: number
-  /** Цель по силовым тренировкам в неделю, 2–5 (по умолчанию 3). */
+  /** Цель по силовым тренировкам в неделю, 2–5 (по умолчанию 2 с 3.28). */
   workoutGoal: number
+  /** Темп программы (3.28): 'gentle' | 'normal' | 'fast'; null — по умолчанию для пола. */
+  fatBurnPace?: string | null
   /** Шаги (3.23): плитка на «Сегодня» и цель, 4000–15000. На вебе — только ручной ввод. */
   stepsEnabled: boolean
   stepGoal: number
@@ -156,7 +158,8 @@ export const DEFAULT_SETTINGS: Settings = {
   targetFatPercent: null,
   fatPlan: null,
   checkinWeekday: 7,
-  workoutGoal: 3,
+  workoutGoal: 2,
+  fatBurnPace: null,
   stepsEnabled: false,
   stepGoal: 8000,
   program: null

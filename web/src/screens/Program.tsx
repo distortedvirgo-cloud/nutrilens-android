@@ -4,13 +4,13 @@
 import { useState } from 'react'
 import { type Settings, allMealDates, checkins, getSettings, latestMeasurement, latestWeight, measurementOn, saveSettings, setWeight, weightsBetween } from '../data/db'
 import { bodyProfile, defaultFatTarget, fmt1, plural } from '../data/body'
-import { type FatPlan, daysBetween } from '../data/fatplan'
+import { type FatPlan, PACES, daysBetween, paceOrDefault, parsePace } from '../data/fatplan'
 import { CHECKIN, WEEKDAYS_SHORT, trendSeries, weekdayAcc } from '../data/checkin'
 import { SCORE, clampStepGoal, fmtInt } from '../data/dayscore'
 import {
   type Program, PROGRAM, activeDays, blockCount, currentPhase, forecast, phaseName, programSummary, targetFloor
 } from '../data/program'
-import { endProgram, previewProgram, startProgram, trendFatNow, updateProgram } from '../data/plan'
+import { endProgram, previewProgram, setPace, startProgram, trendFatNow, updateProgram } from '../data/plan'
 import { iso } from '../data/insights'
 import { MeasureForm, TargetStepper } from './Body'
 import { dayMonth } from './Checkin'
@@ -30,8 +30,21 @@ export function RhythmSettings({ s, steps }: { s: Settings; steps?: boolean }) {
   const goal = s.workoutGoal || CHECKIN.workoutGoalDefault
   const setGoal = (d: number) => saveSettings({ workoutGoal: Math.min(CHECKIN.workoutGoalMax, Math.max(CHECKIN.workoutGoalMin, goal + d)) })
   const stepGoal = s.stepGoal || SCORE.stepGoalDefault
+  const pace = paceOrDefault(parsePace(s.fatBurnPace), bodyProfile(s).female ?? false)
+  const paceHint = {
+    gentle: '0,4% веса в неделю — легче держать, мышцам спокойнее.',
+    normal: '0,6% веса в неделю — баланс скорости и сохранения мышц.',
+    fast: '0,8% веса в неделю — быстрее, но голоднее; нужны регулярные силовые.'
+  }[pace]
   return (
     <div className="col gap-12">
+      <div className="col gap-8">
+        <div className="row between" style={{ padding: '0 4px' }}>
+          <span style={{ fontWeight: 700 }}>Темп</span>
+        </div>
+        <Segmented options={PACES.map((p) => [p.key, p.title] as [string, string])} value={pace} onChange={(v) => { void setPace(v as string) }} />
+        <span className="label" style={{ padding: '0 4px' }}>{paceHint} Ближе к цели темп сам снизится.</span>
+      </div>
       <div className="col gap-8">
         <div className="row between" style={{ padding: '0 4px' }}>
           <span style={{ fontWeight: 700 }}>День чек-ина</span>

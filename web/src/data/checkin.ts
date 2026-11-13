@@ -1,7 +1,7 @@
 // Тренд веса и недельный чек-ин режима «Сжигание жира». Чистый модуль, как
 // fatplan.ts: без IndexedDB, React и «сейчас» — всё приходит во входе, поэтому
 // правила легко проверить скриптом. Пороги — в CHECKIN, чтобы тюнить в одном месте.
-import { type FatPlan, type PlanInput, PLAN, addIsoDays, computePlan, daysBetween, macrosFor, planFloor, plural } from './fatplan'
+import { type FatPlan, type PlanInput, PLAN, addIsoDays, computePlan, daysBetween, macrosFor, phaseRate, planFloor, plural } from './fatplan'
 import { type DayActivity, SCORE, averageScore, gradeDay } from './dayscore'
 
 export const CHECKIN = {
@@ -37,7 +37,14 @@ export const CHECKIN = {
   flatCutSmall: 50,
   /** Сколько недель «стоит», чтобы перестать резать и предложить перерыв. */
   flatBreakWeeks: 3,
-  workoutGoalDefault: 3,
+  /** 3.28: прибавки не выше «расход − 10%»; красный сигнал 3 недели — без прибавок. */
+  minDeficitShare: 0.1,
+  redStopWeeks: 3,
+  /** Средний темп за 2 чек-ина ниже 75% цели — −50 (−100, если ниже 30%); снижать — не чаще раза в 2 чек-ина. */
+  slowShare: 0.75,
+  cutGap: 2,
+  /** С 3.28 по умолчанию 2 силовые: этого хватает, чтобы держать мышцы на дефиците. */
+  workoutGoalDefault: 2,
   workoutGoalMin: 2,
   workoutGoalMax: 5,
   /** День чек-ина по ISO: 1 — понедельник … 7 — воскресенье (как java.time.DayOfWeek). */
@@ -64,6 +71,28 @@ export function trendSeries(points: { date: string; value: number }[], alpha: nu
     out.push({ date: p.date, raw: p.value, value: prev.value + a * (p.value - prev.value) })
   }
   return out
+}
+
+/**
+ * Тренд для редких замеров (лента, весы с % жира) — по числу замеров, а не по дням (3.28):
+ * при замерах раз в неделю «по дням» новый замер весил ~87%, и одна неточная лента
+ * могла закрыть блок. Здесь каждый новый замер — половина тренда.
+ */
+export function trendByCount(points: { date: string; value: number }[], alpha = 0.5): TrendPoint[] {
+  const sorted = points.filter((p) => Number.isFinite(p.value) && p.value > 0).sort((a, b) => a.date.localeCompare(b.date))
+  const out: TrendPoint[] = []
+  for (const p of sorted) {
+    const prev = out.at(-1)
+    if (prev && prev.date === p.date) { out[out.length - 1] = { date: p.date, raw: p.value, value: (out.at(-2)?.value ?? p.value) + (out.length > 1 ? alpha : 1) * (p.value - (out.at(-2)?.value ?? p.value)) }; continue }
+    out.push({ date: p.date, raw: p.value, value: prev ? prev.value + alpha * (p.value - prev.value) : p.value })
+  }
+  return out
+}
+
+/** Худший из двух последних замеров — подтверждение цели (null — замеров меньше двух). */
+export function fatConfirm(points: { date: string; value: number }[]): number | null {
+  const t = trendByCount(points)
+  return t.length >= 2 ? Math.max(t.at(-1)!.raw, t.at(-2)!.raw) : null
 }
 
 /** Последняя точка тренда не позже даты. */
@@ -158,6 +187,10 @@ export interface CheckIn extends Ratings {
   signalText: string
   /** Сколько чек-инов подряд вес стоит (при полном дневнике). */
   flatWeeks: number
+  /** 3.28: подряд красный сигнал мышц; темп, по которому решал чек-ин (внутри этапа); чек-инов с прошлого снижения. */
+  redWeeks?: number
+  decisionRate?: number | null
+  sinceCut?: number
   planBefore: PlanMacros | null
   planAfter: PlanMacros
   /** Почему план такой. */
@@ -190,6 +223,9 @@ export interface CheckinInput {
   /** Прошлый чек-ин; null — первый. */
   prev: CheckIn | null
   ratings: Ratings
+  /** Начало текущего этапа и идёт ли блок дефицита (3.28): темп — только внутри этапа. */
+  phaseStart?: string | null
+  inBlock?: boolean
 }
 
 export interface CheckinResult { checkin: CheckIn; plan: FatPlan; breakNote: boolean }
@@ -264,41 +300,65 @@ export function buildCheckin(input: CheckinInput): CheckinResult {
     ? 'Мышцы под защитой: силовые, белок и темп — в норме.'
     : `${fails.join('; ')}.`.replace(/^./, (c) => c.toUpperCase())
 
-  // 5. Новый план. Расход и БЖУ — тем же планировщиком; калории — по правилам чек-ина.
+  // 5. Новый план. Расход и БЖУ — тем же планировщиком; калории — по правилам чек-ина (3.28).
   const base = computePlan({ ...input.plan, prev: prevPlan })
   const floor = planFloor(input.plan.female, base.bmr)
   const hungry2 = ratings.hunger === 5 && prev?.hunger === 5
   // Вес стоит — значит, план уже около расхода; ниже плана «поддержку» не называем.
   const maintenance = Math.round(Math.max(base.tdee, prevPlan.calories) / 10) * 10
+  // Темп для решений — только внутри этапа (без первых дней воды); первые 15 дней блока не оцениваем.
+  const phaseDays = input.phaseStart ? daysBetween(input.phaseStart, today) : null
+  const early = !!input.inBlock && phaseDays != null && phaseDays < PLAN.earlyPhaseDays
+  const decisionRate = early ? null : phaseRate({ ...input.plan, phaseStart: input.phaseStart ?? null }) ?? rate
+  const samePhase = !!prev && !prev.phaseTitle
+  const prevRate = samePhase ? prev?.decisionRate ?? null : null
+  const avgRate = decisionRate == null ? null : prevRate != null ? (decisionRate + prevRate) / 2 : decisionRate
+  const slow = avgRate != null && avgRate < base.targetRate * CHECKIN.slowShare
+  const redWeeks = signal === 'red' ? (prev?.redWeeks ?? 0) + 1 : 0
+  const sinceCut = samePhase ? (prev?.sinceCut ?? 99) : 99
+  const ceiling = Math.round(base.tdee * (1 - CHECKIN.minDeficitShare) / 10) * 10
   let delta = 0
-  let note: string
+  let note = ''
   let breakNote = false
-  let keep = false
+  let keep = false as boolean
+  const boost = (kcal: number, text: (n: number) => string) => {
+    const room = ceiling - prevPlan.calories
+    if (room < 10) {
+      keep = true
+      note = 'Калории уже почти на уровне расхода — дальше не добавляю. Если легче не становится, лучше 2 недели перерыва, чем дефицит без дефицита.'
+    } else {
+      delta = Math.min(kcal, room)
+      note = text(delta)
+    }
+  }
   if (!diaryComplete) {
     keep = true
     note = `Дневник заполнен ${diaryDays} из ${n} дней — по таким данным легко ошибиться, поэтому план не трогаю.`
-  } else if (signal === 'red' || hungry2) {
-    delta = signal === 'red' ? CHECKIN.muscleKcal : CHECKIN.hungerKcal
-    note = signal === 'red'
-      ? `+${delta} ккал: сейчас главное — сберечь мышцы, поэтому дефицит чуть мягче.`
-      : `+${delta} ккал: ты вторую неделю очень голоден — так долго не продержаться, сделаем дефицит мягче.`
-  } else if (fast) {
-    delta = CHECKIN.fastKcal
-    note = `Вес уходит быстро (${f1(rate!)}% в неделю) — +${delta} ккал, чтобы уходил жир, а не мышцы.`
-  } else if (rate == null) {
+  } else if (signal === 'red' && redWeeks >= CHECKIN.redStopWeeks) {
+    keep = true
+    note = `Сигнал мышц красный ${redWeeks}-ю неделю — прибавки калорий тут не помогут. Добери белок и силовые; если сейчас не до этого — поставь программу на паузу.`
+  } else if (signal === 'red') {
+    boost(CHECKIN.muscleKcal, (d) => `+${d} ккал: сейчас главное — сберечь мышцы, поэтому дефицит чуть мягче.`)
+  } else if (hungry2) {
+    boost(CHECKIN.hungerKcal, (d) => `+${d} ккал: ты вторую неделю очень голоден — так долго не продержаться, сделаем дефицит мягче.`)
+  } else if (early) {
+    note = 'Начало этапа: вес гуляет из-за воды и гликогена — темп оценю с третьей недели, план без изменений.'
+  } else if (decisionRate == null) {
     note = 'Взвешиваний пока мало, чтобы увидеть тренд, — план без изменений. Взвешивайся 3–4 раза в неделю, утром.'
+  } else if (decisionRate > CHECKIN.fast) {
+    boost(CHECKIN.fastKcal, (d) => `Вес уходит быстро (${f1(decisionRate)}% в неделю) — +${d} ккал, чтобы уходил жир, а не мышцы.`)
   } else if (flat && flatWeeks >= CHECKIN.flatBreakWeeks) {
     breakNote = true
     note = `Вес стоит ${flatWeeks}-ю неделю. Дальше не урезаю: попробуй 1–2 недели поесть на уровне расхода (≈ ${maintenance} ккал) — это даст отдых голове и телу, потом продолжим.`
-  } else if (flat && flatWeeks >= 2) {
-    delta = -(rate! <= 0 ? CHECKIN.flatCut : CHECKIN.flatCutSmall)
-    note = `Вес стоит вторую неделю при полном дневнике — −${-delta} ккал.`
-  } else if (flat) {
-    note = 'Вес за неделю почти не сдвинулся — так бывает из-за воды и соли. План оставил, смотрим ещё неделю.'
-  } else if (rate >= CHECKIN.okLo) {
-    note = `Темп ${f1(rate)}% в неделю — в самый раз, план без изменений.`
+  } else if (slow && prevRate != null && sinceCut < CHECKIN.cutGap) {
+    note = 'Темп ниже цели, но план недавно уже снижал — жду неделю, пока правка сработает.'
+  } else if (slow && prevRate != null) {
+    delta = -(avgRate! < base.targetRate * 0.3 ? CHECKIN.flatCut : CHECKIN.flatCutSmall)
+    note = `Темп ${f1(avgRate!)}% в неделю за две недели при цели ${f1(base.targetRate)}% — −${-delta} ккал.`
+  } else if (slow) {
+    note = `Темп ${f1(avgRate!)}% в неделю при цели ${f1(base.targetRate)}% — если так же через неделю, чуть снижу калории.`
   } else {
-    note = `Вес уходит медленно (${f1(rate)}% в неделю), но уходит — план оставил.`
+    note = `Темп ${f1(decisionRate)}% в неделю при цели ${f1(base.targetRate)}% — план без изменений.`
   }
 
   let plan: FatPlan
@@ -338,6 +398,9 @@ export function buildCheckin(input: CheckinInput): CheckinResult {
     ...ratings,
     diaryDays, goodDays, avgScore, proteinDays, workouts, workoutGoal: workoutNeed,
     signal, signalText, flatWeeks,
+    redWeeks,
+    decisionRate: decisionRate == null ? null : Math.round(decisionRate * 100) / 100,
+    sinceCut: delta < 0 && !keep ? 1 : Math.min(99, sinceCut + 1),
     planBefore: macros(prevPlan),
     planAfter: macros(plan),
     note, action
@@ -375,6 +438,7 @@ export function parseCheckin(v: unknown): CheckIn | null {
     signal: o.signal === 'green' || o.signal === 'red' ? o.signal : 'yellow',
     signalText: typeof o.signalText === 'string' ? o.signalText : '',
     flatWeeks: n('flatWeeks'),
+    redWeeks: n('redWeeks'), decisionRate: opt('decisionRate'), sinceCut: n('sinceCut', 99),
     planBefore: pm(o.planBefore), planAfter: after,
     note: typeof o.note === 'string' ? o.note : '',
     action: typeof o.action === 'string' ? o.action : '',

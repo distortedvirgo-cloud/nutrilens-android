@@ -3,7 +3,7 @@
 // 4 недели после цели. Чистый модуль, как fatplan.ts и checkin.ts: без IndexedDB,
 // React и «сейчас» — всё приходит во входе, поэтому правила легко проверить
 // скриптом. Логика одинакова с Android; пороги — в PROGRAM.
-import { type FatPlan, PLAN, addIsoDays, daysBetween, macrosFor, planFloor, plural } from './fatplan'
+import { type FatPlan, type Pace, addIsoDays, daysBetween, macrosFor, planFloor, plural, targetRateFor } from './fatplan'
 
 export const PROGRAM = {
   /** Блок дефицита: 8 недель; последний может быть короче, но не меньше 3. */
@@ -111,13 +111,12 @@ const emptyPhase = (type: PhaseType, index: number, plannedWeeks: number, target
  * 0,4% — когда до цели ≤ 3% или уже сухо (то же правило, что в computePlan).
  * Сухая масса считается неизменной — ради этого и белок, и силовые.
  */
-export function estimateWeeks(fat: number, target: number, weight: number, female: boolean): number {
+export function estimateWeeks(fat: number, target: number, weight: number, female: boolean, pace?: Pace | null): number {
   if (!(weight > 0) || fat <= target) return 0
   const lean = weight * (1 - fat / 100)
   let w = weight, f = fat, weeks = 0
   while (f > target && weeks < 520) {
-    const slow = f - target <= 3 || f < (female ? 23 : 15)
-    w -= w * (slow ? PLAN.slowRate : PLAN.rate) / 100
+    w -= w * targetRateFor(f, target, female, pace) / 100
     f = ((w - lean) / w) * 100
     weeks++
   }
@@ -137,8 +136,8 @@ export function blockTargets(startFat: number, target: number, n: number): numbe
 }
 
 /** Этапы от текущего процента: блок, перерыв, блок, …, удержание. Номера блоков — с firstIndex. */
-export function buildPhases(fromFat: number, target: number, weight: number, female: boolean, firstIndex = 1): Phase[] {
-  const lengths = blockLengths(estimateWeeks(fromFat, target, weight, female))
+export function buildPhases(fromFat: number, target: number, weight: number, female: boolean, firstIndex = 1, pace?: Pace | null): Phase[] {
+  const lengths = blockLengths(estimateWeeks(fromFat, target, weight, female, pace))
   const targets = blockTargets(fromFat, target, lengths.length)
   const out: Phase[] = []
   lengths.forEach((w, i) => {
@@ -157,11 +156,13 @@ export interface CreateInput {
   weight: number
   female: boolean
   target: number
+  /** Темп (3.28); null — по умолчанию для пола. */
+  pace?: Pace | null
 }
 
 export function createProgram(i: CreateInput): Program {
   const start = i.startDate ?? i.today
-  const phases = buildPhases(i.fat, i.target, i.weight, i.female)
+  const phases = buildPhases(i.fat, i.target, i.weight, i.female, 1, i.pace)
   phases[0] = { ...phases[0], startDate: start, startFat: i.fat }
   return {
     startDate: start, startFat: i.fat, startWeight: i.weight, target: i.target, female: i.female,
@@ -244,6 +245,8 @@ export interface CheckinFacts {
   today: string
   /** Тренд процента жира по замерам; null — замеров нет. */
   trendFat: number | null
+  /** Худший из двух последних замеров (3.28): цель засчитывается, только если и он до неё дошёл. */
+  confirmFat?: number | null
   /** Неделя «вес стоит» по тренду и дневник полный (правило чек-ина). */
   flat: boolean
   diaryComplete: boolean
@@ -341,7 +344,10 @@ export function checkinProgram(p: Program, f: CheckinFacts): { program: Program;
   const q: Program = { ...p, phases: p.phases.map((ph, k) => (k === i ? { ...ph, checkins: ph.checkins + 1, flatWeeks } : ph)) }
   const cur = currentPhase(q)
   const days = activeDays(q, i, f.today)
-  const final = f.trendFat != null && f.trendFat <= q.target + PROGRAM.reachedMargin
+  // Цель — по тренду и двум последним замерам: одна удачная лента не закрывает этап (3.28).
+  const confirm = f.confirmFat === undefined ? f.trendFat : f.confirmFat
+  const reached = (level: number) => f.trendFat != null && f.trendFat <= level && confirm != null && confirm <= level
+  const final = reached(q.target + PROGRAM.reachedMargin)
 
   if (cur.type === 'maintenance') {
     if (days < dueDays(cur.plannedWeeks)) return { program: q, change: null }
@@ -355,7 +361,7 @@ export function checkinProgram(p: Program, f: CheckinFacts): { program: Program;
   if (cur.type === 'break') {
     return days >= PROGRAM.breakDays ? goToNextBlock(q, f.today, f.trendFat) : { program: q, change: null }
   }
-  if (f.trendFat != null && cur.targetFat != null && f.trendFat <= cur.targetFat) return goToBreak(q, f, 'target')
+  if (cur.targetFat != null && reached(cur.targetFat)) return goToBreak(q, f, 'target')
   if (cur.flatWeeks >= PROGRAM.plateauWeeks) return goToBreak(q, f, 'plateau')
   if (days >= dueDays(cur.plannedWeeks)) return goToBreak(q, f, 'time')
   return { program: q, change: null }
