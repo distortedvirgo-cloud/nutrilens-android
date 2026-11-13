@@ -7,6 +7,10 @@ import com.nutrilens.app.BuildConfig
 import com.nutrilens.app.data.Avatar
 import com.nutrilens.app.data.NutriLensDatabase
 import com.nutrilens.app.data.SettingsRepository
+import com.nutrilens.app.data.fatBurnProgramState
+import com.nutrilens.app.data.scoreDays
+import com.nutrilens.app.data.scorePlan
+import com.nutrilens.app.insights.DayScore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -57,6 +61,18 @@ class LeaderboardSync(context: Context) {
                     list.sumOf { it.calories } to (list.firstNotNullOfOrNull { it.dailyGoalSnapshot } ?: settings.effectiveDailyGoal)
                 }.toMutableMap()
                 days[today.toString()] = (days[today.toString()]?.first ?: 0.0) to settings.effectiveDailyGoal
+                // Участник программы соревнуется оценкой дня (калории, белок, движение, сон).
+                // Пауза — обычные очки; дни без записи активности (до 3.23) — тоже обычные.
+                val programScores: Map<String, Int> = runCatching {
+                    val program = settings.fatBurnProgramState
+                    if (program == null || program.paused) emptyMap()
+                    else {
+                        val plan = db.scorePlan(settings)
+                        db.scoreDays(today.minusDays(SYNC_DAYS - 1), today)
+                            .filter { it.hasRecord && it.date.toString() in days }
+                            .associate { it.date.toString() to DayScore.compute(it, plan.calories, plan.protein, plan.stepGoal).total }
+                    }
+                }.getOrDefault(emptyMap())
                 val body = buildJsonObject {
                     put("secret", PlayerIdentity.secret(appContext))
                     put("nickname", nickname)
@@ -64,7 +80,11 @@ class LeaderboardSync(context: Context) {
                     put("source", "android")
                     putJsonObject("days") {
                         days.forEach { (date, v) ->
-                            putJsonObject(date) { put("calories", (v.first * 10).toLong() / 10.0); put("goal", v.second) }
+                            putJsonObject(date) {
+                                put("calories", (v.first * 10).toLong() / 10.0)
+                                put("goal", v.second)
+                                programScores[date]?.let { put("ps", it) }
+                            }
                         }
                     }
                 }.toString()

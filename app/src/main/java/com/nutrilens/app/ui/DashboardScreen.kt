@@ -107,6 +107,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -118,6 +119,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import android.view.HapticFeedbackConstants
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -521,6 +523,14 @@ fun DashboardScreen(
     var showCheckIn by remember { mutableStateOf(false) }
     // Программа с этапами (3.24): карточка этапа, разовые карточки и итог.
     val programViewModel: FatBurnProgramViewModel = viewModel()
+    // Коуч пишет первым (3.25): подсказка программы на сегодня. Пересчитывается, когда
+    // меняются еда, активность или настройки; «Понятно» прячет её сразу.
+    val appContext = LocalContext.current.applicationContext
+    var hiddenNudge by remember { mutableStateOf<String?>(null) }
+    val coachNudge by produceState<com.nutrilens.app.insights.Nudges.Nudge?>(null, settings, meals.size, dayActivity, selectedDate) {
+        value = if (selectedDate != LocalDate.now() || settings.targetFatPercent == null) null
+        else runCatching { com.nutrilens.app.data.CoachNudges.load(appContext) }.getOrNull()
+    }
 
     LaunchedEffect(Unit) {
         val date = initialDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
@@ -645,6 +655,18 @@ fun DashboardScreen(
             } else if (program != null) {
                 item(key = "program-phase") {
                     Box(Modifier.introIn(2, introDone)) { ProgramPhaseCard(settings = settings) }
+                }
+            }
+        }
+        // Коуч пишет первым (3.25): не вместе с разовой карточкой программы — по одной за раз.
+        val nudge = coachNudge
+        if (nudge != null && nudge.key != hiddenNudge && settings.fatBurnProgramState?.notice == null) {
+            item(key = "coach-nudge") {
+                Box(Modifier.introIn(2, introDone)) {
+                    CoachNudgeCard(nudge = nudge, onDismiss = {
+                        com.nutrilens.app.data.CoachNudges.dismiss(appContext, nudge.key)
+                        hiddenNudge = nudge.key
+                    })
                 }
             }
         }

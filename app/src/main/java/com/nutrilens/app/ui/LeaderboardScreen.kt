@@ -190,6 +190,14 @@ fun LeaderboardScreen(onBack: () -> Unit, viewModel: LeaderboardViewModel = view
                                 modifier = Modifier.staggeredIn(index)
                             )
                         }
+                        if (rows.any { it.program }) item {
+                            Text(
+                                "🔥 — участник программы «Сжигание жира»: его очки — оценка дня (калории, белок, движение, сон)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -273,7 +281,7 @@ private fun LeaderboardRowCard(
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = row.nickname,
+                    text = if (row.program) "🔥 ${row.nickname}" else row.nickname,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
@@ -302,7 +310,16 @@ private fun LeaderboardRowCard(
             }
             Spacer(Modifier.width(10.dp))
             // «68%» крупно и «плана» под ним — так справа уже, и имя влезает целиком.
-            Column(horizontalAlignment = Alignment.End) {
+            // Участник программы (🔥) соревнуется оценкой дня — её и показываем.
+            if (row.program) Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = "${row.score}",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text("оценка дня", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else Column(horizontalAlignment = Alignment.End) {
                 Text(
                     text = if (row.percent > 100) "+${row.percent - 100}%" else "${row.percent}%",
                     style = MaterialTheme.typography.titleLarge,

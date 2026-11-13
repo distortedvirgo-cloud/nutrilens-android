@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.EmojiEvents
 import androidx.compose.material.icons.rounded.LocalFireDepartment
 import androidx.compose.material.icons.rounded.Pause
@@ -770,6 +771,18 @@ fun ProgramNoticeCard(notice: FatBurnProgram.Notice, onDismiss: () -> Unit, modi
             if (notice.text.isNotBlank()) {
                 Text(notice.text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
             }
+            SoftButton("Понятно", onClick = onDismiss, modifier = Modifier.fillMaxWidth())
+        }
+    }
+}
+
+/** Коуч пишет первым (3.25): подсказка по данным программы. «Понятно» — больше не покажется. */
+@Composable
+fun CoachNudgeCard(nudge: com.nutrilens.app.insights.Nudges.Nudge, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
+    FreshCard(modifier.fillMaxWidth()) {
+        Column(Modifier.padding(Space.Card), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            CardHeader(title = nudge.title, icon = Icons.Rounded.AutoAwesome, tint = MaterialTheme.colorScheme.primary, subtitle = "Коуч")
+            Text(nudge.text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
             SoftButton("Понятно", onClick = onDismiss, modifier = Modifier.fillMaxWidth())
         }
     }

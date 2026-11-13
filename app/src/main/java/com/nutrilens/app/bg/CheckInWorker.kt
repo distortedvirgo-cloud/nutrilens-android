@@ -3,6 +3,7 @@ package com.nutrilens.app.bg
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.nutrilens.app.data.CoachNudges
 import com.nutrilens.app.data.NutriLensDatabase
 import com.nutrilens.app.data.SettingsRepository
 import com.nutrilens.app.data.isCheckInDue
@@ -25,6 +26,7 @@ class CheckInWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         // Чек-ин начинается со взвешивания — уважаем переключатель «Взвешивание» в настройках.
         if (!settings.weighInReminderEnabled || settings.targetFatPercent == null) return Result.success()
         val today = LocalDate.now()
+        notifyNudge(today)
         if (today.dayOfWeek != CheckInPlanner.dayOfWeek(settings.checkInWeekday)) return Result.success()
         if (!settings.isCheckInDue(today)) return Result.success()
         val hour = LocalTime.now().hour
@@ -46,7 +48,27 @@ class CheckInWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         return Result.success()
     }
 
+    /**
+     * Коуч пишет первым (3.25): подсказка программы — одним уведомлением днём (10–20 ч),
+     * по каждой подсказке не больше одного раза. На «Сегодня» она ещё и карточкой.
+     */
+    private suspend fun notifyNudge(today: LocalDate) {
+        val hour = LocalTime.now().hour
+        if (hour < 10 || hour >= 20) return
+        val nudge = runCatching { CoachNudges.load(applicationContext, today) }.getOrNull() ?: return
+        if (!CoachNudges.markNotified(applicationContext, nudge.key, today)) return
+        NotificationHelper.post(
+            applicationContext,
+            NotificationHelper.CHANNEL_REMINDERS,
+            NUDGE_NOTIFICATION_ID,
+            nudge.title,
+            nudge.text,
+            NotificationHelper.mainActivityPendingIntent(applicationContext, NUDGE_NOTIFICATION_ID)
+        )
+    }
+
     companion object {
         const val NOTIFICATION_ID = 1003
+        const val NUDGE_NOTIFICATION_ID = 1004
     }
 }

@@ -12,7 +12,9 @@ import kotlin.math.roundToInt
 @Serializable
 data class LeaderboardDay(
     val calories: Double = 0.0,
-    val goal: Double = 0.0
+    val goal: Double = 0.0,
+    /** Оценка дня программы «Сжигание жира» (0–100); есть только у её участников. */
+    val ps: Int? = null
 )
 
 /**
@@ -45,7 +47,9 @@ data class LeaderboardRow(
     val daysCounted: Int,
     val isOver: Boolean,
     val isSelf: Boolean,
-    val avatar: String = ""
+    val avatar: String = "",
+    /** В периоде есть дни программы: очки этих дней — оценка дня, а не попадание в калории. */
+    val program: Boolean = false
 )
 
 /** Подсчёт очков и строк лидерборда за выбранный период. */
@@ -93,14 +97,15 @@ object LeaderboardMath {
                     LeaderboardRow(
                         id = entry.id,
                         nickname = entry.nickname,
-                        score = dayScore(calories, goal) ?: 0,
+                        score = day?.ps ?: dayScore(calories, goal) ?: 0,
                         percent = percentOf(calories, goal),
                         calories = calories,
                         goal = goal,
                         daysCounted = if (goal > 0.0) 1 else 0,
                         isOver = calories > goal,
                         isSelf = isSelf(entry, selfId, selfNickname),
-                        avatar = entry.avatar
+                        avatar = entry.avatar,
+                        program = day?.ps != null
                     )
                 }
                 LeaderboardPeriod.WEEK, LeaderboardPeriod.MONTH -> {
@@ -110,7 +115,8 @@ object LeaderboardMath {
                     val score = if (counted.isEmpty()) {
                         0
                     } else {
-                        counted.mapNotNull { dayScore(it.calories, it.goal) }
+                        // День программы — её оценка дня; остальные — попадание в калории (обе шкалы 0–100).
+                        counted.mapNotNull { it.ps ?: dayScore(it.calories, it.goal) }
                             .average()
                             .let { floor(it).toInt() }
                     }
@@ -124,7 +130,8 @@ object LeaderboardMath {
                         daysCounted = counted.size,
                         isOver = calories > goal,
                         isSelf = isSelf(entry, selfId, selfNickname),
-                        avatar = entry.avatar
+                        avatar = entry.avatar,
+                        program = counted.any { it.ps != null }
                     )
                 }
             }
