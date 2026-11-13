@@ -523,7 +523,7 @@ fun DashboardScreen(
     var showCheckIn by remember { mutableStateOf(false) }
     // Программа с этапами (3.24): карточка этапа, разовые карточки и итог.
     val programViewModel: FatBurnProgramViewModel = viewModel()
-    // Коуч пишет первым (3.25): подсказка программы на сегодня. Пересчитывается, когда
+    // Помощник пишет первым (3.25): подсказка программы на сегодня. Пересчитывается, когда
     // меняются еда, активность или настройки; «Понятно» прячет её сразу.
     val appContext = LocalContext.current.applicationContext
     var hiddenNudge by remember { mutableStateOf<String?>(null) }
@@ -658,7 +658,7 @@ fun DashboardScreen(
                 }
             }
         }
-        // Коуч пишет первым (3.25): не вместе с разовой карточкой программы — по одной за раз.
+        // Помощник пишет первым (3.25): не вместе с разовой карточкой программы — по одной за раз.
         val nudge = coachNudge
         if (nudge != null && nudge.key != hiddenNudge && settings.fatBurnProgramState?.notice == null) {
             item(key = "coach-nudge") {
@@ -2247,7 +2247,7 @@ private fun MacroBar(label: String, value: Double, goal: Double, color: Color) {
     }
 }
 
-/** Одна строка совета коуча — ведёт в «Коуч», где подробности и инструменты. */
+/** Одна строка совета помощника — ведёт в «Помощник», где подробности и инструменты. */
 @Composable
 private fun CoachTip(text: String, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }

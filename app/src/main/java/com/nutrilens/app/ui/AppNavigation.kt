@@ -116,7 +116,7 @@ private val leftTabs = listOf(
 // Профиль открывается аватаром в шапке «Сегодня» — его место в доке заняли «Рецепты».
 private val rightTabs = listOf(
     DockTab("recipes", "Рецепты", Icons.AutoMirrored.Outlined.MenuBook, Icons.AutoMirrored.Rounded.MenuBook),
-    DockTab("coach", "Коуч", Icons.Outlined.AutoAwesome, Icons.Rounded.AutoAwesome)
+    DockTab("coach", "Помощник", Icons.Outlined.AutoAwesome, Icons.Rounded.AutoAwesome)
 )
 
 /** Маршруты верхнего уровня: на них виден док, между ними — «fade through». */

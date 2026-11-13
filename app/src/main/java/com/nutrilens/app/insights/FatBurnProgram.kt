@@ -553,7 +553,7 @@ object FatBurnProgram {
         }
     }
 
-    /** Одна строка для ИИ-коуча: где человек в программе, чтобы советы не спорили с этапом. */
+    /** Одна строка для ИИ-помощника: где человек в программе, чтобы советы не спорили с этапом. */
     fun coachLine(p: Program, today: LocalDate): String {
         val phase = p.currentPhase ?: return ""
         val head = "Программа с ${p.startDate}: старт ${fmt(p.startFat)}% → цель ${fmt(p.target)}%, " +

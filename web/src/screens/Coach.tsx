@@ -1,4 +1,4 @@
-// «Коуч»: план на ближайший приём, вход в чат, быстрые вопросы, подсказки,
+// «Помощник»: план на ближайший приём, вход в чат, быстрые вопросы, подсказки,
 // тренировка и привычки дня.
 import { useEffect, useRef, useState } from 'react'
 import {
@@ -57,7 +57,7 @@ export function CoachScreen({ onOpenChat }: { onOpenChat: (q?: string) => void }
         <div className="row gap-14">
           <span className="badge" style={{ width: 48, height: 48, borderRadius: 16, background: 'linear-gradient(135deg, var(--brand-from), var(--secondary))', color: 'var(--on-brand)' }}><IcSpark size={24} /></span>
           <div>
-            <div className="display">Коуч</div>
+            <div className="display">Помощник</div>
             <div className="small">{greeting(new Date().getHours())} · знает твой дневник и цели</div>
           </div>
         </div>

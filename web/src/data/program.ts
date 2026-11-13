@@ -464,7 +464,7 @@ export function programSummary(p: Program, today: string, fatNow: number | null,
   return { startFat: p.startFat, fatNow, weeks: Math.max(1, Math.round(daysBetween(p.startDate, end) / 7)), fatKgLost, avgScore }
 }
 
-/** Строка для ИИ-коуча. */
+/** Строка для ИИ-помощника. */
 export function programContext(p: Program, today: string): string {
   const cur = currentPhase(p)
   const parts = [`программа с ${p.startDate}: старт ${fmtPct(p.startFat)} → цель ${p.target}%, ${blockCount(p)} ${plural(blockCount(p), 'блок', 'блока', 'блоков')} по ≤8 недель с обязательными перерывами 2 недели на уровне расхода`]

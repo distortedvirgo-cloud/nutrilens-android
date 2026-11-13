@@ -470,14 +470,14 @@ export function NoticeCard({ title, text }: { title: string; text: string }) {
   )
 }
 
-/** Коуч пишет первым (3.25): подсказка по данным программы. «Понятно» — больше не покажется. */
+/** Помощник пишет первым (3.25): подсказка по данным программы. «Понятно» — больше не покажется. */
 export function NudgeCard({ title, text, onDismiss }: { title: string; text: string; onDismiss: () => void }) {
   return (
     <div className="card pad-16 col gap-10">
       <div className="row gap-10" style={{ alignItems: 'flex-start' }}>
         <span style={{ color: 'var(--primary)', marginTop: 2, display: 'flex' }}><IcSpark size={20} /></span>
         <span className="col gap-4 grow" style={{ minWidth: 0 }}>
-          <span className="label">Коуч</span>
+          <span className="label">Помощник</span>
           <span className="title">{title}</span>
           <span className="small" style={{ color: 'var(--text)' }}>{text}</span>
         </span>

@@ -60,7 +60,7 @@ export interface DayTargets {
 export interface DayScore {
   /** 0–100, целое. */
   total: number
-  /** Баллы частей, до 0,1 — для подсказок и коуча. */
+  /** Баллы частей, до 0,1 — для подсказок и помощника. */
   calories: number
   protein: number
   movement: number
@@ -194,7 +194,7 @@ export function parseActivity(v: unknown): DayActivity | null {
   return { date, steps, stepsSource, sleptWell }
 }
 
-/** Строка для ИИ-коуча. */
+/** Строка для ИИ-помощника. */
 export function scoreContext(s: DayScore, today: boolean, weekAvg: number | null): string {
   const parts = `калории ${s.calories}/${SCORE.kcalPts}, белок ${s.protein}/${SCORE.proteinPts}, движение ${s.movement}/${SCORE.movePts}, сон ${s.sleep}/${SCORE.sleepPts}`
   return `${today ? 'пока ' : ''}${s.total}/100 (${parts}); хороший день — от ${SCORE.good}` +

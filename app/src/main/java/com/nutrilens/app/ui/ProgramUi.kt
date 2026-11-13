@@ -776,12 +776,12 @@ fun ProgramNoticeCard(notice: FatBurnProgram.Notice, onDismiss: () -> Unit, modi
     }
 }
 
-/** Коуч пишет первым (3.25): подсказка по данным программы. «Понятно» — больше не покажется. */
+/** Помощник пишет первым (3.25): подсказка по данным программы. «Понятно» — больше не покажется. */
 @Composable
 fun CoachNudgeCard(nudge: com.nutrilens.app.insights.Nudges.Nudge, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
     FreshCard(modifier.fillMaxWidth()) {
         Column(Modifier.padding(Space.Card), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            CardHeader(title = nudge.title, icon = Icons.Rounded.AutoAwesome, tint = MaterialTheme.colorScheme.primary, subtitle = "Коуч")
+            CardHeader(title = nudge.title, icon = Icons.Rounded.AutoAwesome, tint = MaterialTheme.colorScheme.primary, subtitle = "Помощник")
             Text(nudge.text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
             SoftButton("Понятно", onClick = onDismiss, modifier = Modifier.fillMaxWidth())
         }

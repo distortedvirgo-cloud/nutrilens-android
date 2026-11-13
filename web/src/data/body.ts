@@ -106,7 +106,7 @@ export interface EffectiveGoals extends MacroGoals {
 }
 
 /**
- * Калорийная цель дня — единая точка для «Сегодня», коуча, лидерборда и снимка
+ * Калорийная цель дня — единая точка для «Сегодня», помощника, лидерборда и снимка
  * цели в записи еды. В режиме сжигания жира — из плана, иначе ручная.
  */
 export function effectiveCalories(s: Pick<Settings, 'targetFatPercent' | 'fatPlan' | 'dailyGoal' | 'program'>): number {
@@ -150,7 +150,7 @@ export function activityFactor(s: Pick<Settings, 'userContext'>): number | null 
 /** Режим по умолчанию: 15% у мужчин, 23% у женщин. */
 export const defaultFatTarget = (female: boolean | null): number => (female ? 23 : 15)
 
-/** Строка для ИИ-коуча; пусто, если данных нет. */
+/** Строка для ИИ-помощника; пусто, если данных нет. */
 export function bodyContext(s: Settings, weight: number | null, latest: BodyMeasurement | null | undefined): string {
   if (!latest) return fatGoalOn(s) ? `Цель по жиру: ${s.targetFatPercent}% (замеров пока нет), задача — сжечь жир и сохранить мышцы.` : ''
   const parts = [`Процент жира ${latest.fatPercent.toFixed(1)}% (замер ${latest.date})`]

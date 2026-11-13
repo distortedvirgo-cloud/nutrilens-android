@@ -110,8 +110,8 @@ object BodyComposition {
                 ?.groupValues?.get(1)?.toDoubleOrNull()?.takeIf { it in 100.0..250.0 }
 
     /**
-     * Строка для контекста ИИ-коуча; пусто, если цель по жиру выключена.
-     * [lastCheckIn] — последний недельный чек-ин: коуч видит итоги недели и не спорит с планом.
+     * Строка для контекста ИИ-помощника; пусто, если цель по жиру выключена.
+     * [lastCheckIn] — последний недельный чек-ин: помощник видит итоги недели и не спорит с планом.
      */
     fun coachContext(
         settings: SettingsEntity,
@@ -130,7 +130,7 @@ object BodyComposition {
             val planKcal = settings.planCalories
             val planProtein = settings.planProtein
             if (planKcal != null && planKcal > 0 && planProtein != null) {
-                // Режим «Сжигание жира»: план пересчитывается сам — коуч не должен советовать другую норму.
+                // Режим «Сжигание жира»: план пересчитывается сам — помощник не должен советовать другую норму.
                 append(" Режим сжигания жира: план ${planKcal.roundToInt()} ккал, белок ${planProtein.roundToInt()} г")
                 settings.planFat?.let { append(", жиры ${it.roundToInt()} г") }
                 settings.planCarbs?.let { append(", углеводы ${it.roundToInt()} г") }
@@ -138,13 +138,13 @@ object BodyComposition {
             } else {
                 proteinTarget(weightKg, fatPercent)?.let { append(" Цель по белку ${it.roundToInt()} г в день.") }
             }
-            // Программа с этапами (3.24): коуч знает этап и не зовёт «сорвавшимся» того, кто ест в перерыве.
+            // Программа с этапами (3.24): помощник знает этап и не зовёт «сорвавшимся» того, кто ест в перерыве.
             settings.fatBurnProgramState?.let { append(" " + FatBurnProgram.coachLine(it, java.time.LocalDate.now())) }
             if (lastCheckIn != null) append(" " + checkInSummary(lastCheckIn))
         }
     }
 
-    /** Краткие итоги чек-ина одной строкой — для коуча. */
+    /** Краткие итоги чек-ина одной строкой — для помощника. */
     fun checkInSummary(c: CheckInEntity): String = buildString {
         append("Последний недельный чек-ин ${c.date}: ")
         val trend = c.trendWeight

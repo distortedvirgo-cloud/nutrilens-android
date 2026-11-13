@@ -174,7 +174,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     private val _fatPercent = MutableStateFlow<Double?>(null)
     val fatPercent: StateFlow<Double?> = _fatPercent.asStateFlow()
 
-    /** Последние реплики диалога с диетологом — превью на экране «Коуч». */
+    /** Последние реплики диалога с диетологом — превью на экране «Помощник». */
     private val _chatPreview = MutableStateFlow<List<com.nutrilens.app.data.ChatMessage>>(emptyList())
     val chatPreview: StateFlow<List<com.nutrilens.app.data.ChatMessage>> = _chatPreview.asStateFlow()
 
@@ -237,7 +237,7 @@ private val COACH_TOOLS = listOf(
 )
 
 /**
- * «Коуч» — всё про ИИ в одном месте: план на ближайший приём, диалог с
+ * «Помощник» — всё про ИИ в одном месте: план на ближайший приём, диалог с
  * диетологом, инструменты (идеи, холодильник, меню, покупки, привычки, вода),
  * подсказки на сейчас и привычки дня. Заменяет прежние «Ассистент» и «Ещё».
  */
@@ -312,7 +312,7 @@ fun CoachScreen(
             }
             Spacer(Modifier.width(14.dp))
             Column {
-                Text("Коуч", style = MaterialTheme.typography.displaySmall, color = MaterialTheme.colorScheme.onBackground)
+                Text("Помощник", style = MaterialTheme.typography.displaySmall, color = MaterialTheme.colorScheme.onBackground)
                 Text(
                     "${greet.text} · знает твой дневник и цели",
                     style = MaterialTheme.typography.bodyMedium,

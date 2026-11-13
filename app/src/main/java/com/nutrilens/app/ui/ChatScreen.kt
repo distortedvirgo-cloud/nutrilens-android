@@ -145,7 +145,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 val goals = effectiveMacroGoals(settings, weight, fatPercent)
                 val system = GeminiTools.buildChatSystemInstruction(
                     dailyGoal = settings.effectiveDailyGoal,
-                    // Цель по жиру — коуч видит текущий процент, цель и сухую массу.
+                    // Цель по жиру — помощник видит текущий процент, цель и сухую массу.
                     // и итоги последнего недельного чек-ина.
                     userContext = settings.userContext + BodyComposition.coachContext(
                         settings, weight, fatPercent, database.checkInDao().latest()
@@ -240,7 +240,7 @@ fun ChatScreen(
     var inputText by remember { mutableStateOf("") }
     var attachments by remember { mutableStateOf<List<String>>(emptyList()) }
 
-    // Вопрос, заданный с экрана «Коуч», отправляется сразу (один раз).
+    // Вопрос, заданный с экрана «Помощник», отправляется сразу (один раз).
     var initialSent by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     androidx.compose.runtime.LaunchedEffect(initialMessage) {
         val q = initialMessage?.trim().orEmpty()

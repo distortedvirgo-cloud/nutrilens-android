@@ -162,7 +162,7 @@ export async function sendChat(text: string): Promise<void> {
   const body = await latestMeasurement()
   const g = effectiveGoals(settings, w, body)
   const bodyLine = bodyContext(settings, w, body)
-  // Итог последнего чек-ина — коуч знает, что поменялось в плане и над чем неделя.
+  // Итог последнего чек-ина — помощник знает, что поменялось в плане и над чем неделя.
   const ci = g.plan ? await lastCheckin() : undefined
   // Оценка дня (только в режиме): части сегодня и средняя за 7 прошлых дней.
   let scoreLine = ''

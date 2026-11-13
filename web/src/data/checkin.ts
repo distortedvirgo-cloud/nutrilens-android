@@ -383,7 +383,7 @@ export function parseCheckin(v: unknown): CheckIn | null {
   }
 }
 
-/** Строка для ИИ-коуча. */
+/** Строка для ИИ-помощника. */
 export function checkinContext(c: CheckIn): string {
   const parts = [`последний чек-ин ${c.date}: тренд веса ${f1(c.trendWeight)} кг`]
   if (c.ratePerWeek != null) parts.push(`темп ${c.ratePerWeek > 0 ? '−' : '+'}${f1(Math.abs(c.ratePerWeek))}% веса в неделю`)

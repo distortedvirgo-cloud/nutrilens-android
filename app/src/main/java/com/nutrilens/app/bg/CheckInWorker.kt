@@ -49,7 +49,7 @@ class CheckInWorker(context: Context, params: WorkerParameters) : CoroutineWorke
     }
 
     /**
-     * Коуч пишет первым (3.25): подсказка программы — одним уведомлением днём (10–20 ч),
+     * Помощник пишет первым (3.25): подсказка программы — одним уведомлением днём (10–20 ч),
      * по каждой подсказке не больше одного раза. На «Сегодня» она ещё и карточкой.
      */
     private suspend fun notifyNudge(today: LocalDate) {

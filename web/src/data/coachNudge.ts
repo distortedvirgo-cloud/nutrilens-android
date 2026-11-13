@@ -1,4 +1,4 @@
-// Подсказка коуча на сегодня: собирает данные из базы для чистого модуля nudges.ts.
+// Подсказка помощника на сегодня: собирает данные из базы для чистого модуля nudges.ts.
 // Что уже показывали — в localStorage: это удобство одного устройства, не данные.
 import { activityBetween, getSettings, mealsBetween, type Settings } from './db'
 import { fatGoalOn, livePlan } from './body'

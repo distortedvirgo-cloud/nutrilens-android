@@ -52,7 +52,7 @@ suspend fun NutriLensDatabase.scoreDays(start: LocalDate, end: LocalDate): List<
 }
 
 /**
- * Оценка дня для ИИ-коуча: сегодняшние части и средняя за 7 прошлых дней.
+ * Оценка дня для ИИ-помощника: сегодняшние части и средняя за 7 прошлых дней.
  * Пусто — режим «Сжигание жира» выключен.
  */
 suspend fun NutriLensDatabase.dayScoreCoachContext(settings: SettingsEntity): String {

@@ -1,4 +1,4 @@
-// «Сегодня»: неделя с кольцами, сводка калорий и БЖУ, совет коуча,
+// «Сегодня»: неделя с кольцами, сводка калорий и БЖУ, совет помощника,
 // вода и вес, приёмы пищи по слотам и состояние ИИ-анализа. В режиме сжигания
 // жира — оценка дня (dayscore.ts), сон и шаги (шаги на вебе — только вручную).
 import { useRef, useState } from 'react'
@@ -52,7 +52,7 @@ export function TodayScreen({ onOpenMeal, onAddPhoto, onOpenCoach, onWeigh, onOp
   const today = iso(new Date())
   const isToday = date === today
 
-  // Прочитанная подсказка коуча прячется сразу, не дожидаясь перезагрузки данных.
+  // Прочитанная подсказка помощника прячется сразу, не дожидаясь перезагрузки данных.
   const [hiddenNudge, setHiddenNudge] = useState<string | null>(null)
   const data = useData(async () => {
     const monday = mondayOf(d)

@@ -1,4 +1,4 @@
-// Корень NutriLens Web: вкладки «Сегодня · Прогресс · [+] · Коуч · Профиль»,
+// Корень NutriLens Web: вкладки «Сегодня · Прогресс · [+] · Помощник · Профиль»,
 // листы добавления и деталей, чат, онбординг для iPhone.
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { type Meal, type Settings, getSettings, onDataChanged } from './data/db'
@@ -179,7 +179,7 @@ function TabBar({ tab, onTab, onAdd }: { tab: Tab; onTab: (t: Tab) => void; onAd
       {item('progress', 'Прогресс', <IcChart size={24} />)}
       <button className="fab" aria-label="Добавить" onClick={onAdd}><IcPlus size={28} strokeWidth={2.6} /></button>
       {item('recipes', 'Рецепты', <IcBook size={24} />)}
-      {item('coach', 'Коуч', <IcSpark size={24} />)}
+      {item('coach', 'Помощник', <IcSpark size={24} />)}
     </nav>
   )
 }
