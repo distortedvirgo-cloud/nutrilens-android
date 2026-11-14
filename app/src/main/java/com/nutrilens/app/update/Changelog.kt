@@ -19,6 +19,14 @@ data class ChangelogEntry(
  */
 val CHANGELOG: List<ChangelogEntry> = listOf(
     ChangelogEntry(
+        versionCode = 88,
+        versionName = "3.31",
+        title = "Исправлен анализ через NanoGPT",
+        items = listOf(
+            "Если модель не поддерживает очередь Flex, запрос автоматически повторяется в обычной очереди — ошибка HTTP 400 больше не прерывает анализ"
+        )
+    ),
+    ChangelogEntry(
         versionCode = 87,
         versionName = "3.30",
         title = "Процент жира по виду",
