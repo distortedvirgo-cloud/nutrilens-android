@@ -370,7 +370,7 @@ fun CheckInSheet(onDismiss: () -> Unit, viewModel: CheckInViewModel = viewModel(
                         measured = true
                         next()
                     },
-                    primaryEnabled = form.result != null
+                    primaryEnabled = form.tapeOk
                 )
             }
             CheckInStep.FEEL -> {

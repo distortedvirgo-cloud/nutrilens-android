@@ -221,19 +221,26 @@ class MeasurementFormState(settings: SettingsEntity, today: BodyMeasurementEntit
     val hipsN: Double? get() = if (male) null else parseNum(hips)
     val manualN: Double? get() = parseNum(manual)?.takeIf { it in 3.0..60.0 }
     val formula: Double? get() = BodyComposition.navyFatPercent(male, heightCm, waistN, neckN, hipsN)
-    /** Формула с калибровкой по виду (3.30); без калибровки — сама формула. */
-    val calibrated: Double? get() = com.nutrilens.app.data.FatCalibration.calibrated(formula, settings.fatOffset)
-    val result: Double? get() = manualN ?: calibrated
+    /** Обхваты заполнены и правдоподобны — замер можно сохранить. */
+    val tapeOk: Boolean get() = formula != null
 
-    /** Замер за сегодня; null — процент ещё не посчитать. */
+    /**
+     * Процент жира (3.31) — только по виду: старт выбран по таблице фото, лента считает
+     * изменения. Без оценки по виду процента нет — формула по ленте у многих сильно ошибается
+     * в абсолютной цифре, и показывать её значит вводить в заблуждение.
+     */
+    val result: Double? get() = settings.fatOffset?.let { com.nutrilens.app.data.FatCalibration.calibrated(formula, it) }
+
+    /** Замер за сегодня; null — обхваты не заполнены. Без оценки по виду процент = 0 («неизвестно»). */
     fun entity(): BodyMeasurementEntity? {
-        val fat = result ?: return null
+        if (!tapeOk) return null
+        val fat = result ?: 0.0
         return BodyMeasurementEntity(
             date = LocalDate.now().toString(),
             waistCm = waistN,
             neckCm = neckN,
             hipsCm = hipsN,
-            manualFatPercent = manualN,
+            manualFatPercent = null,
             fatPercent = (fat * 10).roundToInt() / 10.0
         )
     }
@@ -258,8 +265,6 @@ fun BodyMeasurementForm(state: MeasurementFormState) {
     val heightCm = state.heightCm
     val waistN = state.waistN
     val neckN = state.neckN
-    val manualN = state.manualN
-    val formula = state.formula
     val result = state.result
     val palette = macroPalette()
 
@@ -284,14 +289,6 @@ fun BodyMeasurementForm(state: MeasurementFormState) {
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(Modifier.height(14.dp))
-        MeasureField(state.manual, { state.manual = numFilter(it) }, "Свой процент (весы, калипер, DEXA)", "%")
-        Spacer(Modifier.height(4.dp))
-        Text(
-            "Необязательно. Если указан — используем его вместо формулы.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.height(14.dp))
         TonalSection(color = palette.protein) {
             TinyLabel("Процент жира", color = palette.protein)
             Spacer(Modifier.height(2.dp))
@@ -303,19 +300,15 @@ fun BodyMeasurementForm(state: MeasurementFormState) {
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    when {
-                        manualN != null && formula != null -> "Твой процент. По обхватам выходит ${BodyComposition.fmt1(formula)}%"
-                        manualN != null -> "Твой процент"
-                        state.settings.fatOffset != null -> "По виду и ленте: старт выбран по виду, лента считает изменения"
-                        else -> "По формуле ВМС США — грубо. Точнее — выбрать старт по виду"
-                    },
+                    "Старт — по виду, изменения — по ленте",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
                 Text(
                     when {
-                        heightCm == null -> "Укажи рост — он нужен формуле"
+                        state.tapeOk -> "Процент жира оцениваешь по виду — по таблице фото. Лента покажет, как он меняется"
+                        heightCm == null -> "Укажи рост — он нужен, чтобы считать изменения"
                         waistN != null && neckN != null && waistN <= neckN -> "Проверь цифры: талия должна быть больше шеи"
                         else -> if (male) "Заполни талию и шею" else "Заполни талию, шею и бёдра"
                     },
@@ -356,7 +349,7 @@ fun BodyMeasurementSheet(
                 form.entity()?.let { onSave(it, form.newHeight()) }
                 onDismiss()
             },
-            primaryEnabled = form.result != null
+            primaryEnabled = form.tapeOk
         )
     }
 }
@@ -752,6 +745,11 @@ private fun BodyCompositionDetails(
             }
         )
     }
+    // 3.31: без оценки по виду процента нет — только динамика обхватов и предложение оценить.
+    if (settings.fatOffset == null || fatTrend.isEmpty()) {
+        UncalibratedBodyDetails(settings, measurements, latest, onAdd)
+        return
+    }
     Column {
         val fat = fatTrend.lastOrNull()?.trend ?: latest.fatPercent
         Spacer(Modifier.height(14.dp))
@@ -888,23 +886,65 @@ private fun BodyCompositionDetails(
     }
 }
 
+/** Динамика обхватов, пока процент не оценён по виду: талия сейчас и с первого замера. */
+@Composable
+private fun UncalibratedBodyDetails(
+    settings: SettingsEntity,
+    measurements: List<BodyMeasurementEntity>,
+    latest: BodyMeasurementEntity,
+    onAdd: () -> Unit
+) {
+    val palette = macroPalette()
+    val waists = measurements.filter { (it.waistCm ?: 0.0) > 0 }
+    Column {
+        Spacer(Modifier.height(14.dp))
+        val now = latest.waistCm
+        if (now != null) {
+            Row(verticalAlignment = Alignment.Bottom) {
+                DisplayNumber("${BodyComposition.fmt1(now)} см", size = 32, color = palette.protein)
+                Spacer(Modifier.width(8.dp))
+                Text("талия", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 4.dp))
+            }
+            val first = waists.firstOrNull()?.waistCm
+            if (first != null && waists.size >= 2) {
+                val d = now - first
+                Text(
+                    "${if (d > 0) "+" else if (d < 0) "−" else ""}${BodyComposition.fmt1(kotlin.math.abs(d))} см с первого замера",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Text(
+            "Процент жира оцениваешь по виду — по таблице фото. Формулы по ленте в абсолютной цифре часто ошибаются, " +
+                "поэтому лента здесь — для динамики: талия уходит — значит, уходит жир.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(14.dp))
+        LookCalibrationButton(settings, primary = true)
+        Spacer(Modifier.height(8.dp))
+        SoftButton("Добавить замер", onClick = onAdd, icon = Icons.Rounded.Add, modifier = Modifier.fillMaxWidth())
+    }
+}
+
 /**
  * «Уточнить процент по виду» (3.30): таблица фото → поправка к формуле по ленте.
  * В идущей программе этапы и план пересобираются от нового процента.
  */
 @Composable
-private fun LookCalibrationButton(settings: SettingsEntity) {
+fun LookCalibrationButton(settings: SettingsEntity, primary: Boolean = false) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var open by remember { mutableStateOf(false) }
     var look by remember { mutableStateOf<Double?>(null) }
     var saving by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
-    SoftButton(
-        if (settings.fatOffset == null) "Уточнить процент по виду" else "Уточнить процент по виду ещё раз",
-        onClick = { look = null; message = null; open = true },
-        modifier = Modifier.fillMaxWidth()
-    )
+    val label = if (settings.fatOffset == null) "Оценить процент по виду" else "Уточнить процент по виду"
+    val onOpen = { look = null; message = null; open = true }
+    if (primary) GlowButton(label, onClick = onOpen, modifier = Modifier.fillMaxWidth())
+    else SoftButton(label, onClick = onOpen, modifier = Modifier.fillMaxWidth())
     if (open) {
         NutriSheet(onDismiss = { open = false }, title = "Процент по виду", subtitle = "Старт — по фото, изменения — по ленте") {
             FatLookPicker(male = BodyComposition.isMale(settings), value = look, onChange = { look = it })

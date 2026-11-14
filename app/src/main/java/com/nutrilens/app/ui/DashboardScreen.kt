@@ -705,6 +705,29 @@ fun DashboardScreen(
                 }
             }
         }
+        // 3.31: программа идёт, а процент ещё от формулы — попросить оценить по виду.
+        if (settings.targetFatPercent != null && settings.fatOffset == null && selectedDate == LocalDate.now()) {
+            item(key = "fat-look") {
+                Box(Modifier.introIn(2, introDone)) {
+                    FreshCard(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(Space.Card), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            CardHeader(
+                                title = "Оцени процент жира по виду",
+                                icon = Icons.Rounded.MonitorWeight,
+                                tint = MaterialTheme.colorScheme.primary,
+                                subtitle = "30 секунд — по таблице фото"
+                            )
+                            Text(
+                                "Формула по ленте часто ошибается в абсолютной цифре, поэтому программа теперь берёт старт по виду, а лента считает изменения.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            LookCalibrationButton(settings, primary = true)
+                        }
+                    }
+                }
+            }
+        }
         // «Как идёт прогресс» (3.30): после первого чек-ина — вход на экран с вердиктом.
         if (settings.targetFatPercent != null && selectedDate == LocalDate.now() && settings.lastCheckInDate != null) {
             item(key = "progress-check") {

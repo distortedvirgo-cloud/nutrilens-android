@@ -443,9 +443,8 @@ fun ProgramLaunchSheet(onDismiss: () -> Unit, viewModel: FatBurnProgramViewModel
     }
     val enteredWeight = parseKg(weightText)
     val weightOk = enteredWeight != null || recentWeight != null
-    val formFat = form.result
-    val measurementOk = formFat != null || recentMeasurement != null
-    val currentFat = look ?: formFat ?: recentMeasurement?.fatPercent
+    val measurementOk = form.tapeOk || recentMeasurement != null
+    val currentFat = look
     val defaultTarget = (if (male) 15 else 23).coerceAtLeast(floor)
     val chosenTarget = (target ?: defaultTarget).coerceIn(floor, BodyComposition.MAX_TARGET)
 
@@ -482,7 +481,7 @@ fun ProgramLaunchSheet(onDismiss: () -> Unit, viewModel: FatBurnProgramViewModel
                 if (recentMeasurement != null) {
                     TonalSection(color = MaterialTheme.colorScheme.primary) {
                         Text(
-                            "Замер ${daysAgo(recentMeasurement.date)}: ${BodyComposition.fmt1(recentMeasurement.fatPercent)}% — подойдёт",
+                            "Замер талии ${daysAgo(recentMeasurement.date)} — подойдёт",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -593,7 +592,7 @@ fun ProgramLaunchSheet(onDismiss: () -> Unit, viewModel: FatBurnProgramViewModel
                                 target = chosenTarget.toDouble(),
                                 weightKg = enteredWeight,
                                 measurement = form.entity(),
-                                heightCm = if (form.result != null) form.newHeight() else null,
+                                heightCm = if (form.tapeOk) form.newHeight() else null,
                                 look = look,
                                 onDone = onDismiss
                             )
