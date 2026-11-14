@@ -96,6 +96,14 @@ class CheckInViewModel(application: Application) : AndroidViewModel(application)
     private val _todayMeasurement = MutableStateFlow<BodyMeasurementEntity?>(null)
     val todayMeasurement: StateFlow<BodyMeasurementEntity?> = _todayMeasurement.asStateFlow()
 
+    /** 3.29: замер лентой нужен раз в 2 недели — последний старше 10 дней или его нет. */
+    private val _measurementDue = MutableStateFlow(true)
+    val measurementDue: StateFlow<Boolean> = _measurementDue.asStateFlow()
+
+    /** Данные для листа подтянуты — можно решать, какие шаги показывать. */
+    private val _loaded = MutableStateFlow(false)
+    val loaded: StateFlow<Boolean> = _loaded.asStateFlow()
+
     private val _saving = MutableStateFlow(false)
     val saving: StateFlow<Boolean> = _saving.asStateFlow()
 
@@ -132,12 +140,19 @@ class CheckInViewModel(application: Application) : AndroidViewModel(application)
         _error.value = null
         _trainingMessage.value = null
         _trainingImported.value = TrainingStore.importedAt(getApplication())
+        _loaded.value = false
         viewModelScope.launch {
-            val today = LocalDate.now().toString()
+            val today = LocalDate.now()
             val latest = db.weightDao().latest()
             _lastWeight.value = latest?.weight
-            _todayWeight.value = latest?.takeIf { it.date == today }?.weight
-            _todayMeasurement.value = db.bodyMeasurementDao().latest()?.takeIf { it.date == today }
+            _todayWeight.value = latest?.takeIf { it.date == today.toString() }?.weight
+            val lastMeasurement = db.bodyMeasurementDao().latest()
+            _todayMeasurement.value = lastMeasurement?.takeIf { it.date == today.toString() }
+            val measuredDaysAgo = lastMeasurement?.let { m ->
+                runCatching { java.time.temporal.ChronoUnit.DAYS.between(LocalDate.parse(m.date), today) }.getOrNull()
+            }
+            _measurementDue.value = measuredDaysAgo == null || measuredDaysAgo > MEASUREMENT_EVERY_DAYS
+            _loaded.value = true
         }
     }
 
@@ -214,10 +229,10 @@ fun CheckInDueCard(onClick: () -> Unit, modifier: Modifier = Modifier) {
     FreshCard(modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.primaryContainer, onClick = onClick) {
         Column(Modifier.padding(Space.Card), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             CardHeader(
-                title = "Пора подвести неделю · 2 минуты",
+                title = "Пора подвести неделю · 30 секунд",
                 icon = Icons.Rounded.EventAvailable,
                 tint = primary,
-                subtitle = "Вес, замер и самочувствие — и план на новую неделю"
+                subtitle = "Вес и как прошла неделя — и план на новую неделю"
             )
             GlowButton("Начать чек-ин", onClick = onClick, modifier = Modifier.fillMaxWidth())
         }
@@ -226,9 +241,22 @@ fun CheckInDueCard(onClick: () -> Unit, modifier: Modifier = Modifier) {
 
 // ---------- Лист чек-ина ----------
 
+/** Замер лентой — раз в 2 недели: если последний не старше 10 дней, шаг пропускаем. */
+private const val MEASUREMENT_EVERY_DAYS = 10L
+
+private enum class CheckInStep { WEIGHT, TAPE, FEEL }
+
+/** «Как прошла неделя» (3.29): один вопрос вместо трёх оценок — голод и энергия выводятся из ответа. */
+private enum class WeekFeel(val title: String, val hunger: Int, val energy: Int) {
+    EASY("Легко", 2, 4),
+    OK("Нормально", 3, 3),
+    HARD("Тяжело", 5, 2)
+}
+
 /**
- * Чек-ин в три коротких шага, каждый можно пропустить, кроме веса.
- * Ничего не сохраняется до конца: закрыл лист на середине — ничего не потерял и не сломал.
+ * Чек-ин за 30 секунд (3.29): вес — только если сегодня ещё не взвешивался, замер лентой —
+ * раз в 2 недели, и один вопрос «как прошла неделя». Ничего не сохраняется до конца:
+ * закрыл лист на середине — ничего не потерял и не сломал.
  */
 @Composable
 fun CheckInSheet(onDismiss: () -> Unit, viewModel: CheckInViewModel = viewModel()) {
@@ -236,6 +264,8 @@ fun CheckInSheet(onDismiss: () -> Unit, viewModel: CheckInViewModel = viewModel(
     val todayWeight by viewModel.todayWeight.collectAsStateWithLifecycle()
     val lastWeight by viewModel.lastWeight.collectAsStateWithLifecycle()
     val todayMeasurement by viewModel.todayMeasurement.collectAsStateWithLifecycle()
+    val measurementDue by viewModel.measurementDue.collectAsStateWithLifecycle()
+    val loaded by viewModel.loaded.collectAsStateWithLifecycle()
     val saving by viewModel.saving.collectAsStateWithLifecycle()
     val result by viewModel.result.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
@@ -245,40 +275,53 @@ fun CheckInSheet(onDismiss: () -> Unit, viewModel: CheckInViewModel = viewModel(
         if (uri != null) viewModel.importTraining(uri)
     }
 
-    var step by remember { mutableStateOf(0) }
+    // Шаги решаются один раз, когда данные подтянулись: вес сегодня уже есть — шаг не нужен.
+    val steps = remember(loaded) {
+        buildList {
+            if (todayWeight == null) add(CheckInStep.WEIGHT)
+            if (measurementDue || todayMeasurement != null) add(CheckInStep.TAPE)
+            add(CheckInStep.FEEL)
+        }
+    }
+    var index by remember { mutableStateOf(0) }
+    val step = steps.getOrElse(index) { CheckInStep.FEEL }
+
     var weightText by remember { mutableStateOf("") }
     var weightTouched by remember { mutableStateOf(false) }
-    // Вес уже записан сегодня — подставляем, пока человек сам не начал вводить.
     val prefill = todayWeight?.let { BodyComposition.fmt1(it) }.orEmpty()
     val shownWeight = if (weightTouched) weightText else prefill
-    val weight = parseWeight(shownWeight)
+    val weight = parseWeight(shownWeight) ?: todayWeight
 
     val form = remember(todayMeasurement) { MeasurementFormState(settings, todayMeasurement) }
     form.settings = settings
     var measured by remember { mutableStateOf(false) }
-    var hunger by remember { mutableStateOf<Int?>(null) }
-    var energy by remember { mutableStateOf<Int?>(null) }
-    var sleep by remember { mutableStateOf<Int?>(null) }
+    var feel by remember { mutableStateOf<WeekFeel?>(null) }
 
     val done = result
     val title = when {
         done != null -> "Итоги недели"
-        step == 0 -> "Вес сегодня"
-        step == 1 -> "Замер лентой"
-        else -> "Самочувствие за неделю"
+        step == CheckInStep.WEIGHT -> "Вес сегодня"
+        step == CheckInStep.TAPE -> "Замер лентой"
+        else -> "Как прошла неделя?"
     }
     val subtitle = when {
         done != null -> "Чек-ин ${LocalDate.parse(done.date).format(CHECKIN_DATE)} · следующий через неделю"
-        else -> "Шаг ${step + 1} из 3"
+        steps.size == 1 -> "Последний шаг — и новый план"
+        else -> "Шаг ${index + 1} из ${steps.size}"
     }
+    val next = { index = (index + 1).coerceAtMost(steps.lastIndex) }
 
     NutriSheet(onDismiss = onDismiss, title = title, subtitle = subtitle) {
         if (done != null) {
             CheckInResultContent(done)
             Spacer(Modifier.height(20.dp))
             GlowButton("Готово", onClick = onDismiss, modifier = Modifier.fillMaxWidth())
+        } else if (!loaded) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                CircularProgressIndicator(strokeWidth = 3.dp, modifier = Modifier.size(24.dp))
+            }
         } else when (step) {
-            0 -> {
+            CheckInStep.WEIGHT -> {
                 NutriTextField(
                     value = shownWeight,
                     onValueChange = { v ->
@@ -294,8 +337,77 @@ fun CheckInSheet(onDismiss: () -> Unit, viewModel: CheckInViewModel = viewModel(
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    if (todayWeight != null) "Ты уже взвешивался сегодня — проверь и жми «Дальше»."
-                    else "Лучше утром, после туалета и до еды — так цифры честнее.",
+                    "Лучше утром, после туалета и до еды — так цифры честнее.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(20.dp))
+                SheetActions(
+                    secondaryText = "Отмена",
+                    onSecondary = onDismiss,
+                    primaryText = "Дальше",
+                    onPrimary = next,
+                    primaryEnabled = weight != null
+                )
+            }
+            CheckInStep.TAPE -> {
+                Text(
+                    "Раз в две недели — этого хватает, чаще лента тонет в погрешности.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(10.dp))
+                BodyMeasurementForm(form)
+                Spacer(Modifier.height(20.dp))
+                SheetActions(
+                    secondaryText = "Замерю позже",
+                    onSecondary = {
+                        measured = false
+                        next()
+                    },
+                    primaryText = "Дальше",
+                    onPrimary = {
+                        measured = true
+                        next()
+                    },
+                    primaryEnabled = form.result != null
+                )
+            }
+            CheckInStep.FEEL -> {
+                if (todayWeight != null && CheckInStep.WEIGHT !in steps) {
+                    Text(
+                        "Вес сегодня — ${BodyComposition.fmt1(todayWeight ?: 0.0)} кг, уже записан.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(10.dp))
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    WeekFeel.entries.forEach { f ->
+                        val active = feel == f
+                        Surface(
+                            onClick = { feel = if (active) null else f },
+                            shape = CircleShape,
+                            color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp)
+                                .semantics { contentDescription = "Неделя: ${f.title}" }
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    f.title,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "«Тяжело» — сильный голод или нет сил. Две такие недели подряд — план станет мягче.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -305,44 +417,6 @@ fun CheckInSheet(onDismiss: () -> Unit, viewModel: CheckInViewModel = viewModel(
                     message = trainingMessage,
                     onPick = { trainingPicker.launch(arrayOf("text/*", "application/csv", "application/octet-stream")) }
                 )
-                Spacer(Modifier.height(20.dp))
-                SheetActions(
-                    secondaryText = "Отмена",
-                    onSecondary = onDismiss,
-                    primaryText = "Дальше",
-                    onPrimary = { step = 1 },
-                    primaryEnabled = weight != null
-                )
-            }
-            1 -> {
-                BodyMeasurementForm(form)
-                Spacer(Modifier.height(20.dp))
-                SheetActions(
-                    secondaryText = "Замерю позже",
-                    onSecondary = {
-                        measured = false
-                        step = 2
-                    },
-                    primaryText = "Дальше",
-                    onPrimary = {
-                        measured = true
-                        step = 2
-                    },
-                    primaryEnabled = form.result != null
-                )
-            }
-            else -> {
-                Text(
-                    "Оцени неделю от 1 до 5 — это поможет понять, не слишком ли жёсткий план.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(14.dp))
-                RatingRow("Голод", "1 — почти не хотелось есть, 5 — постоянно", hunger) { hunger = it }
-                Spacer(Modifier.height(14.dp))
-                RatingRow("Энергия", "1 — без сил, 5 — бодрость", energy) { energy = it }
-                Spacer(Modifier.height(14.dp))
-                RatingRow("Сон", "1 — плохо, 5 — отлично", sleep) { sleep = it }
                 error?.let {
                     Spacer(Modifier.height(12.dp))
                     Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
@@ -355,60 +429,25 @@ fun CheckInSheet(onDismiss: () -> Unit, viewModel: CheckInViewModel = viewModel(
                         Text("Считаю итоги и новый план…", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
                     }
                 } else {
-                    val finish = { withRatings: Boolean ->
-                        val w = weight
-                        if (w != null) {
-                            viewModel.complete(
-                                weightKg = w,
-                                measurement = if (measured) form.entity() else null,
-                                heightCm = if (measured) form.newHeight() else null,
-                                hunger = if (withRatings) hunger else null,
-                                energy = if (withRatings) energy else null,
-                                sleep = if (withRatings) sleep else null
-                            )
-                        }
-                    }
                     SheetActions(
-                        secondaryText = "Пропустить",
-                        onSecondary = { finish(false) },
+                        secondaryText = if (index > 0) "Назад" else "Отмена",
+                        onSecondary = { if (index > 0) index -= 1 else onDismiss() },
                         primaryText = "Подвести итог",
-                        onPrimary = { finish(true) },
+                        onPrimary = {
+                            val w = weight
+                            if (w != null) {
+                                viewModel.complete(
+                                    weightKg = w,
+                                    measurement = if (measured) form.entity() else null,
+                                    heightCm = if (measured) form.newHeight() else null,
+                                    hunger = feel?.hunger,
+                                    energy = feel?.energy,
+                                    sleep = null
+                                )
+                            }
+                        },
                         primaryEnabled = weight != null
                     )
-                }
-            }
-        }
-    }
-}
-
-/** Оценка 1–5: пять кружков, выбранный — в цвете бренда. Повторный тап снимает выбор. */
-@Composable
-private fun RatingRow(label: String, hint: String, value: Int?, onChange: (Int?) -> Unit) {
-    val scheme = MaterialTheme.colorScheme
-    Column {
-        Text(label, style = MaterialTheme.typography.titleSmall, color = scheme.onSurface)
-        Text(hint, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
-        Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            for (n in 1..5) {
-                val active = value == n
-                Surface(
-                    onClick = { onChange(if (active) null else n) },
-                    shape = CircleShape,
-                    color = if (active) scheme.primary else scheme.surfaceContainerHigh,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(44.dp)
-                        .semantics { contentDescription = "$label: $n из 5" }
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            "$n",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = if (active) scheme.onPrimary else scheme.onSurface
-                        )
-                    }
                 }
             }
         }
@@ -426,123 +465,140 @@ fun CheckInResultContent(c: CheckInEntity) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         // Смена этапа программы (3.24) — первым и заметно: это главное, что поменялось.
         c.phaseChange?.let { PhaseChangeBlock(it) }
-        // Вес — по тренду: скачки воды не должны решать, удалась ли неделя.
-        TonalSection(color = MaterialTheme.colorScheme.secondary) {
-            TinyLabel("Вес по тренду", color = MaterialTheme.colorScheme.secondary)
-            Spacer(Modifier.height(2.dp))
-            Row(verticalAlignment = Alignment.Bottom) {
-                DisplayNumber(BodyComposition.fmt1(c.trendWeight ?: c.weight), size = 30, color = MaterialTheme.colorScheme.onSurface)
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    "кг · сегодня на весах ${BodyComposition.fmt1(c.weight)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 3.dp)
-                )
-            }
-            val change = c.trendChangeKg
-            val trend = c.trendWeight
+        // 3.29: главное — одной фразой и одним числом; всё остальное — по тапу.
+        TonalSection(color = signalColor(c.strengthSignal ?: c.muscleSignal)) {
             Text(
-                if (change != null && trend != null) {
-                    val startWeight = trend - change
-                    val pct = if (startWeight > 0) change / startWeight * 100 else 0.0
-                    "$periodText ${signed(change)} кг (${signed(pct)}%)"
-                } else "Изменение появится, когда будет пара взвешиваний за неделю",
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
+                checkInHeadline(c),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
             )
-            val fat = c.fatPercent
-            val fatChange = c.fatChange
-            if (fat != null) {
-                Text(
-                    "Жир ${BodyComposition.fmt1(fat)}%" + (fatChange?.let { " (${signed(it)} п.п. с прошлого замера)" } ?: ""),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "План: ${(c.caloriesAfter ?: 0.0).roundToInt()} ккал · белок ${(c.proteinAfter ?: 0.0).roundToInt()} г",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
         }
+        var expanded by remember { mutableStateOf(false) }
+        if (expanded) {
+            // Вес — по тренду: скачки воды не должны решать, удалась ли неделя.
+            TonalSection(color = MaterialTheme.colorScheme.secondary) {
+                TinyLabel("Вес по тренду", color = MaterialTheme.colorScheme.secondary)
+                Spacer(Modifier.height(2.dp))
+                Row(verticalAlignment = Alignment.Bottom) {
+                    DisplayNumber(BodyComposition.fmt1(c.trendWeight ?: c.weight), size = 30, color = MaterialTheme.colorScheme.onSurface)
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "кг · сегодня на весах ${BodyComposition.fmt1(c.weight)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 3.dp)
+                    )
+                }
+                val change = c.trendChangeKg
+                val trend = c.trendWeight
+                Text(
+                    if (change != null && trend != null) {
+                        val startWeight = trend - change
+                        val pct = if (startWeight > 0) change / startWeight * 100 else 0.0
+                        "$periodText ${signed(change)} кг (${signed(pct)}%)"
+                    } else "Изменение появится, когда будет пара взвешиваний за неделю",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                val fat = c.fatPercent
+                val fatChange = c.fatChange
+                if (fat != null) {
+                    Text(
+                        "Жир ${BodyComposition.fmt1(fat)}%" + (fatChange?.let { " (${signed(it)} п.п. с прошлого замера)" } ?: ""),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TonalTile("${c.diaryDays} из ${c.periodDays}", "дней с едой", palette.carbs, Modifier.weight(1f))
-            TonalTile("${c.goodDays}", "хороших дней", palette.protein, Modifier.weight(1f))
-            TonalTile("${c.workouts} из ${c.workoutGoal}", "силовых", palette.fat, Modifier.weight(1f))
-        }
-        val avg = c.avgScore
-        if (avg != null) {
-            Text(
-                "Средняя оценка дня — ${avg.roundToInt()} из 100",
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-        }
-        Text(
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TonalTile("${c.diaryDays} из ${c.periodDays}", "дней с едой", palette.carbs, Modifier.weight(1f))
+                TonalTile("${c.goodDays}", "хороших дней", palette.protein, Modifier.weight(1f))
+                TonalTile("${c.workouts} из ${c.workoutGoal}", "силовых", palette.fat, Modifier.weight(1f))
+            }
+            val avg = c.avgScore
             if (avg != null) {
-                "Хороший день — оценка от 70: калории, белок, движение и сон. Дни до версии 3.23 — по калориям и белку."
-            } else {
-                "Хороший день — калории от −10% до +5% плана и белок от 90% нормы."
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        // Сигнал сохранения мышц — без данных силы, по трём простым признакам.
-        val sColor = signalColor(c.muscleSignal)
-        TonalSection(color = sColor) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                SignalDot(c.muscleSignal)
-                Spacer(Modifier.width(8.dp))
                 Text(
-                    "Мышцы: ${signalLabel(c.muscleSignal)}",
-                    style = MaterialTheme.typography.titleSmall,
+                    "Средняя оценка дня — ${avg.roundToInt()} из 100",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
             }
-            Spacer(Modifier.height(4.dp))
-            Text(c.signalNote, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-        }
+            Text(
+                if (avg != null) {
+                    "Хороший день — оценка от 70: калории, белок, движение и сон. Дни до версии 3.23 — по калориям и белку."
+                } else {
+                    "Хороший день — калории от −10% до +5% плана и белок от 90% нормы."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
-        StrengthSection(c)
+            // Сигнал сохранения мышц — без данных силы, по трём простым признакам.
+            val sColor = signalColor(c.muscleSignal)
+            TonalSection(color = sColor) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SignalDot(c.muscleSignal)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "Мышцы: ${signalLabel(c.muscleSignal)}",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(c.signalNote, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+            }
 
-        // Новый план: было → стало и почему.
-        FreshCard(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(Space.Card), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                TinyLabel(if (c.phaseChange != null) "План на новый этап" else "План на неделю", color = primary)
-                val after = c.caloriesAfter
-                val before = c.caloriesBefore
-                Row(verticalAlignment = Alignment.Bottom) {
-                    if (before != null && after != null && abs(before - after) >= 10) {
+            StrengthSection(c)
+
+            // Новый план: было → стало и почему.
+            FreshCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(Space.Card), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TinyLabel(if (c.phaseChange != null) "План на новый этап" else "План на неделю", color = primary)
+                    val after = c.caloriesAfter
+                    val before = c.caloriesBefore
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        if (before != null && after != null && abs(before - after) >= 10) {
+                            Text(
+                                "${before.roundToInt()} →",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(bottom = 4.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                        }
+                        DisplayNumber("${(after ?: 0.0).roundToInt()}", size = 30, color = primary)
+                        Spacer(Modifier.width(6.dp))
                         Text(
-                            "${before.roundToInt()} →",
-                            style = MaterialTheme.typography.titleMedium,
+                            "ккал",
+                            style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(bottom = 4.dp)
                         )
-                        Spacer(Modifier.width(6.dp))
                     }
-                    DisplayNumber("${(after ?: 0.0).roundToInt()}", size = 30, color = primary)
-                    Spacer(Modifier.width(6.dp))
                     Text(
-                        "ккал",
+                        macroLine("Б", c.proteinBefore, c.proteinAfter) + " · " +
+                            macroLine("Ж", c.fatBefore, c.fatAfter) + " · " +
+                            macroLine("У", c.carbsBefore, c.carbsAfter),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 4.dp)
+                        color = MaterialTheme.colorScheme.onSurface
                     )
-                }
-                Text(
-                    macroLine("Б", c.proteinBefore, c.proteinAfter) + " · " +
-                        macroLine("Ж", c.fatBefore, c.fatAfter) + " · " +
-                        macroLine("У", c.carbsBefore, c.carbsAfter),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                if (c.note.isNotBlank()) {
-                    Text(c.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (c.note.isNotBlank()) {
+                        Text(c.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             }
         }
-
         if (c.nextAction.isNotBlank()) {
             TonalSection(color = primary) {
                 TinyLabel("Главное на неделю", color = primary)
@@ -556,18 +612,26 @@ fun CheckInResultContent(c: CheckInEntity) {
             }
         }
 
-        val ratings = listOfNotNull(
-            c.hunger?.let { "голод $it" },
-            c.energy?.let { "энергия $it" },
-            c.sleep?.let { "сон $it" }
-        )
-        if (ratings.isNotEmpty()) {
-            Text(
-                "Самочувствие: " + ratings.joinToString(" · ") + " из 5",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+        if (expanded) {
+            val ratings = listOfNotNull(
+                c.hunger?.let { "голод $it" },
+                c.energy?.let { "энергия $it" },
+                c.sleep?.let { "сон $it" }
             )
+            if (ratings.isNotEmpty()) {
+                Text(
+                    "Самочувствие: " + ratings.joinToString(" · ") + " из 5",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
+        SoftButton(
+            if (expanded) "Свернуть" else "Подробнее: вес, мышцы, сила и план",
+            onClick = { expanded = !expanded },
+            height = 44,
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }
 
@@ -653,6 +717,27 @@ private fun liftLine(l: StrengthCheck.Lift): String {
         else -> " ="
     }
     return sets + arrow
+}
+
+/**
+ * Одна фраза итога недели: что с весом и что с мышцами. Пример: «−0,5 кг за неделю,
+ * сила держится — уходит жир».
+ */
+private fun checkInHeadline(c: CheckInEntity): String {
+    val change = c.trendChangeKg
+    val weight = when {
+        change == null -> "Вес пока без тренда"
+        change <= -0.05 -> "${signed(change)} кг за ${if (c.periodDays == 7) "неделю" else "${c.periodDays} дн."}"
+        change >= 0.05 -> "${signed(change)} кг за ${if (c.periodDays == 7) "неделю" else "${c.periodDays} дн."}"
+        else -> "Вес на месте"
+    }
+    val muscles = when {
+        c.strengthSignal == "green" -> "сила держится — уходит жир"
+        c.strengthSignal == "red" || c.muscleSignal == "red" -> "мышцам нужна поддержка"
+        c.strengthSignal == "yellow" || c.muscleSignal == "yellow" -> "мышцам — чуть больше внимания"
+        else -> "мышцы под защитой"
+    }
+    return "$weight, $muscles"
 }
 
 /** «Б 150» или «Б 145 → 150». */

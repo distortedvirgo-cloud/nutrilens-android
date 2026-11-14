@@ -8,6 +8,7 @@ import com.nutrilens.app.data.NutriLensDatabase
 import com.nutrilens.app.data.SettingsRepository
 import com.nutrilens.app.data.isCheckInDue
 import com.nutrilens.app.insights.CheckInPlanner
+import com.nutrilens.app.notifications.NotificationBudget
 import com.nutrilens.app.notifications.NotificationHelper
 import java.time.LocalDate
 import java.time.LocalTime
@@ -26,16 +27,23 @@ class CheckInWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         // Чек-ин начинается со взвешивания — уважаем переключатель «Взвешивание» в настройках.
         if (!settings.weighInReminderEnabled || settings.targetFatPercent == null) return Result.success()
         val today = LocalDate.now()
-        notifyNudge(today)
+        // 3.29: одно напоминание программы в день — по важности: чек-ин, цикл, подсказка.
+        notifyCheckIn(today, settings)
         notifyCycle(today, settings)
-        if (today.dayOfWeek != CheckInPlanner.dayOfWeek(settings.checkInWeekday)) return Result.success()
-        if (!settings.isCheckInDue(today)) return Result.success()
-        val hour = LocalTime.now().hour
-        if (hour < 8 || hour >= 21) return Result.success()
+        notifyNudge(today)
+        return Result.success()
+    }
 
+    /** Утро дня чек-ина: одно напоминание, если чек-ин ещё не сделан. */
+    private fun notifyCheckIn(today: LocalDate, settings: com.nutrilens.app.data.SettingsEntity) {
+        if (today.dayOfWeek != CheckInPlanner.dayOfWeek(settings.checkInWeekday)) return
+        if (!settings.isCheckInDue(today)) return
+        val hour = LocalTime.now().hour
+        if (hour < 8 || hour >= 21) return
         val prefs = applicationContext.getSharedPreferences("checkin", Context.MODE_PRIVATE)
         val day = today.toEpochDay()
-        if (prefs.getLong("last_notified", 0L) == day) return Result.success()
+        if (prefs.getLong("last_notified", 0L) == day) return
+        if (!NotificationBudget.claim(applicationContext, NotificationBudget.Kind.CHECK_IN, today)) return
         prefs.edit().putLong("last_notified", day).apply()
 
         NotificationHelper.post(
@@ -43,10 +51,9 @@ class CheckInWorker(context: Context, params: WorkerParameters) : CoroutineWorke
             NotificationHelper.CHANNEL_REMINDERS,
             NOTIFICATION_ID,
             "Пора подвести неделю",
-            "Чек-ин займёт 2 минуты: вес, замер и самочувствие — и план на новую неделю",
+            "30 секунд: вес и как прошла неделя — и план на новую неделю",
             NotificationHelper.mainActivityPendingIntent(applicationContext, NOTIFICATION_ID)
         )
-        return Result.success()
     }
 
     /**
@@ -56,8 +63,10 @@ class CheckInWorker(context: Context, params: WorkerParameters) : CoroutineWorke
     private suspend fun notifyNudge(today: LocalDate) {
         val hour = LocalTime.now().hour
         if (hour < 10 || hour >= 20) return
+        if (NotificationBudget.spent(applicationContext, today)) return
         val nudge = runCatching { CoachNudges.load(applicationContext, today) }.getOrNull() ?: return
         if (!CoachNudges.markNotified(applicationContext, nudge.key, today)) return
+        if (!NotificationBudget.claim(applicationContext, NotificationBudget.Kind.NUDGE, today)) return
         NotificationHelper.post(
             applicationContext,
             NotificationHelper.CHANNEL_REMINDERS,
@@ -78,6 +87,7 @@ class CheckInWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         if (!com.nutrilens.app.data.CycleStore.shouldAsk(applicationContext, settings, today)) return
         val prefs = applicationContext.getSharedPreferences("checkin", Context.MODE_PRIVATE)
         if (prefs.getLong("cycle_notified", 0L) == today.toEpochDay()) return
+        if (!NotificationBudget.claim(applicationContext, NotificationBudget.Kind.CYCLE, today)) return
         prefs.edit().putLong("cycle_notified", today.toEpochDay()).apply()
         NotificationHelper.post(
             applicationContext,

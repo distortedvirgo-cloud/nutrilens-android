@@ -21,7 +21,10 @@ class WeighInWorker(context: Context, params: WorkerParameters) : CoroutineWorke
             val prefs = applicationContext.getSharedPreferences("weighin", Context.MODE_PRIVATE)
             val today = java.time.LocalDate.now().toEpochDay()
             val lastNotified = prefs.getLong("last_notified", 0L)
-            if (today - lastNotified >= 7) {
+            // 3.29: делит с чек-ином и подсказками один слот в день.
+            if (today - lastNotified >= 7 &&
+                com.nutrilens.app.notifications.NotificationBudget.claim(applicationContext, com.nutrilens.app.notifications.NotificationBudget.Kind.WEIGH_IN)
+            ) {
                 prefs.edit().putLong("last_notified", today).apply()
                 val contentIntent = NotificationHelper.mainActivityPendingIntent(applicationContext, 1002)
                 NotificationHelper.post(

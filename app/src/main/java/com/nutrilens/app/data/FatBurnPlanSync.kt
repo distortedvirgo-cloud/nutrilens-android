@@ -269,6 +269,8 @@ object FatBurnPlanSync {
                         planDate = null,
                         // Отсюда считается первый чек-ин: не раньше чем через 5 дней данных.
                         fatBurnStartDate = todayStr,
+                        // 3.29: ритм не спрашиваем — чек-ин в тот же день недели, что и старт.
+                        checkInWeekday = today.dayOfWeek.value,
                         lastCheckInDate = null
                     ).withProgram(program)
                 }

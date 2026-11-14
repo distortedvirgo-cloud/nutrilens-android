@@ -67,10 +67,16 @@ class MainActivity : ComponentActivity() {
                 val context = LocalContext.current
                 var onboarding by remember { mutableStateOf<Boolean?>(null) }
                 LaunchedEffect(Unit) { onboarding = Onboarding.needed(context) }
-                when (onboarding) {
-                    null -> Unit
-                    true -> OnboardingScreen(onFinish = { onboarding = false })
-                    false -> NutriLensAppRoot(
+                // Обучение (3.29): один раз после онбординга — и один раз у тех, кто обновился.
+                var tutorial by remember { mutableStateOf(com.nutrilens.app.ui.Tutorial.needed(context)) }
+                when {
+                    onboarding == null -> Unit
+                    onboarding == true -> OnboardingScreen(onFinish = { onboarding = false })
+                    tutorial -> com.nutrilens.app.ui.TutorialScreen(onFinish = {
+                        com.nutrilens.app.ui.Tutorial.markDone(context)
+                        tutorial = false
+                    })
+                    else -> NutriLensAppRoot(
                         initialDate = dateExtra?.takeIf { it.isNotBlank() },
                         navigateTo = navigateTo?.takeIf { it in DEEP_LINK_ROUTES || it.startsWith("recipe/") }
                     )

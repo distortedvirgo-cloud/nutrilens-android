@@ -404,8 +404,14 @@ private fun SafetyQuestion(text: String, value: Boolean?, onChange: (Boolean) ->
 
 // ---------- Мастер запуска ----------
 
+/** «по воскресеньям» — для строки о ритме на последнем шаге мастера. */
+private val LAUNCH_WEEKDAYS = listOf(
+    "по понедельникам", "по вторникам", "по средам", "по четвергам", "по пятницам", "по субботам", "по воскресеньям"
+)
+
 /**
- * Запуск программы в четыре шага: замер и вес → цель → ритм → план программы.
+ * Запуск программы в три шага (3.29): замер и вес → цель → план. Ритм не спрашиваем:
+ * чек-ин — в сегодняшний день недели, 2 силовые, темп по полу; поменять — в Профиле.
  * Ничего не сохраняется до «Начать программу» (кроме настроек ритма и пола — они
  * и так живут в Профиле): закрыл лист — режим не включился.
  */
@@ -440,8 +446,8 @@ fun ProgramLaunchSheet(onDismiss: () -> Unit, viewModel: FatBurnProgramViewModel
     val defaultTarget = (if (male) 15 else 23).coerceAtLeast(floor)
     val chosenTarget = (target ?: defaultTarget).coerceIn(floor, BodyComposition.MAX_TARGET)
 
-    val titles = listOf("Текущий замер", "Цель", "Ритм", "План программы")
-    NutriSheet(onDismiss = onDismiss, title = titles[step.coerceIn(0, 3)], subtitle = "Шаг ${step + 1} из 4") {
+    val titles = listOf("Текущий замер", "Цель", "План программы")
+    NutriSheet(onDismiss = onDismiss, title = titles[step.coerceIn(0, 2)], subtitle = "Шаг ${step + 1} из 3") {
         when (step) {
             0 -> {
                 SegmentedSwitcher(
@@ -537,21 +543,6 @@ fun ProgramLaunchSheet(onDismiss: () -> Unit, viewModel: FatBurnProgramViewModel
                 Spacer(Modifier.height(20.dp))
                 SheetActions(secondaryText = "Назад", onSecondary = { step = 0 }, primaryText = "Дальше", onPrimary = { step = 2 })
             }
-            2 -> {
-                CheckInSettingsBlock(
-                    weekday = settings.checkInWeekday,
-                    workoutGoal = settings.workoutGoal,
-                    onWeekday = viewModel::setCheckInWeekday,
-                    onWorkoutGoal = viewModel::setWorkoutGoal,
-                    pace = settings.fatBurnPace,
-                    male = BodyComposition.isMale(settings),
-                    onPace = viewModel::setPace
-                )
-                Spacer(Modifier.height(14.dp))
-                StepsSettingsSection()
-                Spacer(Modifier.height(20.dp))
-                SheetActions(secondaryText = "Назад", onSecondary = { step = 1 }, primaryText = "Дальше", onPrimary = { step = 3 })
-            }
             else -> {
                 val weightForPlan = enteredWeight ?: recentWeight?.weight
                 LaunchedEffect(chosenTarget, weightForPlan, currentFat) {
@@ -566,6 +557,15 @@ fun ProgramLaunchSheet(onDismiss: () -> Unit, viewModel: FatBurnProgramViewModel
                     }
                 } else {
                     LaunchPlanContent(p)
+                    Spacer(Modifier.height(10.dp))
+                    val pace = FatBurnPlanner.Pace.of(settings.fatBurnPace) ?: FatBurnPlanner.Pace.default(male)
+                    Text(
+                        "Чек-ин — раз в неделю, ${LAUNCH_WEEKDAYS[today.dayOfWeek.value - 1]}; " +
+                            "силовых — ${settings.workoutGoal} в неделю; темп — ${pace.title.lowercase()}. " +
+                            "Всё это можно поменять в Профиле.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
                 error?.let {
                     Spacer(Modifier.height(12.dp))
@@ -581,7 +581,7 @@ fun ProgramLaunchSheet(onDismiss: () -> Unit, viewModel: FatBurnProgramViewModel
                 } else {
                     SheetActions(
                         secondaryText = "Назад",
-                        onSecondary = { step = 2 },
+                        onSecondary = { step = 1 },
                         primaryText = "Начать программу",
                         onPrimary = {
                             viewModel.start(
