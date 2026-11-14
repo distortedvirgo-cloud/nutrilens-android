@@ -244,9 +244,11 @@ fun NutriLensAppRoot(initialDate: String? = null, navigateTo: String? = null) {
                         onOpenCoach = { navigate("coach") },
                         onAddMeal = { navigate("add/camera") },
                         onSetupAi = { navigate("settings/ai") },
-                        onOpenProfile = { navigate("profile") }
+                        onOpenProfile = { navigate("profile") },
+                        onOpenProgress = { navigate("progressCheck") }
                     )
                 }
+                composable("progressCheck") { ProgressCheckScreen(onBack = back) }
                 composable("report") { ReportScreen(onOpenLeaderboard = { navigate("leaderboard") }) }
                 composable("coach") { CoachScreen(onNavigate = navigate) }
                 composable("profile") { ProfileScreen(onNavigate = navigate, onBack = back) }

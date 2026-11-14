@@ -51,7 +51,7 @@ class CheckInWorker(context: Context, params: WorkerParameters) : CoroutineWorke
             NotificationHelper.CHANNEL_REMINDERS,
             NOTIFICATION_ID,
             "Пора подвести неделю",
-            "30 секунд: вес и как прошла неделя — и план на новую неделю",
+            "Минута: вес, талия и как прошла неделя — и план на новую неделю",
             NotificationHelper.mainActivityPendingIntent(applicationContext, NOTIFICATION_ID)
         )
     }

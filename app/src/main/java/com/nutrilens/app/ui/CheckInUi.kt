@@ -96,7 +96,7 @@ class CheckInViewModel(application: Application) : AndroidViewModel(application)
     private val _todayMeasurement = MutableStateFlow<BodyMeasurementEntity?>(null)
     val todayMeasurement: StateFlow<BodyMeasurementEntity?> = _todayMeasurement.asStateFlow()
 
-    /** 3.29: замер лентой нужен раз в 2 недели — последний старше 10 дней или его нет. */
+    /** Замер талии — каждую неделю: последний старше 5 дней или его нет. */
     private val _measurementDue = MutableStateFlow(true)
     val measurementDue: StateFlow<Boolean> = _measurementDue.asStateFlow()
 
@@ -229,10 +229,10 @@ fun CheckInDueCard(onClick: () -> Unit, modifier: Modifier = Modifier) {
     FreshCard(modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.primaryContainer, onClick = onClick) {
         Column(Modifier.padding(Space.Card), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             CardHeader(
-                title = "Пора подвести неделю · 30 секунд",
+                title = "Пора подвести неделю · 1 минута",
                 icon = Icons.Rounded.EventAvailable,
                 tint = primary,
-                subtitle = "Вес и как прошла неделя — и план на новую неделю"
+                subtitle = "Вес, талия и как прошла неделя — и план на новую неделю"
             )
             GlowButton("Начать чек-ин", onClick = onClick, modifier = Modifier.fillMaxWidth())
         }
@@ -241,8 +241,8 @@ fun CheckInDueCard(onClick: () -> Unit, modifier: Modifier = Modifier) {
 
 // ---------- Лист чек-ина ----------
 
-/** Замер лентой — раз в 2 недели: если последний не старше 10 дней, шаг пропускаем. */
-private const val MEASUREMENT_EVERY_DAYS = 10L
+/** Замер талии — раз в неделю (3.30): если уже мерили в последние 5 дней, шаг пропускаем. */
+private const val MEASUREMENT_EVERY_DAYS = 5L
 
 private enum class CheckInStep { WEIGHT, TAPE, FEEL }
 
@@ -254,8 +254,8 @@ private enum class WeekFeel(val title: String, val hunger: Int, val energy: Int)
 }
 
 /**
- * Чек-ин за 30 секунд (3.29): вес — только если сегодня ещё не взвешивался, замер лентой —
- * раз в 2 недели, и один вопрос «как прошла неделя». Ничего не сохраняется до конца:
+ * Чек-ин за 30 секунд (3.29): вес — только если сегодня ещё не взвешивался, замер талии —
+ * каждую неделю (3.30), и один вопрос «как прошла неделя». Ничего не сохраняется до конца:
  * закрыл лист на середине — ничего не потерял и не сломал.
  */
 @Composable
@@ -352,7 +352,7 @@ fun CheckInSheet(onDismiss: () -> Unit, viewModel: CheckInViewModel = viewModel(
             }
             CheckInStep.TAPE -> {
                 Text(
-                    "Раз в две недели — этого хватает, чаще лента тонет в погрешности.",
+                    "Каждую неделю, в одно время — утром, до еды, лента без натяжения. Талия — лучший признак, что уходит именно жир.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

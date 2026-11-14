@@ -495,6 +495,7 @@ fun DashboardScreen(
     onAddMeal: () -> Unit = {},
     onSetupAi: () -> Unit = {},
     onOpenProfile: () -> Unit = {},
+    onOpenProgress: () -> Unit = {},
     viewModel: DashboardViewModel = viewModel()
 ) {
     val scope = rememberCoroutineScope()
@@ -702,6 +703,12 @@ fun DashboardScreen(
                         showCheckIn = true
                     })
                 }
+            }
+        }
+        // «Как идёт прогресс» (3.30): после первого чек-ина — вход на экран с вердиктом.
+        if (settings.targetFatPercent != null && selectedDate == LocalDate.now() && settings.lastCheckInDate != null) {
+            item(key = "progress-check") {
+                Box(Modifier.introIn(2, introDone)) { ProgressCheckEntryCard(onClick = onOpenProgress) }
             }
         }
         // Режим «Сжигание жира»: компактный план на неделю, тап — подробности в Профиле.
