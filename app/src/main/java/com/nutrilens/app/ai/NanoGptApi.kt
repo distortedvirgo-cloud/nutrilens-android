@@ -14,6 +14,8 @@ import kotlinx.serialization.json.putJsonObject
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
@@ -68,7 +70,7 @@ object NanoGptApi {
         val body = buildJsonObject {
             put("model", model)
             // Сервисный тир NanoGPT: flex — дешевле за счёт более неторопливой
-            // очереди (gpt-6 и gemini на NanoGPT поддерживают flex/priority).
+            // очереди. Если маршрут не поддерживает flex, повторяем без тира.
             serviceTier?.let { put("service_tier", it) }
             // Ускорение reasoning-моделей: "low" отключает фазу размышлений
             // (замер: 27 с против 40–70 с на полном промпте с фото).
@@ -120,18 +122,19 @@ object NanoGptApi {
                     }
                 }
             }
-        }.toString()
-
-        val request = Request.Builder()
-            .url("$base/api/v1/chat/completions")
-            .addHeader("Authorization", "Bearer $apiKey")
-            .addHeader("Content-Type", "application/json")
-            .post(body.toRequestBody("application/json".toMediaType()))
-            .build()
+        }
 
         val t0 = System.currentTimeMillis()
         val responseBody = try {
-            execute(request)
+            withNanoGptTierFallback(body) { payload ->
+                val request = Request.Builder()
+                    .url("$base/api/v1/chat/completions")
+                    .addHeader("Authorization", "Bearer $apiKey")
+                    .addHeader("Content-Type", "application/json")
+                    .post(payload.toString().toRequestBody("application/json".toMediaType()))
+                    .build()
+                execute(request)
+            }
         } catch (e: Exception) {
             Log.e("NutriChat", "complete $model failed after ${System.currentTimeMillis() - t0}ms", e)
             throw e
@@ -256,7 +259,7 @@ object NanoGptApi {
                         cont.resume(body)
                     } else {
                         cont.resumeWithException(
-                            RuntimeException("NanoGPT HTTP ${resp.code}: ${body.take(300)}")
+                            NanoGptHttpException(resp.code, body)
                         )
                     }
                 }
@@ -324,4 +327,32 @@ object NanoGptApi {
         }
         return report.toString()
     }
+}
+
+internal class NanoGptHttpException(val statusCode: Int, val responseBody: String) :
+    RuntimeException("NanoGPT HTTP $statusCode: ${responseBody.take(300)}")
+
+/** Retry only an explicit flex rejection, never a timeout or an unrelated API error. */
+internal suspend fun withNanoGptTierFallback(
+    body: JsonObject,
+    send: suspend (JsonObject) -> String
+): String = try {
+    send(body)
+} catch (e: NanoGptHttpException) {
+    val error = runCatching {
+        Json.parseToJsonElement(e.responseBody).jsonObject["error"]?.jsonObject
+    }.getOrNull()
+    val message = runCatching { error?.get("message")?.jsonPrimitive?.contentOrNull }
+        .getOrNull().orEmpty().lowercase()
+    val type = runCatching { error?.get("type")?.jsonPrimitive?.contentOrNull }.getOrNull()
+    val flexUnavailable = message.contains("flex") && message.contains("service_tier") &&
+        (message.contains("isn't available") || message.contains("not available") ||
+            message.contains("not supported"))
+    if (e.statusCode != 400 || body["service_tier"]?.jsonPrimitive?.contentOrNull != "flex" ||
+        type != "invalid_request_error" || !flexUnavailable
+    ) throw e
+
+    // The rejected request was not run. Keep the model, photos and prompt intact;
+    // make exactly one new attempt using the provider's ordinary queue.
+    send(JsonObject(body - "service_tier"))
 }

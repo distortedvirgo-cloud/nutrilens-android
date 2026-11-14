@@ -23,7 +23,7 @@ const val COMPLEXITY_SENIOR_THRESHOLD = 7
  * - gemini: только свой ключ Gemini.
  * Провайдер строгий: фолбэков на другой провайдер нет — нет нужного ключа,
  * будет ошибка, а не тихий запрос в чужой API.
- * Слаги ходят в сервисном тире flex (service_tier ставится в NanoGptApi).
+ * Сначала используем flex; при явном отказе маршрута NanoGptApi повторяет без тира.
  */
 suspend fun analyzeMealCascade(
     settings: SettingsEntity,
