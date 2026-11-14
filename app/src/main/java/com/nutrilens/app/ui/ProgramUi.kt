@@ -200,6 +200,7 @@ class FatBurnProgramViewModel(application: Application) : AndroidViewModel(appli
         weightKg: Double?,
         measurement: BodyMeasurementEntity?,
         heightCm: Double?,
+        look: Double?,
         onDone: () -> Unit
     ) {
         if (_starting.value) return
@@ -207,7 +208,7 @@ class FatBurnProgramViewModel(application: Application) : AndroidViewModel(appli
             _starting.value = true
             _error.value = null
             try {
-                val ok = FatBurnPlanSync.startProgram(getApplication(), target, weightKg, measurement, heightCm)
+                val ok = FatBurnPlanSync.startProgram(getApplication(), target, weightKg, measurement, heightCm, look)
                 if (ok) onDone() else _error.value = "Нужен вес — без него план не посчитать"
             } catch (e: Exception) {
                 _error.value = "Не получилось начать программу: ${e.message ?: "попробуй ещё раз"}"
@@ -433,6 +434,8 @@ fun ProgramLaunchSheet(onDismiss: () -> Unit, viewModel: FatBurnProgramViewModel
     val male = BodyComposition.isMale(settings)
     val floor = programMinTarget(male)
     var target by remember { mutableStateOf<Int?>(null) }
+    // 3.30: старт — по виду (таблица фото), лента дальше считает изменения.
+    var look by remember { mutableStateOf<Double?>(null) }
 
     // Замер за последние 7 дней — подойдёт и без нового.
     val recentMeasurement = measurements.lastOrNull { m ->
@@ -442,7 +445,7 @@ fun ProgramLaunchSheet(onDismiss: () -> Unit, viewModel: FatBurnProgramViewModel
     val weightOk = enteredWeight != null || recentWeight != null
     val formFat = form.result
     val measurementOk = formFat != null || recentMeasurement != null
-    val currentFat = formFat ?: recentMeasurement?.fatPercent
+    val currentFat = look ?: formFat ?: recentMeasurement?.fatPercent
     val defaultTarget = (if (male) 15 else 23).coerceAtLeast(floor)
     val chosenTarget = (target ?: defaultTarget).coerceIn(floor, BodyComposition.MAX_TARGET)
 
@@ -493,13 +496,15 @@ fun ProgramLaunchSheet(onDismiss: () -> Unit, viewModel: FatBurnProgramViewModel
                     Spacer(Modifier.height(12.dp))
                 }
                 BodyMeasurementForm(form)
+                Spacer(Modifier.height(16.dp))
+                FatLookPicker(male = male, value = look, onChange = { look = it })
                 Spacer(Modifier.height(20.dp))
                 SheetActions(
                     secondaryText = "Отмена",
                     onSecondary = onDismiss,
                     primaryText = "Дальше",
                     onPrimary = { step = 1 },
-                    primaryEnabled = weightOk && measurementOk
+                    primaryEnabled = weightOk && measurementOk && look != null
                 )
             }
             1 -> {
@@ -589,6 +594,7 @@ fun ProgramLaunchSheet(onDismiss: () -> Unit, viewModel: FatBurnProgramViewModel
                                 weightKg = enteredWeight,
                                 measurement = form.entity(),
                                 heightCm = if (form.result != null) form.newHeight() else null,
+                                look = look,
                                 onDone = onDismiss
                             )
                         },

@@ -152,7 +152,10 @@ data class SettingsEntity(
     // (см. FatBurnProgramCodec), чтобы не заводить таблицу ради одного объекта. null — программы нет.
     val fatBurnProgram: String? = null,
     // Темп программы (3.28): "gentle" / "normal" / "fast"; null — по умолчанию для пола.
-    val fatBurnPace: String? = null
+    val fatBurnPace: String? = null,
+    // Калибровка (3.30): поправка к формуле по ленте, п.п. Старт выбирают по виду, а лента
+    // считает только изменения: процент = формула + поправка. null — без калибровки.
+    val fatOffset: Double? = null
 )
 
 @Entity(tableName = "analysis_jobs")

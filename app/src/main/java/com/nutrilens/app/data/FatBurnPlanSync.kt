@@ -245,7 +245,9 @@ object FatBurnPlanSync {
         target: Double,
         weightKg: Double?,
         measurement: BodyMeasurementEntity?,
-        heightCm: Double?
+        heightCm: Double?,
+        /** Процент по виду (3.30): калибрует формулу по ленте — старт честный, лента считает изменения. */
+        look: Double? = null
     ): Boolean {
         val appContext = context.applicationContext
         val ok = mutex.withLock {
@@ -257,6 +259,10 @@ object FatBurnPlanSync {
                 if (weightKg != null) db.weightDao().upsert(WeightEntity(todayStr, weightKg))
                 if (heightCm != null) repo.update { it.copy(heightCm = heightCm) }
                 if (measurement != null) db.bodyMeasurementDao().upsert(measurement)
+                if (look != null) {
+                    val reference = measurement ?: db.bodyMeasurementDao().latest()
+                    if (reference != null) FatCalibration.apply(appContext, look, reference)
+                }
                 val weight = db.weightDao().latest()?.weight?.takeIf { it > 0 } ?: return@withContext false
                 val before = repo.get()
                 val male = BodyComposition.isMale(before)
@@ -343,6 +349,44 @@ object FatBurnPlanSync {
             }
         }
         afterChange(appContext)
+    }
+
+    /**
+     * Уточнили процент по виду посреди программы (3.30): текущий этап и всё после
+     * пересобираются от нового процента, план — свежий под новую сухую массу.
+     */
+    suspend fun recalibrate(context: Context, look: Double): Boolean {
+        val appContext = context.applicationContext
+        val ok = mutex.withLock {
+            withContext(Dispatchers.IO) {
+                val db = NutriLensDatabase.getInstance(appContext)
+                val reference = db.bodyMeasurementDao().latest() ?: return@withContext false
+                if (!FatCalibration.apply(appContext, look, reference)) return@withContext false
+                val repo = SettingsRepository(db.settingsDao())
+                val settings = repo.get()
+                val target = settings.targetFatPercent ?: return@withContext true
+                val program = settings.fatBurnProgramState ?: return@withContext true
+                if (program.completed) return@withContext true
+                val fat = fatTrendNow(db.bodyMeasurementDao().all()) ?: look
+                val weight = db.weightDao().latest()?.weight ?: program.startWeight
+                val male = BodyComposition.isMale(settings)
+                // Старт этапа — от нового процента: иначе блоки собрались бы от старой цифры.
+                val phases = program.phases.toMutableList()
+                program.currentPhase?.let { phases[program.current] = it.copy(startFat = fat) }
+                val shifted = program.copy(
+                    phases = phases,
+                    startFat = if (program.current == 0) fat else program.startFat
+                )
+                val next = FatBurnProgram.retarget(shifted, target, fat, weight, male)
+                repo.update { it.withProgram(next) }
+                val input = buildInput(db, repo.get(), target, LocalDate.now(), usePrevious = true)
+                val plan = input?.let { phasePlan(it, next, freshBlock = next.inActiveBlock) }
+                if (plan != null) repo.update { it.withPlan(plan.copy(note = "Процент уточнён по виду — план пересчитан"), target) }
+                true
+            }
+        }
+        afterChange(appContext)
+        return ok
     }
 
     /** Приостановить: план — на уровне расхода, чек-инов и напоминаний нет. */

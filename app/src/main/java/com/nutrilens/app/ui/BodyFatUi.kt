@@ -221,7 +221,9 @@ class MeasurementFormState(settings: SettingsEntity, today: BodyMeasurementEntit
     val hipsN: Double? get() = if (male) null else parseNum(hips)
     val manualN: Double? get() = parseNum(manual)?.takeIf { it in 3.0..60.0 }
     val formula: Double? get() = BodyComposition.navyFatPercent(male, heightCm, waistN, neckN, hipsN)
-    val result: Double? get() = manualN ?: formula
+    /** Формула с калибровкой по виду (3.30); без калибровки — сама формула. */
+    val calibrated: Double? get() = com.nutrilens.app.data.FatCalibration.calibrated(formula, settings.fatOffset)
+    val result: Double? get() = manualN ?: calibrated
 
     /** Замер за сегодня; null — процент ещё не посчитать. */
     fun entity(): BodyMeasurementEntity? {
@@ -304,7 +306,8 @@ fun BodyMeasurementForm(state: MeasurementFormState) {
                     when {
                         manualN != null && formula != null -> "Твой процент. По обхватам выходит ${BodyComposition.fmt1(formula)}%"
                         manualN != null -> "Твой процент"
-                        else -> "По формуле ВМС США"
+                        state.settings.fatOffset != null -> "По виду и ленте: старт выбран по виду, лента считает изменения"
+                        else -> "По формуле ВМС США — грубо. Точнее — выбрать старт по виду"
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -880,6 +883,52 @@ private fun BodyCompositionDetails(
         )
         Spacer(Modifier.height(14.dp))
         SoftButton("Добавить замер", onClick = onAdd, icon = Icons.Rounded.Add, modifier = Modifier.fillMaxWidth())
+        Spacer(Modifier.height(8.dp))
+        LookCalibrationButton(settings)
+    }
+}
+
+/**
+ * «Уточнить процент по виду» (3.30): таблица фото → поправка к формуле по ленте.
+ * В идущей программе этапы и план пересобираются от нового процента.
+ */
+@Composable
+private fun LookCalibrationButton(settings: SettingsEntity) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var open by remember { mutableStateOf(false) }
+    var look by remember { mutableStateOf<Double?>(null) }
+    var saving by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    SoftButton(
+        if (settings.fatOffset == null) "Уточнить процент по виду" else "Уточнить процент по виду ещё раз",
+        onClick = { look = null; message = null; open = true },
+        modifier = Modifier.fillMaxWidth()
+    )
+    if (open) {
+        NutriSheet(onDismiss = { open = false }, title = "Процент по виду", subtitle = "Старт — по фото, изменения — по ленте") {
+            FatLookPicker(male = BodyComposition.isMale(settings), value = look, onChange = { look = it })
+            message?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                Spacer(Modifier.height(8.dp))
+            }
+            Spacer(Modifier.height(12.dp))
+            SheetActions(
+                secondaryText = "Отмена",
+                onSecondary = { open = false },
+                primaryText = if (saving) "Сохраняю…" else "Сохранить",
+                onPrimary = {
+                    val v = look ?: return@SheetActions
+                    saving = true
+                    scope.launch {
+                        val ok = com.nutrilens.app.data.FatBurnPlanSync.recalibrate(context, v)
+                        saving = false
+                        if (ok) open = false else message = "Нужен хотя бы один замер лентой (талия и шея)"
+                    }
+                },
+                primaryEnabled = look != null && !saving
+            )
+        }
     }
 }
 
