@@ -5,11 +5,13 @@ import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import com.nutrilens.app.ai.ImagePrep
+import com.nutrilens.app.ai.NanoYouTubeLinkException
 import com.nutrilens.app.ai.RecipeAi
 import com.nutrilens.app.data.NutriLensDatabase
 import com.nutrilens.app.data.RecipeRepository
 import com.nutrilens.app.data.SettingsRepository
 import com.nutrilens.app.notifications.NotificationHelper
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -58,12 +60,30 @@ object RecipeImporter {
             try {
                 val db = NutriLensDatabase.getInstance(app)
                 val settings = SettingsRepository(db.settingsDao()).get()
-                val prepared = prepare()
-                val (draft, coverTime) = RecipeAi.extract(settings, prepared.input)
-                // Обложка — кадр с готовым блюдом, который назвал ИИ; иначе запасная или превью ссылки.
-                val best = prepared.frameFrom?.let { src -> runCatching { videoFrame(app, src, coverTime) }.getOrNull() }
-                val recipe = draft.copy(cover = best ?: prepared.cover ?: draft.cover)
-                (prepared.frameFrom as? File)?.delete()
+                var prepared = prepare()
+                val recipe = try {
+                    val (draft, coverTime) = try {
+                        RecipeAi.extract(settings, prepared.input)
+                    } catch (e: NanoYouTubeLinkException) {
+                        prepared = try {
+                            downloadLink(app, prepared.input)
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (downloadFailure: Exception) {
+                            throw RuntimeException(
+                                "NanoGPT не смог открыть ссылку YouTube, а приложение не смогло скачать ролик. " +
+                                    "Загрузите его кнопкой «Видео» или выберите Gemini в Профиле → Нейросеть.",
+                                downloadFailure
+                            )
+                        }
+                        RecipeAi.extract(settings, prepared.input)
+                    }
+                    // Обложка — кадр с готовым блюдом, который назвал ИИ; иначе запасная или превью ссылки.
+                    val best = prepared.frameFrom?.let { src -> runCatching { videoFrame(app, src, coverTime) }.getOrNull() }
+                    draft.copy(cover = best ?: prepared.cover ?: draft.cover)
+                } finally {
+                    (prepared.frameFrom as? File)?.delete()
+                }
                 RecipeRepository(db).put(recipe)
                 dismiss(id)
                 _finished.value = recipe.id
@@ -74,6 +94,9 @@ object RecipeImporter {
                     "${recipe.ingredients.size} ингредиентов · ${recipe.nutrition.calories.toInt()} ккал на порцию",
                     NotificationHelper.mainActivityPendingIntent(app, id.hashCode(), navigate = "recipe/${recipe.id}")
                 )
+            } catch (e: CancellationException) {
+                dismiss(id)
+                throw e
             } catch (e: Exception) {
                 val msg = e.message ?: e.javaClass.simpleName
                 _jobs.update { list -> list.map { if (it.id == id) it.copy(error = msg) else it } }
@@ -83,22 +106,20 @@ object RecipeImporter {
 
     fun fromLink(context: Context, url: String, note: String = "") = run(context, RecipeAi.kindOf(url)) {
         val resolved = RecipeAi.resolve(url).copy(note = note, videoUrl = "")
-        if (resolved.kind == "web") return@run Prepared(resolved) // сайт с рецептом — текст и разметка Recipe
-        // Ролик (YouTube/TikTok/Instagram) скачиваем на телефон: ИИ смотрит само видео, без догадок по описанию.
-        // YouTube смотрит сама модель по ссылке (Gemini — Google, NanoGPT — Gemini-маршрут):
-        // скачивать не нужно, и проверка «not a bot» на адресах VPN не мешает.
-        if (resolved.kind == "youtube") return@run Prepared(resolved)
-        var downloadError = ""
-        val bytes = try {
-            VideoDownloader.download(context, url)
+        if (resolved.kind == "web" || resolved.kind == "youtube") Prepared(resolved)
+        else downloadLink(context, resolved)
+    }
+
+    private suspend fun downloadLink(context: Context, input: RecipeAi.Input): Prepared {
+        val video = VideoDownloader.download(context, RecipeAi.youtubeWatchUrl(input.url) ?: input.url)
+        val tmp = File.createTempFile("recipe_", ".video", context.cacheDir)
+        try {
+            tmp.writeBytes(video.first)
         } catch (e: Exception) {
-            // YouTube не скачался — модель посмотрит ролик по ссылке (Gemini — сам Google, NanoGPT — Gemini-маршрут).
-            if (resolved.kind == "youtube") { downloadError = e.message.orEmpty(); null } else throw e
+            tmp.delete()
+            throw e
         }
-        if (bytes != null) {
-            val tmp = File(context.cacheDir, "recipe_${UUID.randomUUID()}.mp4").apply { writeBytes(bytes) }
-            Prepared(resolved.copy(video = bytes to "video/mp4"), frameFrom = tmp)
-        } else Prepared(resolved.copy(downloadError = downloadError))
+        return Prepared(input.copy(video = video), frameFrom = tmp)
     }
 
     fun fromText(context: Context, text: String) =

@@ -7,6 +7,7 @@ import com.nutrilens.app.data.RecipeNutrition
 import com.nutrilens.app.data.RecipeStep
 import com.nutrilens.app.data.SettingsEntity
 import com.nutrilens.app.data.aiProvider
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -41,7 +42,7 @@ import kotlin.math.roundToInt
 /**
  * Рецепт из ссылки, видео, фото или текста — порт web/src/ai/recipe.ts.
  * YouTube (в т.ч. Shorts) уходит в модель самим видео: Gemini — file_data,
- * NanoGPT — video_url через google/gemini-3.1-flash-lite; не принял — по описанию.
+ * NanoGPT — video_url через Gemini-маршрут. При отказе маршрутов импортёр скачивает ролик.
  * TikTok/Instagram/сайты — подпись, описание, разметка Recipe и текст страницы.
  */
 object RecipeAi {
@@ -55,8 +56,6 @@ object RecipeAi {
         val thumbnail: String = "",
         val jsonLd: String = "",
         val pageText: String = "",
-        /** Почему не скачался ролик — покажем, если и ссылка не сработала. */
-        val downloadError: String = "",
         /** Прямая ссылка на ролик (TikTok playAddr / og:video), если страница её отдала. */
         val videoUrl: String = "",
         val note: String = "",
@@ -367,28 +366,10 @@ object RecipeAi {
         })
         val msgs = listOf(NanoGptApi.Msg("user", "$p\n\nФормат ответа — JSON строго такой формы:\n$JSON_SHAPE", images, videos))
         if (yt == null) return NanoGptApi.complete(settings.nanoApiKey, settings.nanoApiEndpoint, NANO_RECIPE_MODEL, null, msgs, jsonMode = true, serviceTier = null)
-        // Ссылку YouTube NanoGPT принимает только на прямых Gemini-маршрутах, а они у моделей
-        // разные. Неподходящую модель NanoGPT отклоняет до списания денег — перебираем.
-        var last: Exception? = null
-        for (model in NANO_YOUTUBE_MODELS) {
-            try {
-                return NanoGptApi.complete(settings.nanoApiKey, settings.nanoApiEndpoint, model, null, msgs, jsonMode = true, serviceTier = null)
-            } catch (e: Exception) {
-                last = e
-                val m = e.message.orEmpty()
-                // Маршрут не принял ссылку (400/404) или все его провайдеры упали (5xx) — следующая модель.
-                val retryable = m.contains("youtube", true) || m.contains("video", true) ||
-                    Regex("HTTP (400|404|5\\d\\d)").containsMatchIn(m) || m.contains("fallback", true)
-                if (!retryable) throw e
-            }
+        return withNanoYouTubeModels { model ->
+            NanoGptApi.complete(settings.nanoApiKey, settings.nanoApiEndpoint, model, null, msgs, jsonMode = true, serviceTier = null)
         }
-        throw RuntimeException("NanoGPT не открыл ссылку YouTube: ${last?.message?.take(140)}")
     }
-
-    /** Gemini-модели NanoGPT для ссылок YouTube — от дешёвой к старшей. */
-    // Проверено тестом (Actions → Probe): ссылку YouTube на NanoGPT принимают эти маршруты,
-    // у остальных Gemini-моделей — 503 all_fallbacks_failed.
-    private val NANO_YOUTUBE_MODELS = listOf("google/gemini-flash-latest", "google/gemini-3.5-flash")
 
     private const val NANO_INLINE_MAX = 3 * 1024 * 1024
 
@@ -413,7 +394,6 @@ object RecipeAi {
         return listOf("хранилище роликов", "ключ", "Ключ", "баланс", "Дневной лимит", "слишком много", "интернет", "таймаут", "401", "402", "403").any { it in m }
     }
 
-    /** Рецепт по выбранному сервису. Видео не приняли — повторяем по тексту, если он есть. */
     /** Рецепт и секунда видео с лучшим кадром готового блюда (для обложки). */
     suspend fun extract(settings: SettingsEntity, src: Input): Pair<Recipe, Double?> {
         val key = if (settings.aiProvider == "gemini") settings.apiKey else settings.nanoApiKey
@@ -426,10 +406,16 @@ object RecipeAi {
         val raw = try {
             call(settings, src, isVideoSource)
         } catch (e: Exception) {
-            if (src.kind == "youtube" && src.video == null && !isHard(e)) {
-                throw RuntimeException(listOf(src.downloadError, e.message.orEmpty().take(160)).filter { it.isNotBlank() }.joinToString("\n\n"))
+            if (e is CancellationException || (src.kind == "youtube" && src.video == null)) throw e
+            if (src.kind == "youtube" && e is NanoGptHttpException && e.rejectsMediaInput()) {
+                throw RuntimeException(
+                    "NanoGPT не принимает это видео. Чтобы разобрать ролик, выберите Gemini в Профиле → Нейросеть.",
+                    e
+                )
             }
-            if (isVideoSource && !isHard(e)) throw RuntimeException("ИИ не смог посмотреть видео: ${e.message?.take(120)}")
+            if (isVideoSource && !isHard(e)) {
+                throw RuntimeException("ИИ не смог посмотреть видео: ${e.message?.take(120)}", e)
+            }
             throw e
         }
         return parse(raw, src)
@@ -498,4 +484,39 @@ object RecipeAi {
             source = com.nutrilens.app.data.RecipeSource(kind = src.kind, url = src.url, author = src.author)
         ) to coverTime
     }
+}
+
+internal class NanoYouTubeLinkException(cause: NanoGptHttpException) :
+    RuntimeException("NanoGPT не смог открыть ссылку YouTube", cause)
+
+private fun NanoGptHttpException.providerMessage(): String {
+    val body = runCatching { Json.parseToJsonElement(responseBody) }.getOrNull() as? JsonObject
+    val error = body?.get("error") as? JsonObject
+    return (error?.get("message") as? JsonPrimitive)?.contentOrNull.orEmpty()
+}
+
+private fun NanoGptHttpException.rejectsMediaInput(message: String = providerMessage()): Boolean =
+    statusCode == 400 && message.contains("No permitted provider supports this model and media input", ignoreCase = true)
+
+/** Попробовать Gemini-маршруты NanoGPT, поддерживающие ссылки YouTube. */
+internal suspend fun withNanoYouTubeModels(send: suspend (String) -> String): String {
+    val models = listOf("google/gemini-flash-latest", "google/gemini-3.5-flash")
+    for (model in models) {
+        try {
+            return send(model)
+        } catch (e: NanoGptHttpException) {
+            val retryable = when (e.statusCode) {
+                400 -> {
+                    val message = e.providerMessage()
+                    e.rejectsMediaInput(message) ||
+                        message.contains("youtube", ignoreCase = true) || message.contains("video_url", ignoreCase = true)
+                }
+                404, in 500..599 -> true
+                else -> false
+            }
+            if (!retryable) throw e
+            if (model == models.last()) throw NanoYouTubeLinkException(e)
+        }
+    }
+    error("YouTube models are missing")
 }

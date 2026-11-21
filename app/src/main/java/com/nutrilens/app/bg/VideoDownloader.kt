@@ -1,6 +1,7 @@
 package com.nutrilens.app.bg
 
 import android.content.Context
+import android.webkit.MimeTypeMap
 import com.nutrilens.app.ai.RecipeAi
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
@@ -28,8 +29,8 @@ object VideoDownloader {
         ready = true
     }
 
-    /** Байты ролика (mp4) или исключение с понятной причиной. */
-    suspend fun download(context: Context, url: String): ByteArray = withContext(Dispatchers.IO) {
+    /** Байты и MIME-тип ролика или исключение с понятной причиной. */
+    suspend fun download(context: Context, url: String): Pair<ByteArray, String> = withContext(Dispatchers.IO) {
         lock.withLock {
             init(context)
             // Instagram/TikTok часто меняют сайт: свежий yt-dlp — до первого скачивания и раз в 6 часов.
@@ -43,8 +44,12 @@ object VideoDownloader {
             }
             try {
                 // Длинный ролик не влезает в запрос к ИИ — сжимаем на телефоне (480p, звук сохраняется).
-                if (file.length() <= RecipeAi.MAX_VIDEO_BYTES) file.readBytes()
-                else VideoCompressor.compress(context, android.net.Uri.fromFile(file))
+                if (file.length() <= RecipeAi.MAX_VIDEO_BYTES) {
+                    val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase())
+                    file.readBytes() to if (mime == "video/quicktime") "video/mov" else (mime ?: "video/mp4")
+                } else {
+                    VideoCompressor.compress(context, android.net.Uri.fromFile(file)) to "video/mp4"
+                }
             } finally {
                 file.parentFile?.deleteRecursively()
             }
