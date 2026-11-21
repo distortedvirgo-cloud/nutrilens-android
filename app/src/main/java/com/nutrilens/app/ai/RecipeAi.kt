@@ -39,6 +39,9 @@ import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
+private const val NANO_RECIPE_MODEL = "google/gemini-3.1-flash-lite"
+private const val NANO_VIDEO_FALLBACK_MODEL = "qwen/qwen3.8-omni-flash"
+
 /**
  * Рецепт из ссылки, видео, фото или текста — порт web/src/ai/recipe.ts.
  * YouTube (в т.ч. Shorts) уходит в модель самим видео: Gemini — file_data,
@@ -63,7 +66,6 @@ object RecipeAi {
         val video: Pair<ByteArray, String>? = null
     )
 
-    private const val NANO_RECIPE_MODEL = "google/gemini-3.1-flash-lite"
     /** Видео уходит в base64 внутри запроса: у Gemini предел запроса 20 МБ, у NanoGPT — 20 МБ на файл. */
     const val MAX_VIDEO_BYTES = 14L * 1024 * 1024
     private val CATEGORIES = listOf("breakfast", "lunch", "dinner", "snack", "dessert", "drink")
@@ -365,10 +367,13 @@ object RecipeAi {
             else uploadVideo(bytes, mime)
         })
         val msgs = listOf(NanoGptApi.Msg("user", "$p\n\nФормат ответа — JSON строго такой формы:\n$JSON_SHAPE", images, videos))
-        if (yt == null) return NanoGptApi.complete(settings.nanoApiKey, settings.nanoApiEndpoint, NANO_RECIPE_MODEL, null, msgs, jsonMode = true, serviceTier = null)
-        return withNanoYouTubeModels { model ->
+        val send: suspend (String) -> String = { model ->
             NanoGptApi.complete(settings.nanoApiKey, settings.nanoApiEndpoint, model, null, msgs, jsonMode = true, serviceTier = null)
         }
+        if (yt == null) {
+            return if (videos.isEmpty()) send(NANO_RECIPE_MODEL) else withNanoRecipeVideoModel(send)
+        }
+        return withNanoYouTubeModels(send)
     }
 
     private const val NANO_INLINE_MAX = 3 * 1024 * 1024
@@ -496,7 +501,17 @@ private fun NanoGptHttpException.providerMessage(): String {
 }
 
 private fun NanoGptHttpException.rejectsMediaInput(message: String = providerMessage()): Boolean =
-    statusCode == 400 && message.contains("No permitted provider supports this model and media input", ignoreCase = true)
+    statusCode == 400 && (
+        message.contains("No permitted provider supports this model and media input", ignoreCase = true) ||
+            message.contains("No available route for this model supports video input", ignoreCase = true)
+        )
+
+internal suspend fun withNanoRecipeVideoModel(send: suspend (String) -> String): String = try {
+    send(NANO_RECIPE_MODEL)
+} catch (e: NanoGptHttpException) {
+    if (!e.rejectsMediaInput()) throw e
+    send(NANO_VIDEO_FALLBACK_MODEL)
+}
 
 /** Попробовать Gemini-маршруты NanoGPT, поддерживающие ссылки YouTube. */
 internal suspend fun withNanoYouTubeModels(send: suspend (String) -> String): String {

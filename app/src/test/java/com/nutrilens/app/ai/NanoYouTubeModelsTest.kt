@@ -8,6 +8,10 @@ import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class NanoYouTubeModelsTest {
+    private val unavailableVideoRoute = NanoGptHttpException(
+        400,
+        """{"error":{"message":"No available route for this model supports video input.","status":400,"type":"invalid_request_error"}}"""
+    )
     private val rejectedLink = NanoGptHttpException(
         400,
         """{"error":{"message":"No permitted provider supports this model and media input.","status":400,"type":"invalid_request_error"}}"""
@@ -18,7 +22,7 @@ class NanoYouTubeModelsTest {
         val models = mutableListOf<String>()
         val answer = withNanoYouTubeModels { model ->
             models += model
-            if (models.size == 1) throw rejectedLink
+            if (models.size == 1) throw unavailableVideoRoute
             "recipe"
         }
         assertEquals("recipe", answer)
@@ -32,12 +36,44 @@ class NanoYouTubeModelsTest {
             runBlocking {
                 withNanoYouTubeModels {
                     attempts++
-                    throw rejectedLink
+                    throw if (attempts == 1) unavailableVideoRoute else rejectedLink
                 }
             }
         }
         assertSame(rejectedLink, failure.cause)
         assertEquals(2, attempts)
+    }
+
+    @Test
+    fun `downloaded video retries with an alternative model after a video routing rejection`() = runBlocking {
+        val models = mutableListOf<String>()
+        val answer = withNanoRecipeVideoModel { model ->
+            models += model
+            if (models.size == 1) throw unavailableVideoRoute
+            "recipe"
+        }
+        assertEquals("recipe", answer)
+        assertEquals(listOf("google/gemini-3.1-flash-lite", "qwen/qwen3.8-omni-flash"), models)
+    }
+
+    @Test
+    fun `downloaded video does not retry successful or unrelated requests`() = runBlocking {
+        val models = mutableListOf<String>()
+        assertEquals("recipe", withNanoRecipeVideoModel { model ->
+            models += model
+            "recipe"
+        })
+        val failure = NanoGptHttpException(429, unavailableVideoRoute.responseBody)
+        val actual = assertThrows(NanoGptHttpException::class.java) {
+            runBlocking {
+                withNanoRecipeVideoModel { model ->
+                    models += model
+                    throw failure
+                }
+            }
+        }
+        assertSame(failure, actual)
+        assertEquals(List(2) { "google/gemini-3.1-flash-lite" }, models)
     }
 
     @Test
