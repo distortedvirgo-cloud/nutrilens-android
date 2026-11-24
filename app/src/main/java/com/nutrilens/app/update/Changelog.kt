@@ -19,6 +19,14 @@ data class ChangelogEntry(
  */
 val CHANGELOG: List<ChangelogEntry> = listOf(
     ChangelogEntry(
+        versionCode = 90,
+        versionName = "3.33",
+        title = "Исправлен анализ фото через NanoGPT",
+        items = listOf(
+            "Gemini 3.8 Flash анализирует фото через обычную очередь. Если модель временно недоступна, NutriLens передаёт запрос GPT-6.1 Terra."
+        )
+    ),
+    ChangelogEntry(
         versionCode = 89,
         versionName = "3.32",
         title = "Импорт рецептов из YouTube",
