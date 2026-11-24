@@ -3,6 +3,7 @@ package com.nutrilens.app.ai
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.*
 import org.junit.Test
@@ -20,6 +21,64 @@ class NanoGptTierFallbackTest {
     private val rejection = NanoGptHttpException(400, """
         {"error":{"type":"invalid_request_error","message":"Flex isn't available for this model with this request. Retrying it unchanged won't help: send it without service_tier flex to use the standard route."}}
     """)
+
+    private val unavailable = NanoGptHttpException(503, """
+        {"error":{"message":"google/gemini-3.8-flash is temporarily unavailable. Please try again later or choose another model.","status":503,"type":"service_unavailable","param":"model"}}
+    """)
+
+    @Test
+    fun `senior starts on standard route and switches directly to backup on model outage`() = runBlocking {
+        assertNull(defaultNanoServiceTier(NANO_MODEL_SENIOR))
+        assertEquals("flex", defaultNanoServiceTier(NANO_MODEL_JUNIOR))
+        val standard = JsonObject(request - "service_tier")
+        val sent = mutableListOf<JsonObject>()
+        val result = withNanoGptTierFallback(standard, NANO_MODEL_SENIOR_BACKUP) {
+            sent += it
+            if (sent.size == 1) throw unavailable
+            "answer"
+        }
+        assertEquals("answer", result)
+        assertEquals(listOf(standard, JsonObject(standard + ("model" to JsonPrimitive(NANO_MODEL_SENIOR_BACKUP)))), sent)
+    }
+
+    @Test
+    fun `unavailable model recovers on the standard route`() = runBlocking {
+        val sent = mutableListOf<JsonObject>()
+        val answer = withNanoGptTierFallback(request, NANO_MODEL_SENIOR_BACKUP) {
+            sent += it
+            if (sent.size == 1) throw unavailable
+            "answer"
+        }
+        assertEquals("answer", answer)
+        assertEquals(listOf(request, JsonObject(request - "service_tier")), sent)
+    }
+
+    @Test
+    fun `persistently unavailable model switches once and preserves the meal payload`() = runBlocking {
+        val sent = mutableListOf<JsonObject>()
+        val answer = withNanoGptTierFallback(request, NANO_MODEL_SENIOR_BACKUP) {
+            sent += it
+            if (sent.size < 3) throw unavailable
+            "answer"
+        }
+        val standard = JsonObject(request - "service_tier")
+        val fallback = JsonObject(standard + ("model" to JsonPrimitive(NANO_MODEL_SENIOR_BACKUP)))
+        assertEquals("answer", answer)
+        assertEquals(listOf(request, standard, fallback), sent)
+    }
+
+    @Test
+    fun `unavailable fallback returns a readable error after three requests`() = runBlocking {
+        var count = 0
+        try {
+            withNanoGptTierFallback(request, NANO_MODEL_SENIOR_BACKUP) { count++; throw unavailable }
+            fail("Expected model unavailability")
+        } catch (actual: RuntimeException) {
+            assertEquals("Модели NanoGPT временно недоступны. Повторите чуть позже.", actual.message)
+            assertSame(unavailable, actual.cause)
+        }
+        assertEquals(3, count)
+    }
 
     @Test
     fun `flex rejection retries once without tier and preserves entire payload`() = runBlocking {
@@ -53,13 +112,14 @@ class NanoGptTierFallbackTest {
             NanoGptHttpException(401, rejection.responseBody),
             NanoGptHttpException(429, rejection.responseBody),
             NanoGptHttpException(503, rejection.responseBody),
+            NanoGptHttpException(503, """{"error":{"type":"service_unavailable"}}"""),
             SocketTimeoutException("timed out"),
             IOException("connection reset")
         )
         for (failure in failures) {
             var count = 0
             try {
-                withNanoGptTierFallback(request) { count++; throw failure }
+                withNanoGptTierFallback(request, NANO_MODEL_SENIOR_BACKUP) { count++; throw failure }
                 fail("Expected original failure")
             } catch (actual: Exception) {
                 assertSame(failure, actual)

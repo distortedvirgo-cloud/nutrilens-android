@@ -16,6 +16,7 @@ import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
@@ -64,7 +65,7 @@ object NanoGptApi {
         jsonMode: Boolean,
         reasoningEffort: String? = null,
         /** Очередь NanoGPT; null — обычная. У flex нет маршрутов для видео: 503 all_fallbacks_failed. */
-        serviceTier: String? = "flex"
+        serviceTier: String? = defaultNanoServiceTier(model)
     ): String {
         val base = endpoint.ifBlank { "https://nano-gpt.com" }.trimEnd('/')
         val body = buildJsonObject {
@@ -126,7 +127,12 @@ object NanoGptApi {
 
         val t0 = System.currentTimeMillis()
         val responseBody = try {
-            withNanoGptTierFallback(body) { payload ->
+            withNanoGptTierFallback(
+                body,
+                fallbackModel = NANO_MODEL_SENIOR_BACKUP.takeIf {
+                    model == NANO_MODEL_SENIOR && messages.none { it.videoUrls.isNotEmpty() }
+                }
+            ) { payload ->
                 val request = Request.Builder()
                     .url("$base/api/v1/chat/completions")
                     .addHeader("Authorization", "Bearer $apiKey")
@@ -329,30 +335,54 @@ object NanoGptApi {
     }
 }
 
+internal fun defaultNanoServiceTier(model: String): String? =
+    if (model == NANO_MODEL_SENIOR) null else "flex"
+
 internal class NanoGptHttpException(val statusCode: Int, val responseBody: String) :
     RuntimeException("NanoGPT HTTP $statusCode: ${responseBody.take(300)}")
 
-/** Retry only an explicit flex rejection, never a timeout or an unrelated API error. */
+/** Retry a rejected flex route, then use the fallback model only for model unavailability. */
 internal suspend fun withNanoGptTierFallback(
     body: JsonObject,
+    fallbackModel: String? = null,
     send: suspend (JsonObject) -> String
-): String = try {
-    send(body)
-} catch (e: NanoGptHttpException) {
-    val error = runCatching {
-        Json.parseToJsonElement(e.responseBody).jsonObject["error"]?.jsonObject
-    }.getOrNull()
-    val message = runCatching { error?.get("message")?.jsonPrimitive?.contentOrNull }
-        .getOrNull().orEmpty().lowercase()
-    val type = runCatching { error?.get("type")?.jsonPrimitive?.contentOrNull }.getOrNull()
-    val flexUnavailable = message.contains("flex") && message.contains("service_tier") &&
+): String {
+    val standardBody = JsonObject(body - "service_tier")
+    val isFlex = body["service_tier"]?.jsonPrimitive?.contentOrNull == "flex"
+    return try {
+        try {
+            send(body)
+        } catch (e: NanoGptHttpException) {
+            if (!isFlex || !(e.isFlexRejection() || (fallbackModel != null && e.isModelUnavailable()))) {
+                throw e
+            }
+            send(standardBody)
+        }
+    } catch (e: NanoGptHttpException) {
+        if (fallbackModel == null || !e.isModelUnavailable()) throw e
+        val fallbackBody = JsonObject(standardBody + ("model" to JsonPrimitive(fallbackModel)))
+        try {
+            send(fallbackBody)
+        } catch (fallbackError: NanoGptHttpException) {
+            if (fallbackError.statusCode != 503) throw fallbackError
+            throw RuntimeException("Модели NanoGPT временно недоступны. Повторите чуть позже.", fallbackError)
+        }
+    }
+}
+
+private fun NanoGptHttpException.errorField(field: String): String? {
+    val root = runCatching { Json.parseToJsonElement(responseBody) }.getOrNull() as? JsonObject
+    val error = root?.get("error") as? JsonObject
+    return (error?.get(field) as? JsonPrimitive)?.contentOrNull
+}
+
+private fun NanoGptHttpException.isModelUnavailable(): Boolean =
+    statusCode == 503 && errorField("type") == "service_unavailable" && errorField("param") == "model"
+
+private fun NanoGptHttpException.isFlexRejection(): Boolean {
+    if (statusCode != 400 || errorField("type") != "invalid_request_error") return false
+    val message = errorField("message").orEmpty().lowercase()
+    return message.contains("flex") && message.contains("service_tier") &&
         (message.contains("isn't available") || message.contains("not available") ||
             message.contains("not supported"))
-    if (e.statusCode != 400 || body["service_tier"]?.jsonPrimitive?.contentOrNull != "flex" ||
-        type != "invalid_request_error" || !flexUnavailable
-    ) throw e
-
-    // The rejected request was not run. Keep the model, photos and prompt intact;
-    // make exactly one new attempt using the provider's ordinary queue.
-    send(JsonObject(body - "service_tier"))
 }

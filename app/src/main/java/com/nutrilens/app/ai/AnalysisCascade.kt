@@ -3,9 +3,12 @@ package com.nutrilens.app.ai
 import android.util.Base64
 import com.nutrilens.app.data.SettingsEntity
 import com.nutrilens.app.data.aiProvider
+import kotlinx.coroutines.CancellationException
 
 /** Старшая модель: полный разбор сложных блюд, фолбэк и все вызовы advanced. */
 const val NANO_MODEL_SENIOR = "google/gemini-3.8-flash"
+
+internal const val NANO_MODEL_SENIOR_BACKUP = "openai/gpt-6.1-terra"
 
 /** Младшая модель: маршрутизатор сложности и полный разбор простых блюд. */
 const val NANO_MODEL_JUNIOR = "openai/gpt-6-luna"
@@ -23,7 +26,7 @@ const val COMPLEXITY_SENIOR_THRESHOLD = 7
  * - gemini: только свой ключ Gemini.
  * Провайдер строгий: фолбэков на другой провайдер нет — нет нужного ключа,
  * будет ошибка, а не тихий запрос в чужой API.
- * Сначала используем flex; при явном отказе маршрута NanoGptApi повторяет без тира.
+ * Старшая модель использует обычную очередь NanoGPT: flex может отклонять запросы с фото.
  */
 suspend fun analyzeMealCascade(
     settings: SettingsEntity,
@@ -45,11 +48,16 @@ suspend fun analyzeMealCascade(
     )
 
     // Полный разбор младшей моделью; пустая форма ответа или сбой — откат на старшую.
-    suspend fun juniorThenSenior(): MealAnalysisResult = try {
-        val junior = nano(NANO_MODEL_JUNIOR)
-        if (junior.items.isNotEmpty() || junior.calories > 0.0) junior else nano(NANO_MODEL_SENIOR)
-    } catch (e: Exception) {
-        nano(NANO_MODEL_SENIOR)
+    suspend fun juniorThenSenior(): MealAnalysisResult {
+        val junior = try {
+            nano(NANO_MODEL_JUNIOR)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+        return junior?.takeIf { it.items.isNotEmpty() || it.calories > 0.0 }
+            ?: nano(NANO_MODEL_SENIOR)
     }
 
     return when (settings.aiProvider) {
